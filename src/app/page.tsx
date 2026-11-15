@@ -16,7 +16,7 @@ import {
   speakSentenceTTS,
   DISTRACTOR_POOL_KOREAN,
 } from '@/lib/dictionary';
-import { getAutocompleteSuggestions } from '@/lib/autocomplete';
+import { getLiveDictCandidates, SuggestionItem } from '@/lib/autocomplete';
 import { fireConfetti } from '@/lib/confetti';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import {
@@ -59,11 +59,8 @@ export default function Home() {
   // Filter & Grouping State
   const [selectedBookFilter, setSelectedBookFilter] = useState<string>('all');
 
-  // Autocomplete State
-  const [suggestions, setSuggestions] = useState<string[]>([]);
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [highlightedIndex, setHighlightedIndex] = useState(-1);
-  const autocompleteRef = useRef<HTMLDivElement>(null);
+  // Live Dictionary Candidates State (아래쪽 결과 영역 리스트용)
+  const [liveCandidates, setLiveCandidates] = useState<SuggestionItem[]>([]);
 
   // Quiz State
   const [quizList, setQuizList] = useState<VocabItem[]>([]);
@@ -103,34 +100,14 @@ export default function Home() {
     }
   }, []);
 
-  // Close suggestions when clicking outside
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (autocompleteRef.current && !autocompleteRef.current.contains(event.target as Node)) {
-        setShowSuggestions(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
-  // Autocomplete debounce effect
+  // Live Dictionary candidate update on typing
   useEffect(() => {
     if (!inputWord.trim()) {
-      setSuggestions([]);
-      setShowSuggestions(false);
-      setHighlightedIndex(-1);
+      setLiveCandidates([]);
       return;
     }
-
-    const timer = setTimeout(async () => {
-      const results = await getAutocompleteSuggestions(inputWord);
-      setSuggestions(results);
-      setShowSuggestions(results.length > 0);
-      setHighlightedIndex(-1);
-    }, 120);
-
-    return () => clearTimeout(timer);
+    const candidates = getLiveDictCandidates(inputWord);
+    setLiveCandidates(candidates);
   }, [inputWord]);
 
   async function loadData() {
@@ -146,7 +123,6 @@ export default function Home() {
       alert('조회할 영어 단어를 입력해 주세요!');
       return;
     }
-    setShowSuggestions(false);
     setIsSearchingDict(true);
     try {
       const res = await lookupDictionary(wordToSearch);
@@ -162,44 +138,14 @@ export default function Home() {
     }
   }
 
-  // Handle Input Keydown for Autocomplete navigation
   function handleInputKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (showSuggestions && suggestions.length > 0) {
-      if (e.key === 'ArrowDown') {
-        e.preventDefault();
-        setHighlightedIndex((prev) => (prev < suggestions.length - 1 ? prev + 1 : 0));
-        return;
-      }
-      if (e.key === 'ArrowUp') {
-        e.preventDefault();
-        setHighlightedIndex((prev) => (prev > 0 ? prev - 1 : suggestions.length - 1));
-        return;
-      }
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        if (highlightedIndex >= 0 && highlightedIndex < suggestions.length) {
-          const selected = suggestions[highlightedIndex];
-          setInputWord(selected);
-          executeSearch(selected);
-        } else {
-          executeSearch();
-        }
-        return;
-      }
-      if (e.key === 'Escape') {
-        setShowSuggestions(false);
-        return;
-      }
-    }
-
     if (e.key === 'Enter') {
       executeSearch();
     }
   }
 
-  function handleSelectSuggestion(word: string) {
+  function handleSelectCandidate(word: string) {
     setInputWord(word);
-    setShowSuggestions(false);
     executeSearch(word);
   }
 
@@ -602,28 +548,28 @@ export default function Home() {
                   )}
                 </div>
 
-                {/* Word Input with Autocomplete */}
-                <div className="relative" ref={autocompleteRef}>
+                {/* Word Input */}
+                <div>
                   <div className="flex items-center justify-between mb-1.5">
                     <label className="block text-xs font-bold text-slate-700">
                       영어 단어 <span className="text-rose-500">*</span>
                     </label>
-                    <span className="text-[10px] text-indigo-600 font-medium">
-                      💡 방향키(↑↓)로 선택 후 Enter
+                    <span className="text-[10px] text-slate-400 font-medium">
+                      타이핑 시 우측에 실시간 뜻 리스트 표시
                     </span>
                   </div>
 
-                  <div className="flex gap-2 relative">
+                  <div className="flex gap-2">
                     <input
                       ref={inputWordRef}
                       type="text"
                       value={inputWord}
-                      onChange={(e) => setInputWord(e.target.value)}
-                      onKeyDown={handleInputKeyDown}
-                      onFocus={() => {
-                        if (suggestions.length > 0) setShowSuggestions(true);
+                      onChange={(e) => {
+                        setInputWord(e.target.value);
+                        setDictResult(null); // 타이핑 시 이전 상세 결과 닫고 실시간 리스트 표시
                       }}
-                      placeholder="단어 앞 글자를 치면 자동완성됩니다 (예: trag, prev, miti)"
+                      onKeyDown={handleInputKeyDown}
+                      placeholder="단어를 입력하세요 (예: tra, prev, miti)"
                       className="flex-1 px-3.5 py-2.5 text-sm bg-white text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
                     />
                     <button
@@ -635,33 +581,6 @@ export default function Home() {
                       <span>{isSearchingDict ? '조회중...' : '영한 사전 조회'}</span>
                     </button>
                   </div>
-
-                  {/* Autocomplete Dropdown */}
-                  {showSuggestions && suggestions.length > 0 && (
-                    <div className="absolute left-0 right-0 top-full mt-1.5 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden divide-y divide-slate-100 max-h-60 overflow-y-auto">
-                      <div className="px-3 py-1.5 bg-slate-50 text-[10px] font-bold text-slate-400 flex items-center justify-between">
-                        <span>추천 단어 목록 ({suggestions.length})</span>
-                        <span>방향키로 이동</span>
-                      </div>
-                      {suggestions.map((item, idx) => (
-                        <div
-                          key={item}
-                          onClick={() => handleSelectSuggestion(item)}
-                          className={`px-3.5 py-2.5 text-xs cursor-pointer flex items-center justify-between transition ${
-                            highlightedIndex === idx
-                              ? 'bg-indigo-50 text-indigo-900 font-bold'
-                              : 'text-slate-800 hover:bg-slate-50'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2">
-                            <Search className="w-3 h-3 text-slate-400" />
-                            <span className="font-semibold">{item}</span>
-                          </div>
-                          <span className="text-[10px] text-slate-400">선택 ↵</span>
-                        </div>
-                      ))}
-                    </div>
-                  )}
                 </div>
 
                 <div>
@@ -702,59 +621,104 @@ export default function Home() {
                       영한 사전 검색 결과 <span className="font-normal text-slate-500">(한국어 뜻 선택)</span>
                     </h3>
                     <span className="text-[10px] text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded font-semibold">
-                      {dictResult ? dictResult.sourceName : '대기중'}
+                      {dictResult
+                        ? dictResult.sourceName
+                        : liveCandidates.length > 0
+                        ? `연관 추천 (${liveCandidates.length})`
+                        : '대기중'}
                     </span>
                   </div>
 
                   {!dictResult && !isSearchingDict && (
-                    <div className="py-10 text-center text-slate-400">
-                      <p className="text-3xl mb-2">🇰🇷 📚</p>
-                      <p className="text-xs font-medium text-slate-500">
-                        단어를 입력하고 [영한 사전 조회]를 눌러주세요.
-                      </p>
-                      <div className="mt-4 flex flex-wrap justify-center gap-1.5">
-                        <span className="text-[10px] text-slate-400">테스트용 추천:</span>
-                        <button
-                          onClick={() =>
-                            fillSample(
-                              'tragedy',
-                              'It was a terrible tragedy that affected many innocent lives.',
-                              '3막 2장',
-                              '셰익스피어 햄릿'
-                            )
-                          }
-                          className="text-[10px] bg-white border border-slate-300 hover:border-indigo-400 px-2 py-0.5 rounded text-indigo-600 font-medium"
-                        >
-                          tragedy
-                        </button>
-                        <button
-                          onClick={() =>
-                            fillSample(
-                              'prevalent',
-                              'The disease is significantly more prevalent in warm climates.',
-                              '12페이지',
-                              '의학 저널'
-                            )
-                          }
-                          className="text-[10px] bg-white border border-slate-300 hover:border-indigo-400 px-2 py-0.5 rounded text-indigo-600 font-medium"
-                        >
-                          prevalent
-                        </button>
-                        <button
-                          onClick={() =>
-                            fillSample(
-                              'mitigate',
-                              'New technologies will help mitigate environmental degradation.',
-                              '결론부',
-                              '기후변화 보고서'
-                            )
-                          }
-                          className="text-[10px] bg-white border border-slate-300 hover:border-indigo-400 px-2 py-0.5 rounded text-indigo-600 font-medium"
-                        >
-                          mitigate
-                        </button>
-                      </div>
-                    </div>
+                    <>
+                      {liveCandidates.length > 0 ? (
+                        <div className="space-y-2 animate-toast">
+                          <div className="flex items-center justify-between pb-1 text-[11px] font-bold text-indigo-700">
+                            <span className="flex items-center gap-1">
+                              <Sparkles className="w-3.5 h-3.5" />
+                              <span>타이핑 연관 단어 & 한국어 뜻</span>
+                            </span>
+                            <span className="text-[10px] text-slate-400">클릭하여 선택</span>
+                          </div>
+                          <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+                            {liveCandidates.map((c) => (
+                              <button
+                                key={c.word}
+                                type="button"
+                                onClick={() => handleSelectCandidate(c.word)}
+                                className="w-full text-left p-3 rounded-xl border border-slate-200 bg-white hover:border-indigo-500 hover:bg-indigo-50/50 transition flex items-center justify-between shadow-xs group cursor-pointer"
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span className="font-black text-slate-900 group-hover:text-indigo-600 text-xs">
+                                    {c.word}
+                                  </span>
+                                  {c.pos && (
+                                    <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded font-semibold shrink-0">
+                                      {c.pos}
+                                    </span>
+                                  )}
+                                  <span className="text-xs text-slate-600 font-medium truncate">
+                                    {c.quickMeaning}
+                                  </span>
+                                </div>
+                                <span className="text-[10px] bg-indigo-50 text-indigo-700 font-bold px-2 py-0.5 rounded shrink-0 group-hover:bg-indigo-600 group-hover:text-white transition">
+                                  선택 ↵
+                                </span>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="py-10 text-center text-slate-400">
+                          <p className="text-3xl mb-2">🇰🇷 📚</p>
+                          <p className="text-xs font-medium text-slate-500">
+                            단어를 입력하면 연관 한국어 뜻 리스트가 여기에 바로 뜹니다.
+                          </p>
+                          <div className="mt-4 flex flex-wrap justify-center gap-1.5">
+                            <span className="text-[10px] text-slate-400">테스트용 추천:</span>
+                            <button
+                              onClick={() =>
+                                fillSample(
+                                  'tragedy',
+                                  'It was a terrible tragedy that affected many innocent lives.',
+                                  '3막 2장',
+                                  '셰익스피어 햄릿'
+                                )
+                              }
+                              className="text-[10px] bg-white border border-slate-300 hover:border-indigo-400 px-2 py-0.5 rounded text-indigo-600 font-medium"
+                            >
+                              tragedy
+                            </button>
+                            <button
+                              onClick={() =>
+                                fillSample(
+                                  'prevalent',
+                                  'The disease is significantly more prevalent in warm climates.',
+                                  '12페이지',
+                                  '의학 저널'
+                                )
+                              }
+                              className="text-[10px] bg-white border border-slate-300 hover:border-indigo-400 px-2 py-0.5 rounded text-indigo-600 font-medium"
+                            >
+                              prevalent
+                            </button>
+                            <button
+                              onClick={() =>
+                                fillSample(
+                                  'mitigate',
+                                  'New technologies will help mitigate environmental degradation.',
+                                  '결론부',
+                                  '기후변화 보고서'
+                                )
+                              }
+                              className="text-[10px] bg-white border border-slate-300 hover:border-indigo-400 px-2 py-0.5 rounded text-indigo-600 font-medium"
+                            >
+                              mitigate
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </>
                   )}
 
                   {isSearchingDict && (
