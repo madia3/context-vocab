@@ -608,7 +608,7 @@ export default function Home() {
 
                   {/* 새 단어장 직접 입력란 (필요할 때만 펼쳐짐) */}
                   {isCustomBook && (
-                    <div className="mt-2 animate-toast">
+                    <div className="mt-2 animate-fade-in w-full">
                       <input
                         type="text"
                         value={customBookInput}
@@ -809,7 +809,7 @@ export default function Home() {
                       원서 / 레포트 원문 문장 <span className="text-slate-400 font-normal">(권장)</span>
                     </label>
                     {ocrDetectedNotice && (
-                      <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded animate-toast">
+                      <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded animate-fade-in">
                         {ocrDetectedNotice}
                       </span>
                     )}
@@ -1538,7 +1538,7 @@ export default function Home() {
                       </div>
                     ) : (
                       /* 정답 선택 후: 선지들은 사라지고 원문 문맥 + 원어민 발음 + 다음 문제만 시원하게 표시 */
-                      <div className="mt-5 space-y-4 animate-toast">
+                      <div className="mt-5 space-y-4 animate-fade-in w-full">
                         {/* Status Result Banner */}
                         <div
                           className={`p-4 rounded-2xl flex items-center justify-between text-white shadow-md ${
@@ -1811,8 +1811,8 @@ export default function Home() {
 
       {/* Floating Animated Toast Notification */}
       {toast && (
-        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[9999] animate-toast">
-          <div className="bg-slate-900/95 text-white px-5 py-3.5 rounded-2xl shadow-2xl border border-slate-700/60 backdrop-blur-md flex items-center gap-3.5 max-w-md min-w-[300px]">
+        <div className="fixed top-6 inset-x-0 z-[9999] flex justify-center pointer-events-none px-4">
+          <div className="pointer-events-auto bg-slate-900/95 text-white px-5 py-3.5 rounded-2xl shadow-2xl border border-slate-700/60 backdrop-blur-md flex items-center gap-3.5 max-w-md w-full animate-fade-in">
             <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-400 to-rose-400 flex items-center justify-center text-lg shadow-md shrink-0">
               🎉
             </div>
