@@ -55,6 +55,8 @@ import {
   Bot,
   Key,
   ExternalLink,
+  Globe,
+  Link2,
 } from 'lucide-react';
 
 export default function Home() {
@@ -76,13 +78,21 @@ export default function Home() {
   const [customMeaning, setCustomMeaning] = useState('');
   const inputWordRef = useRef<HTMLInputElement>(null);
 
-  // OCR Book Page Scan State (현재 촬영한 페이지 텍스트 & 캐시)
+  // OCR & Web Source State (현재 로드된 페이지/웹문서 텍스트 & 캐시)
   const [pageOcrText, setPageOcrText] = useState<string>('');
   const [isOcrProcessing, setIsOcrProcessing] = useState(false);
   const [ocrProgress, setOcrProgress] = useState(0);
   const [ocrDetectedNotice, setOcrDetectedNotice] = useState<string | null>(null);
   const [detectedCandidateSentences, setDetectedCandidateSentences] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Web URL Scraper State (웹페이지 URL에서 문장 가져오기)
+  const [inputWebUrl, setInputWebUrl] = useState<string>('');
+  const [isUrlModalOpen, setIsUrlModalOpen] = useState(false);
+  const [isUrlScraping, setIsUrlScraping] = useState(false);
+  const [urlScrapeError, setUrlScrapeError] = useState<string | null>(null);
+  const [loadedSourceType, setLoadedSourceType] = useState<'camera' | 'web' | null>(null);
+  const [loadedWebTitle, setLoadedWebTitle] = useState<string>('');
 
   // Filter & Grouping State
   const [selectedBookFilter, setSelectedBookFilter] = useState<string>('all');
@@ -250,7 +260,79 @@ export default function Home() {
       alert('페이지 글자 인식 중 오류가 발생했습니다. 사진이 선명한지 확인해 주세요.');
     } finally {
       setIsOcrProcessing(false);
+      setLoadedSourceType('camera');
       if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
+
+  // Handle Web Page URL Scraping
+  async function handleScrapeUrl() {
+    const targetUrl = inputWebUrl.trim();
+    if (!targetUrl) {
+      setUrlScrapeError('웹페이지 주소(URL)를 입력해 주세요.');
+      return;
+    }
+
+    setIsUrlScraping(true);
+    setUrlScrapeError(null);
+
+    try {
+      const res = await fetch('/api/scrape-url', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(geminiApiKey ? { 'x-gemini-key': geminiApiKey } : {}),
+        },
+        body: JSON.stringify({ url: targetUrl }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || '웹페이지를 불러오지 못했습니다.');
+      }
+
+      setPageOcrText(data.text);
+      setLoadedSourceType('web');
+      setLoadedWebTitle(data.title || data.hostname);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('context_vocab_cached_page_ocr', data.text);
+      }
+
+      // 책/레포트 제목에 웹페이지 타이틀 자동 세팅
+      if (data.title) {
+        setInputBookTitle(data.title);
+      }
+      if (data.sourceUrl) {
+        setInputSource(data.sourceUrl);
+      }
+
+      setIsUrlModalOpen(false);
+      setInputWebUrl('');
+      triggerToast('웹페이지 문장 로드 완료! 🌐', `"${data.title}" 에서 문장 ${data.sentenceCount}개를 불러왔습니다.`);
+
+      // 만약 이미 검색어에 단어가 입력되어 있다면 즉시 AI 문맥 문장 자동 탐색
+      if (inputWord.trim()) {
+        const matchRes = await findSentenceWithAI(data.text, inputWord.trim(), geminiApiKey);
+        if (matchRes.found && matchRes.sentence) {
+          const sentences = matchRes.allMatches.map((m) => m.sentence);
+          setDetectedCandidateSentences(sentences);
+          setInputContext(matchRes.sentence);
+          if (sentences.length > 1) {
+            setOcrDetectedNotice(`✨ 웹페이지 내에서 이 단어가 ${sentences.length}번 쓰였습니다! 아래에서 대표 문맥을 선택하세요.`);
+          } else {
+            const notice = matchRes.matchedWord && matchRes.matchedWord.toLowerCase() !== inputWord.trim().toLowerCase()
+              ? `🤖 AI가 형태소 변화형("${matchRes.matchedWord}")을 감지하여 원문 문장을 자동 선택했습니다!`
+              : `🌐 웹페이지에서 원문 문장을 자동으로 찾았습니다!`;
+            setOcrDetectedNotice(notice);
+          }
+        } else {
+          setDetectedCandidateSentences([]);
+        }
+      }
+    } catch (err: any) {
+      setUrlScrapeError(err.message || '웹페이지를 분석하는 중 오류가 발생했습니다.');
+    } finally {
+      setIsUrlScraping(false);
     }
   }
 
@@ -747,12 +829,12 @@ export default function Home() {
                   className="hidden"
                 />
 
-                {/* Page Photo Capture / Scanner Card */}
+                {/* Page Photo Capture / Web URL Scanner Card */}
                 <div className="bg-gradient-to-r from-indigo-50 to-purple-50 p-3.5 rounded-xl border border-indigo-100">
                   <div className="flex items-center justify-between mb-1">
                     <span className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
-                      <Camera className="w-4 h-4 text-indigo-600" />
-                      <span>책 페이지 찰칵 찍기 (문장 자동 인식)</span>
+                      <BookOpen className="w-4 h-4 text-indigo-600" />
+                      <span>원문 문장 불러오기 (책 사진 촬영 또는 웹페이지 URL)</span>
                     </span>
                     <div className="flex items-center gap-1.5">
                       {geminiApiKey ? (
@@ -761,7 +843,7 @@ export default function Home() {
                           onClick={() => setIsAiModalOpen(true)}
                           className="text-[10px] bg-purple-100 hover:bg-purple-200 text-purple-800 font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1 transition cursor-pointer"
                         >
-                          <Bot className="w-3 h-3 text-purple-600" /> AI 비전 모드
+                          <Bot className="w-3 h-3 text-purple-600" /> AI 연동됨
                         </button>
                       ) : (
                         <button
@@ -774,7 +856,8 @@ export default function Home() {
                       )}
                       {pageOcrText && (
                         <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                          <Check className="w-3 h-3" /> 페이지 인식됨
+                          <Check className="w-3 h-3" />
+                          {loadedSourceType === 'web' ? '웹페이지 로드됨' : '페이지 인식됨'}
                         </span>
                       )}
                     </div>
@@ -802,26 +885,49 @@ export default function Home() {
                     </div>
                   ) : pageOcrText ? (
                     <div className="space-y-2 pt-1">
+                      <div className="flex items-center gap-1.5 text-[11px] font-bold text-indigo-900">
+                        {loadedSourceType === 'web' ? (
+                          <>
+                            <Globe className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                            <span className="truncate">웹페이지: {loadedWebTitle || '웹 기사'}</span>
+                          </>
+                        ) : (
+                          <>
+                            <Camera className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                            <span>촬영한 책 페이지</span>
+                          </>
+                        )}
+                      </div>
                       <p className="text-[11px] text-indigo-900/80 line-clamp-2 italic bg-white/70 p-2 rounded-lg border border-indigo-100">
-                        &quot;{pageOcrText.slice(0, 120)}...&quot;
+                        &quot;{pageOcrText.slice(0, 140)}...&quot;
                       </p>
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] text-slate-500">
-                          💡 단어를 입력하면 AI가 복수/시제 변화형까지 문맥에서 감지합니다!
+                          💡 단어를 입력하면 본문 속 원문 문장이 자동으로 매칭됩니다!
                         </span>
                         <div className="flex items-center gap-2">
                           <button
                             type="button"
                             onClick={() => fileInputRef.current?.click()}
-                            className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1"
+                            className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-0.5"
                           >
                             <Camera className="w-3 h-3" />
-                            <span>새 페이지 찍기</span>
+                            <span>새 사진</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setIsUrlModalOpen(true)}
+                            className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-0.5"
+                          >
+                            <Globe className="w-3 h-3" />
+                            <span>새 URL</span>
                           </button>
                           <button
                             type="button"
                             onClick={() => {
                               setPageOcrText('');
+                              setLoadedSourceType(null);
+                              setLoadedWebTitle('');
                               if (typeof window !== 'undefined') localStorage.removeItem('context_vocab_cached_page_ocr');
                             }}
                             className="text-[11px] text-slate-400 hover:text-rose-500"
@@ -832,18 +938,28 @@ export default function Home() {
                       </div>
                     </div>
                   ) : (
-                    <div className="pt-1.5 flex items-center justify-between">
+                    <div className="pt-1.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                       <p className="text-[11px] text-slate-500">
-                        페이지를 찍어두면 단어 등록 시 원문 문장을 일일이 치지 않아도 알아서 채워집니다.
+                        책 사진을 찍거나 웹페이지 주소를 넣으면 본문 문장들이 단어장에 자동으로 연동됩니다.
                       </p>
-                      <button
-                        type="button"
-                        onClick={() => fileInputRef.current?.click()}
-                        className="bg-white hover:bg-indigo-50 border border-indigo-300 text-indigo-700 text-xs font-bold px-3 py-1.5 rounded-lg shadow-xs transition shrink-0 flex items-center gap-1.5"
-                      >
-                        <Camera className="w-3.5 h-3.5 text-indigo-600" />
-                        <span>사진 찍기 / 업로드</span>
-                      </button>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="bg-white hover:bg-indigo-50 border border-indigo-300 text-indigo-700 text-xs font-bold px-3 py-1.5 rounded-lg shadow-xs transition flex items-center gap-1.5"
+                        >
+                          <Camera className="w-3.5 h-3.5 text-indigo-600" />
+                          <span>책 사진 찍기</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsUrlModalOpen(true)}
+                          className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-3 py-1.5 rounded-lg shadow-xs transition flex items-center gap-1.5"
+                        >
+                          <Globe className="w-3.5 h-3.5 text-white" />
+                          <span>웹 URL 넣기</span>
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -1831,6 +1947,133 @@ export default function Home() {
           </section>
         )}
       </main>
+
+      {/* Web Page URL Scraper Modal */}
+      {isUrlModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-indigo-100 space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3.5">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 to-blue-600 text-white flex items-center justify-center shadow-md">
+                  <Globe className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-base text-slate-900 leading-tight">
+                    웹페이지 URL로 원문 가져오기
+                  </h3>
+                  <p className="text-[11px] text-indigo-600 font-semibold">
+                    영문 기사나 웹페이지의 문장들을 단어장에 자동으로 연동합니다
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsUrlModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 text-xl font-bold w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 transition cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  웹페이지 주소 (URL)
+                </label>
+                <div className="relative">
+                  <input
+                    type="url"
+                    value={inputWebUrl}
+                    onChange={(e) => {
+                      setInputWebUrl(e.target.value);
+                      setUrlScrapeError(null);
+                    }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') handleScrapeUrl();
+                    }}
+                    placeholder="예: https://www.bbc.com/news/... 또는 영문 기사 URL"
+                    className="w-full px-4 py-3 bg-white text-slate-900 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none pr-10"
+                  />
+                  {inputWebUrl && (
+                    <button
+                      type="button"
+                      onClick={() => setInputWebUrl('')}
+                      className="absolute right-3 top-3 text-slate-400 hover:text-slate-600 text-xs"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Sample Quick Chips */}
+              <div>
+                <span className="text-[11px] font-bold text-slate-500 mb-1.5 block">빠른 테스트 추천 URL:</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { label: 'BBC World News', url: 'https://www.bbc.com/news' },
+                    { label: 'Wikipedia (AI)', url: 'https://en.wikipedia.org/wiki/Artificial_intelligence' },
+                    { label: 'TechCrunch', url: 'https://techcrunch.com' },
+                  ].map((sample) => (
+                    <button
+                      key={sample.label}
+                      type="button"
+                      onClick={() => {
+                        setInputWebUrl(sample.url);
+                        setUrlScrapeError(null);
+                      }}
+                      className="text-[10px] font-semibold bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200 border border-slate-200 text-slate-700 px-2.5 py-1 rounded-lg transition"
+                    >
+                      {sample.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {urlScrapeError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <span>{urlScrapeError}</span>
+                </div>
+              )}
+
+              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-[11px] text-slate-600 space-y-1">
+                <p className="font-bold text-slate-800">💡 이렇게 활용하세요:</p>
+                <p>1. 읽고 계신 영문 뉴스 기사나 웹 칼럼의 주소를 붙여넣습니다.</p>
+                <p>2. [문장 불러오기]를 누르면 기사 제목과 본문 문장들이 자동으로 준비됩니다.</p>
+                <p>3. 단어를 검색하면 해당 기사에서 쓰인 실제 원문 문장을 AI가 쏙 찾아냅니다!</p>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsUrlModalOpen(false)}
+                className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition"
+              >
+                취소
+              </button>
+              <button
+                type="button"
+                onClick={handleScrapeUrl}
+                disabled={isUrlScraping || !inputWebUrl.trim()}
+                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white text-xs font-bold rounded-xl shadow-md transition flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
+              >
+                {isUrlScraping ? (
+                  <>
+                    <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>본문 문장 분석 중...</span>
+                  </>
+                ) : (
+                  <>
+                    <Globe className="w-3.5 h-3.5" />
+                    <span>문장 불러오기</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Dedicated AI Setup Modal */}
       {isAiModalOpen && (
