@@ -1,0 +1,1111 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ContextVocab - 원서 영한 단어장 & 5지선다 퀴즈</title>
+  <script src="https://www.gstatic.com/antigravity/web/dev/tailwindcss.min.js"></script>
+  <style>
+    .highlight-word {
+      background-color: #fef08a !important;
+      color: #854d0e !important;
+      font-weight: 800;
+      padding: 2px 6px;
+      border-radius: 4px;
+      display: inline-block;
+      border-bottom: 2px solid #ca8a04;
+    }
+    .quiz-option-btn:hover:not(:disabled) {
+      transform: translateY(-2px);
+    }
+    /* Mobile input background fix */
+    input, textarea, select {
+      background-color: #ffffff !important;
+      color: #0f172a !important;
+    }
+    input::placeholder, textarea::placeholder {
+      color: #94a3b8 !important;
+    }
+  </style>
+</head>
+<body class="bg-slate-100 text-slate-800 font-sans min-h-screen flex flex-col antialiased">
+
+  <!-- Header -->
+  <header class="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-sm">
+    <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between gap-2">
+      <div class="flex items-center gap-2.5">
+        <div class="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-black text-lg shadow-md shadow-indigo-100">
+          V
+        </div>
+        <div>
+          <h1 class="font-bold text-base text-slate-900 leading-tight">ContextVocab</h1>
+          <p class="text-[11px] text-slate-500 font-medium">원서·레포트 영한 단어장 & 5지선다 퀴즈</p>
+        </div>
+      </div>
+
+      <!-- Navigation & Action Buttons -->
+      <div class="flex items-center gap-1.5">
+        <!-- Navigation Tabs -->
+        <nav class="flex items-center gap-1 bg-slate-100 p-1 rounded-xl">
+          <button id="tabAddBtn" onclick="switchTab('add')" class="px-3 py-1.5 text-xs font-bold rounded-lg bg-white text-indigo-600 shadow-sm transition">
+            + 단어 등록
+          </button>
+          <button id="tabListBtn" onclick="switchTab('list')" class="px-3 py-1.5 text-xs font-semibold rounded-lg text-slate-600 hover:text-slate-900 transition flex items-center gap-1">
+            단어장 <span id="vocaCountBadge" class="bg-indigo-100 text-indigo-700 text-[10px] px-1.5 py-0.2 rounded-full font-bold">0</span>
+          </button>
+          <button id="tabQuizBtn" onclick="switchTab('quiz')" class="px-3 py-1.5 text-xs font-semibold rounded-lg text-slate-600 hover:text-slate-900 transition flex items-center gap-1">
+            5지선다 🎯
+          </button>
+        </nav>
+
+        <!-- Download to Mac Button -->
+        <button onclick="downloadAppToMac()" class="bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold px-3 py-1.5 rounded-xl shadow-sm transition flex items-center gap-1" title="맥북으로 파일 다운로드">
+          <span>💻</span> <span class="hidden sm:inline">맥북으로 저장</span>
+        </button>
+
+        <!-- Settings Button -->
+        <button onclick="toggleSettingsModal()" class="px-2 py-1.5 text-slate-500 hover:text-slate-800 text-sm rounded-lg" title="설정">
+          ⚙️
+        </button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Container -->
+  <main class="max-w-5xl mx-auto w-full px-4 py-5 flex-1">
+
+    <!-- Status Banner -->
+    <div class="mb-4 bg-emerald-50 border border-emerald-200 rounded-xl p-3 flex items-center justify-between text-xs text-emerald-900">
+      <div class="flex items-center gap-2">
+        <span class="w-2 h-2 rounded-full bg-emerald-500"></span>
+        <span><strong>🇰🇷 정밀 영한 사전 모드</strong>: 단어 입력 시 품사별 한국어 뜻 목록을 바로 제공합니다. (비용 0원)</span>
+      </div>
+      <span class="text-emerald-700 font-semibold hidden sm:inline">TTS 음성 무제한 무료</span>
+    </div>
+
+    <!-- ============================================== -->
+    <!-- TAB 1: 단어 등록 & 사전 조회 & 원문 문장 입력 -->
+    <!-- ============================================== -->
+    <section id="tabAdd" class="space-y-5">
+      <div class="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 sm:p-6">
+        <h2 class="text-base font-bold text-slate-900 mb-1 flex items-center gap-2">
+          <span>📖</span> 모르는 단어와 원문 문장 입력하기
+        </h2>
+        <p class="text-xs text-slate-500 mb-5">원서나 논문에서 읽던 문맥 그대로 입력하면, 퀴즈를 풀 때 그 문장과 발음이 함께 복습됩니다.</p>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <!-- Left Column: Word & Context -->
+          <div class="space-y-4">
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1.5">영어 단어 <span class="text-rose-500">*</span></label>
+              <div class="flex gap-2">
+                <input type="text" id="inputWord" placeholder="예: tragedy, prevalent, mitigate"
+                  class="flex-1 px-3.5 py-2.5 text-sm bg-white text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                  onkeydown="if(event.key==='Enter') searchDictionary()">
+                <button onclick="searchDictionary()" id="searchDictBtn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2.5 text-xs rounded-xl shadow-sm transition flex items-center gap-1.5 shrink-0">
+                  <span>🔍 영한 사전 조회</span>
+                </button>
+              </div>
+            </div>
+
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1.5">원서 / 레포트 원문 문장 <span class="text-slate-400 font-normal">(권장)</span></label>
+              <textarea id="inputContext" rows="3" placeholder="예: It was an unspeakable tragedy that shook the entire nation."
+                class="w-full px-3.5 py-2.5 text-xs bg-white text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 leading-relaxed"></textarea>
+              <p class="text-[11px] text-slate-400 mt-1">※ 퀴즈 정답 시 이 문맥 속 단어가 강조되며, 원어민 음성으로 읽어줍니다.</p>
+            </div>
+
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1.5">출처 메모 <span class="text-slate-400 font-normal">(선택)</span></label>
+              <input type="text" id="inputSource" placeholder="예: 햄릿 3막, 타임지 기사, 기후변화 리포트"
+                class="w-full px-3 py-2 text-xs bg-white text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            </div>
+          </div>
+
+          <!-- Right Column: Dictionary Result & Korean Meaning Selection -->
+          <div class="bg-slate-50 rounded-xl border border-slate-200 p-4 flex flex-col justify-between">
+            <div>
+              <div class="flex items-center justify-between pb-2 mb-3 border-b border-slate-200">
+                <h3 class="text-xs font-bold text-slate-700">영한 사전 검색 결과 <span class="font-normal text-slate-500">(한국어 뜻 선택)</span></h3>
+                <span id="dictSourceTag" class="text-[10px] text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded font-semibold">대기중</span>
+              </div>
+
+              <!-- Empty Placeholder -->
+              <div id="dictPlaceholder" class="py-10 text-center text-slate-400">
+                <p class="text-3xl mb-2">🇰🇷 📚</p>
+                <p class="text-xs font-medium text-slate-500">단어를 입력하고 [영한 사전 조회]를 눌러주세요.</p>
+                <div class="mt-4 flex flex-wrap justify-center gap-1.5">
+                  <span class="text-[10px] text-slate-400">테스트용 추천:</span>
+                  <button onclick="fillSample('tragedy', 'It was a terrible tragedy that affected many innocent lives.', '셰익스피어 원서')" class="text-[10px] bg-white border border-slate-300 hover:border-indigo-400 px-2 py-0.5 rounded text-indigo-600 font-medium">tragedy</button>
+                  <button onclick="fillSample('prevalent', 'The disease is significantly more prevalent in warm climates.', '의학 저널 12p')" class="text-[10px] bg-white border border-slate-300 hover:border-indigo-400 px-2 py-0.5 rounded text-indigo-600 font-medium">prevalent</button>
+                  <button onclick="fillSample('mitigate', 'New technologies will help mitigate environmental degradation.', '기후변화 보고서')" class="text-[10px] bg-white border border-slate-300 hover:border-indigo-400 px-2 py-0.5 rounded text-indigo-600 font-medium">mitigate</button>
+                </div>
+              </div>
+
+              <!-- Loading Indicator -->
+              <div id="dictLoading" class="hidden py-10 text-center text-indigo-600">
+                <div class="inline-block animate-spin rounded-full h-7 w-7 border-4 border-indigo-600 border-t-transparent mb-2"></div>
+                <p class="text-xs font-semibold">영한 사전 데이터를 가져오는 중입니다...</p>
+              </div>
+
+              <!-- Meanings List (Radio Options) -->
+              <div id="dictResultArea" class="hidden space-y-2">
+                <div class="flex items-center justify-between pb-2 border-b border-slate-200">
+                  <div class="flex items-center gap-2">
+                    <span id="dictWordDisplay" class="font-black text-lg text-slate-900">word</span>
+                    <span id="dictPhoneticDisplay" class="text-xs text-indigo-600 font-mono">/wɜːrd/</span>
+                  </div>
+                  <button onclick="speakWord(currentDictData.word)" class="text-xs bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-2.5 py-1 rounded-lg flex items-center gap-1 font-bold">
+                    🔊 발음 듣기
+                  </button>
+                </div>
+
+                <div class="text-[11px] text-slate-500 font-medium pt-1">
+                  💡 원문 문맥에 가장 어울리는 한국어 뜻을 골라주세요:
+                </div>
+
+                <div id="meaningsContainer" class="space-y-2 max-h-56 overflow-y-auto pr-1">
+                  <!-- Dynamically inserted Korean meaning options -->
+                </div>
+
+                <!-- Custom Direct Meaning Input -->
+                <div class="pt-2">
+                  <details class="text-xs text-slate-600 cursor-pointer">
+                    <summary class="font-semibold text-indigo-600 hover:underline">원하는 뜻이 목록에 없나요? 직접 입력하기</summary>
+                    <div class="mt-2 flex gap-1.5">
+                      <input type="text" id="customMeaningInput" placeholder="직접 한국어 뜻 입력 (예: 비극적인 결말)"
+                        class="flex-1 px-2.5 py-1.5 text-xs bg-white text-slate-900 border border-slate-300 rounded-lg">
+                      <button onclick="applyCustomMeaning()" class="px-3 py-1.5 bg-slate-800 text-white text-xs font-bold rounded-lg shrink-0">
+                        적용
+                      </button>
+                    </div>
+                  </details>
+                </div>
+              </div>
+            </div>
+
+            <!-- Save Action Button -->
+            <div class="pt-3 mt-3 border-t border-slate-200 flex justify-end">
+              <button id="saveWordBtn" onclick="saveToVocabulary()" disabled
+                class="w-full sm:w-auto bg-slate-300 text-slate-500 font-bold px-6 py-2.5 text-xs rounded-xl transition cursor-not-allowed flex items-center justify-center gap-1.5">
+                <span>⭐ 단어장에 선택한 뜻 저장하기</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- ============================================== -->
+    <!-- TAB 2: 내 단어장 목록 (원문 하이라이트 포함) -->
+    <!-- ============================================== -->
+    <section id="tabList" class="hidden space-y-4">
+      <div class="flex items-center justify-between">
+        <div>
+          <h2 class="text-base font-bold text-slate-900">내 문맥 영한 단어장</h2>
+          <p class="text-xs text-slate-500">원서에서 직접 수집한 단어와 한국어 뜻 목록입니다.</p>
+        </div>
+        <div class="flex gap-2">
+          <button onclick="startQuizNow()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-sm transition flex items-center gap-1.5">
+            🎯 5지선다 퀴즈 풀기
+          </button>
+        </div>
+      </div>
+
+      <div id="vocabListContainer" class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <!-- Dynamically rendered cards -->
+      </div>
+
+      <div id="vocabEmptyNotice" class="hidden py-16 text-center bg-white rounded-2xl border border-slate-200">
+        <p class="text-4xl mb-3">📭</p>
+        <h3 class="text-sm font-bold text-slate-700 mb-1">저장된 단어가 아직 없습니다.</h3>
+        <p class="text-xs text-slate-400 mb-4">원서를 읽다가 모르는 단어를 등록해 보세요!</p>
+        <button onclick="switchTab('add')" class="bg-indigo-600 text-white text-xs font-semibold px-4 py-2 rounded-xl">
+          첫 단어 등록하러 가기
+        </button>
+      </div>
+    </section>
+
+    <!-- ============================================== -->
+    <!-- TAB 3: 5지선다 객관식 퀴즈 모드 -->
+    <!-- ============================================== -->
+    <section id="tabQuiz" class="hidden space-y-6">
+      <div class="max-w-2xl mx-auto">
+        <!-- Quiz Card Box -->
+        <div class="bg-white rounded-2xl border border-slate-200 shadow-md overflow-hidden">
+          
+          <!-- Quiz Header & Progress -->
+          <div class="bg-slate-900 text-white p-4 flex items-center justify-between">
+            <div class="flex items-center gap-2">
+              <span class="text-xs bg-indigo-500/30 text-indigo-200 px-2 py-0.5 rounded font-mono font-bold">5지선다 객관식</span>
+              <span id="quizProgressText" class="text-xs text-slate-300">문제 1 / 5</span>
+            </div>
+            <div class="flex items-center gap-3 text-xs">
+              <span class="text-emerald-400 font-bold">정답: <span id="quizScoreText">0</span>개</span>
+            </div>
+          </div>
+
+          <!-- Question Body -->
+          <div class="p-6">
+            <div class="text-center py-3 border-b border-slate-100">
+              <span class="text-xs font-bold text-indigo-600 tracking-wider uppercase mb-1 block">다음 영어 단어의 알맞은 한국어 뜻을 고르세요</span>
+              <h3 id="quizQuestionWord" class="text-3xl font-black text-slate-900 tracking-tight mb-2">tragedy</h3>
+              <div class="flex items-center justify-center gap-2">
+                <span id="quizWordPhonetic" class="text-xs text-slate-400 font-mono">/ˈtrædʒ.ə.di/</span>
+                <button onclick="speakWord(currentQuizWord.word)" class="text-xs bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-2 py-1 rounded-md flex items-center gap-1 font-semibold">
+                  🔊 단어 듣기
+                </button>
+              </div>
+            </div>
+
+            <!-- 5 Options (Multiple Choice) -->
+            <div class="mt-5 space-y-2.5" id="quizOptionsContainer">
+              <!-- Dynamically inserted 5 buttons -->
+            </div>
+
+            <!-- Feedback & Context Reveal Area (Answer Revealed) -->
+            <div id="quizResultFeedback" class="hidden mt-6 pt-5 border-t border-slate-200 space-y-4">
+              
+              <div id="quizAnswerStatusBanner" class="p-3 rounded-xl flex items-center justify-between">
+                <!-- Status text -->
+              </div>
+
+              <!-- Context Sentence with Highlighted Word -->
+              <div class="bg-amber-50/90 border border-amber-200 rounded-xl p-4">
+                <div class="flex items-center justify-between mb-2">
+                  <span class="text-[11px] font-bold text-amber-900 flex items-center gap-1">
+                    📖 원서 / 레포트 속 실제 원문 문맥
+                  </span>
+                  <button id="readContextBtn" class="text-xs bg-amber-200/80 hover:bg-amber-300 text-amber-900 font-bold px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-sm transition">
+                    🔊 원문 읽어주기 (TTS)
+                  </button>
+                </div>
+                <p id="quizContextText" class="text-sm text-slate-800 leading-relaxed font-serif">
+                  <!-- Context with <span class="highlight-word">word</span> -->
+                </p>
+                <div id="quizSourceMemo" class="mt-2 text-[11px] text-slate-500 font-sans">
+                  출처: 셰익스피어 원서
+                </div>
+              </div>
+
+              <!-- Next Button -->
+              <div class="flex justify-end pt-1">
+                <button onclick="nextQuizQuestion()" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm px-6 py-2.5 rounded-xl shadow-md transition flex items-center gap-2">
+                  <span>다음 문제</span> ➔
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ============================================== -->
+  <!-- SETTINGS MODAL (Gemini API & Options) -->
+  <!-- ============================================== -->
+  <div id="settingsModal" class="hidden fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
+    <div class="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+      <div class="flex items-center justify-between border-b border-slate-100 pb-3">
+        <h3 class="font-bold text-base text-slate-900 flex items-center gap-2">
+          <span>⚙️</span> 앱 설정 & 안내
+        </h3>
+        <button onclick="toggleSettingsModal()" class="text-slate-400 hover:text-slate-600 text-lg">✕</button>
+      </div>
+
+      <div class="space-y-3 text-xs text-slate-600">
+        <div class="p-3 bg-indigo-50 border border-indigo-100 rounded-xl">
+          <p class="font-bold text-indigo-900 mb-1">💻 맥북으로 옮기는 방법</p>
+          <p class="text-[11px] leading-relaxed text-indigo-800">
+            상단의 <strong>[맥북으로 저장]</strong> 버튼을 누르면 단일 HTML 파일로 즉시 다운로드됩니다. 맥북 다운로드 폴더에서 더블클릭만 하면 사파리나 크롬에서 바로 열립니다!
+          </p>
+        </div>
+
+        <div>
+          <label class="block font-bold text-slate-800 mb-1">Google Gemini API 키 (선택 사항)</label>
+          <input type="password" id="geminiApiKeyInput" placeholder="무료 API 키 (선택)"
+            class="w-full px-3 py-2 bg-white text-slate-900 border border-slate-300 rounded-lg text-xs font-mono">
+          <p class="text-[11px] text-slate-400 mt-1">※ 입력하지 않아도 무료 영한 사전 엔진으로 정상 작동합니다.</p>
+        </div>
+
+        <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
+          <div class="flex items-center justify-between font-bold text-slate-800 mb-1">
+            <span>발음 음성(TTS) 악센트</span>
+          </div>
+          <select id="ttsVoiceSelect" class="w-full px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-xs">
+            <option value="en-US">영어 (미국식 - US)</option>
+            <option value="en-GB">영어 (영국식 - GB)</option>
+          </select>
+        </div>
+
+        <div class="bg-slate-50 p-3 rounded-xl border border-slate-200">
+          <div class="flex items-center justify-between font-bold text-slate-800 mb-1">
+            <span>단어 데이터 관리</span>
+          </div>
+          <div class="flex gap-2 mt-2">
+            <button onclick="resetWithSamples()" class="px-3 py-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-lg font-semibold text-xs">
+              기본 샘플 단어로 초기화
+            </button>
+            <button onclick="clearAllData()" class="px-3 py-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-lg font-semibold text-xs">
+              전체 비우기
+            </button>
+          </div>
+        </div>
+      </div>
+
+      <div class="flex justify-end pt-2">
+        <button onclick="saveSettings()" class="bg-indigo-600 text-white font-bold px-4 py-2 rounded-xl text-xs">
+          저장 완료
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ==========================================
+    // INITIAL SAMPLE VOCABULARY (Korean Meanings)
+    // ==========================================
+    const INITIAL_SAMPLES = [
+      {
+        id: "sample_tragedy",
+        word: "tragedy",
+        phonetic: "/ˈtrædʒ.ə.di/",
+        partOfSpeech: "명사",
+        selectedMeaning: "비극, 비극적인 사건이나 참사",
+        allMeanings: ["비극, 참사", "비극적 사건", "비극 작품"],
+        contextSentence: "It was an unspeakable tragedy that shook the entire community and left everyone in deep grief.",
+        sourceMemo: "원서 문학 리포트",
+        date: "2026-11-15"
+      },
+      {
+        id: "sample_prevalent",
+        word: "prevalent",
+        phonetic: "/ˈprev.əl.ənt/",
+        partOfSpeech: "형용사",
+        selectedMeaning: "널리 퍼진, 유행하는",
+        allMeanings: ["널리 퍼진, 유행하는", "우세한, 지배적인"],
+        contextSentence: "The respiratory disease is significantly more prevalent in cold and crowded urban areas.",
+        sourceMemo: "의학 저널 원서",
+        date: "2026-11-15"
+      },
+      {
+        id: "sample_ubiquitous",
+        word: "ubiquitous",
+        phonetic: "/juːˈbɪk.wə.təs/",
+        partOfSpeech: "형용사",
+        selectedMeaning: "어디에나 존재하는, 아주 흔한",
+        allMeanings: ["어디에나 존재하는, 아주 흔한", "도처에 나타나는"],
+        contextSentence: "Smartphones have become truly ubiquitous in every aspect of modern communication.",
+        sourceMemo: "IT 트렌드 리포트",
+        date: "2026-11-15"
+      },
+      {
+        id: "sample_mitigate",
+        word: "mitigate",
+        phonetic: "/ˈmɪt.ɪ.ɡeɪt/",
+        partOfSpeech: "동사",
+        selectedMeaning: "(고통, 피해, 위험 등을) 완화하다, 경감시키다",
+        allMeanings: ["완화하다, 경감시키다", "누그러뜨리다"],
+        contextSentence: "Governments must implement strict policies to mitigate the severe consequences of climate crisis.",
+        sourceMemo: "기후 변화 특별 보고서",
+        date: "2026-11-15"
+      },
+      {
+        id: "sample_pragmatic",
+        word: "pragmatic",
+        phonetic: "/præɡˈmæt.ɪk/",
+        partOfSpeech: "형용사",
+        selectedMeaning: "실용적인, 실무적인",
+        allMeanings: ["실용적인, 실무적인", "현실주의적인"],
+        contextSentence: "Instead of debating theoretical models, the team adopted a pragmatic approach to launch the MVP quickly.",
+        sourceMemo: "스타트업 경영학 원서",
+        date: "2026-11-15"
+      }
+    ];
+
+    // Local Fast Korean Dictionary DB
+    const BUILTIN_KOREAN_DICT = {
+      "tragedy": { phonetic: "/ˈtrædʒ.ə.di/", meanings: [{ pos: "명사", def: "비극, 비극적인 사건" }, { pos: "명사", def: "참사, 재난" }, { pos: "명사", def: "(문학) 비극 작품" }] },
+      "prevalent": { phonetic: "/ˈprev.əl.ənt/", meanings: [{ pos: "형용사", def: "널리 퍼진, 유행하는" }, { pos: "형용사", def: "우세한, 지배적인" }] },
+      "ubiquitous": { phonetic: "/juːˈbɪk.wə.təs/", meanings: [{ pos: "형용사", def: "어디에나 있는, 아주 흔한" }, { pos: "형용사", def: "도처에 존재하는" }] },
+      "mitigate": { phonetic: "/ˈmɪt.ɪ.ɡeɪt/", meanings: [{ pos: "동사", def: "완화하다, 경감시키다" }, { pos: "동사", def: "누그러뜨리다, 진정시키다" }] },
+      "pragmatic": { phonetic: "/præɡˈmæt.ɪk/", meanings: [{ pos: "형용사", def: "실용적인, 실무적인" }, { pos: "형용사", def: "현실주의적인" }] },
+      "lucid": { phonetic: "/ˈluː.sɪd/", meanings: [{ pos: "형용사", def: "명쾌한, 이해하기 쉬운" }, { pos: "형용사", def: "의식이 또렷한, 맑은" }] },
+      "ambiguous": { phonetic: "/æmˈbɪɡ.ju.əs/", meanings: [{ pos: "형용사", def: "애매모호한, 두 가지 이상으로 해석되는" }, { pos: "형용사", def: "분명하지 않은" }] },
+      "resilient": { phonetic: "/rɪˈzɪl.jənt/", meanings: [{ pos: "형용사", def: "회복력 있는, 탄력 있는" }, { pos: "형용사", def: "곧 기운을 차리는" }] },
+      "scrutinize": { phonetic: "/ˈskruː.tɪ.naɪz/", meanings: [{ pos: "동사", def: "세심하게 살피다, 면밀히 조사하다" }] },
+      "tenacious": { phonetic: "/təˈneɪ.ʃəs/", meanings: [{ pos: "형용사", def: "끈기 있는, 완강한, 집요한" }] },
+      "complacent": { phonetic: "/kəmˈpleɪ.sənt/", meanings: [{ pos: "형용사", def: "자기만족에 빠진, 안주하는" }] },
+      "ephemeral": { phonetic: "/ɪˈfem.ər.əl/", meanings: [{ pos: "형용사", def: "수명이 짧은, 덧없는, 순식간의" }] },
+      "prolific": { phonetic: "/prəˈlɪf.ɪk/", meanings: [{ pos: "형용사", def: "다작하는, 풍부한, 다산의" }] },
+      "meticulous": { phonetic: "/məˈtɪk.jə.ləs/", meanings: [{ pos: "형용사", def: "꼼꼼한, 세심한, 빈틈없는" }] },
+      "paradigm": { phonetic: "/ˈpær.ə.daɪm/", meanings: [{ pos: "명사", def: "패러다임, 전형적인 예, 인식의 틀" }] }
+    };
+
+    const DISTRACTOR_POOL_KOREAN = [
+      "갑작스럽게 중단하다", "서로 상충하다, 모순되다", "극도로 분노하다", "가치를 과대평가하다",
+      "임시로 대체하다", "신중하게 고려하다", "완전히 제거하다", "불필요하게 반복하다",
+      "우연히 마주치다", "겉보기에만 화려한", "비밀리에 추진하다", "강력하게 반발하다",
+      "천천히 침식되다", "적극적으로 옹호하다", "엄격하게 통제하다", "호기심을 유발하다"
+    ];
+
+    const POS_MAP = {
+      "noun": "명사",
+      "verb": "동사",
+      "adjective": "형용사",
+      "adverb": "부사",
+      "preposition": "전치사",
+      "conjunction": "접속사"
+    };
+
+    // ==========================================
+    // STATE
+    // ==========================================
+    let vocabulary = [];
+    let currentDictData = null;
+    let selectedMeaningText = "";
+    let selectedPos = "";
+
+    // Quiz State
+    let quizList = [];
+    let currentQuizIndex = 0;
+    let currentQuizWord = null;
+    let quizScore = 0;
+
+    // ==========================================
+    // INITIALIZATION
+    // ==========================================
+    window.addEventListener('DOMContentLoaded', () => {
+      loadVocabulary();
+      loadSettings();
+      updateBadge();
+    });
+
+    function loadVocabulary() {
+      const stored = localStorage.getItem('context_vocab_data');
+      if (stored) {
+        try {
+          vocabulary = JSON.parse(stored);
+        } catch (e) {
+          vocabulary = [...INITIAL_SAMPLES];
+        }
+      } else {
+        vocabulary = [...INITIAL_SAMPLES];
+        saveVocabularyStorage();
+      }
+      renderVocabList();
+    }
+
+    function saveVocabularyStorage() {
+      localStorage.setItem('context_vocab_data', JSON.stringify(vocabulary));
+      updateBadge();
+    }
+
+    function updateBadge() {
+      document.getElementById('vocaCountBadge').textContent = vocabulary.length;
+    }
+
+    // ==========================================
+    // TAB SWITCHING
+    // ==========================================
+    function switchTab(tab) {
+      document.getElementById('tabAdd').classList.add('hidden');
+      document.getElementById('tabList').classList.add('hidden');
+      document.getElementById('tabQuiz').classList.add('hidden');
+
+      document.getElementById('tabAddBtn').className = "px-3 py-1.5 text-xs font-semibold rounded-lg text-slate-600 hover:text-slate-900 transition";
+      document.getElementById('tabListBtn').className = "px-3 py-1.5 text-xs font-semibold rounded-lg text-slate-600 hover:text-slate-900 transition flex items-center gap-1";
+      document.getElementById('tabQuizBtn').className = "px-3 py-1.5 text-xs font-semibold rounded-lg text-slate-600 hover:text-slate-900 transition flex items-center gap-1";
+
+      if (tab === 'add') {
+        document.getElementById('tabAdd').classList.remove('hidden');
+        document.getElementById('tabAddBtn').className = "px-3 py-1.5 text-xs font-bold rounded-lg bg-white text-indigo-600 shadow-sm transition";
+      } else if (tab === 'list') {
+        document.getElementById('tabList').classList.remove('hidden');
+        document.getElementById('tabListBtn').className = "px-3 py-1.5 text-xs font-bold rounded-lg bg-white text-indigo-600 shadow-sm transition flex items-center gap-1";
+        renderVocabList();
+      } else if (tab === 'quiz') {
+        document.getElementById('tabQuiz').classList.remove('hidden');
+        document.getElementById('tabQuizBtn').className = "px-3 py-1.5 text-xs font-bold rounded-lg bg-white text-indigo-600 shadow-sm transition flex items-center gap-1";
+        initQuiz();
+      }
+    }
+
+    // ==========================================
+    // DICTIONARY SEARCH (Korean Meanings First)
+    // ==========================================
+    async function searchDictionary() {
+      const rawWord = document.getElementById('inputWord').value.trim();
+      if (!rawWord) {
+        alert("조회할 영어 단어를 입력해 주세요!");
+        return;
+      }
+      const word = rawWord.toLowerCase();
+
+      // UI Loading State
+      document.getElementById('dictPlaceholder').classList.add('hidden');
+      document.getElementById('dictResultArea').classList.add('hidden');
+      document.getElementById('dictLoading').classList.remove('hidden');
+      document.getElementById('saveWordBtn').disabled = true;
+      document.getElementById('saveWordBtn').className = "w-full sm:w-auto bg-slate-300 text-slate-500 font-bold px-6 py-2.5 text-xs rounded-xl transition cursor-not-allowed flex items-center justify-center gap-1.5";
+
+      // Parallel step 1: Get phonetic symbol
+      let phonetic = `/${word}/`;
+      try {
+        const pRes = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`);
+        if (pRes.ok) {
+          const pData = await pRes.json();
+          if (pData[0] && pData[0].phonetic) {
+            phonetic = pData[0].phonetic;
+          } else if (pData[0] && pData[0].phonetics && pData[0].phonetics[0] && pData[0].phonetics[0].text) {
+            phonetic = pData[0].phonetics[0].text;
+          }
+        }
+      } catch (e) {
+        console.warn("Phonetic lookup skipped:", e);
+      }
+
+      // Step 2: Check local DB
+      if (BUILTIN_KOREAN_DICT[word]) {
+        renderDictionaryResult(word, BUILTIN_KOREAN_DICT[word].phonetic || phonetic, BUILTIN_KOREAN_DICT[word].meanings, "로컬 영한 사전");
+        return;
+      }
+
+      // Step 3: Google Translate Official Dictionary API (Korean Entries)
+      try {
+        const gRes = await fetch(`https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=ko&dt=t&dt=bd&q=${encodeURIComponent(word)}`);
+        if (gRes.ok) {
+          const gData = await gRes.json();
+          const meanings = [];
+
+          // gData[1] contains dictionary entries: [ [pos, [definitions...]], ... ]
+          if (gData[1] && Array.isArray(gData[1])) {
+            gData[1].forEach(entry => {
+              const posEn = entry[0];
+              const posKo = POS_MAP[posEn] || posEn;
+              const defs = entry[1] || [];
+              
+              defs.slice(0, 3).forEach(d => {
+                meanings.push({
+                  pos: posKo,
+                  def: d
+                });
+              });
+            });
+          }
+
+          // If no dictionary breakdown, check top translation text: gData[0][0][0]
+          if (meanings.length === 0 && gData[0] && gData[0][0] && gData[0][0][0]) {
+            meanings.push({
+              pos: "주요 뜻",
+              def: gData[0][0][0]
+            });
+          }
+
+          if (meanings.length > 0) {
+            renderDictionaryResult(word, phonetic, meanings, "실시간 영한 사전");
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn("Google translate dict error, falling back:", err);
+      }
+
+      // Step 4: MyMemory API Fallback
+      try {
+        const mRes = await fetch(`https://api.mymemory.translated.net/get?q=${encodeURIComponent(word)}&langpair=en|ko`);
+        if (mRes.ok) {
+          const mData = await mRes.json();
+          const meanings = [];
+          if (mData.responseData && mData.responseData.translatedText) {
+            meanings.push({ pos: "대표 뜻", def: mData.responseData.translatedText });
+          }
+          if (mData.matches) {
+            mData.matches.slice(0, 3).forEach(m => {
+              if (m.translation && !meanings.some(x => x.def === m.translation)) {
+                meanings.push({ pos: "뜻", def: m.translation });
+              }
+            });
+          }
+          if (meanings.length > 0) {
+            renderDictionaryResult(word, phonetic, meanings, "글로벌 번역 사전");
+            return;
+          }
+        }
+      } catch (err) {
+        console.error("MyMemory error:", err);
+      }
+
+      // Final fallback: allow user to input directly
+      renderDictionaryResult(word, phonetic, [
+        { pos: "직접 입력", def: "한국어 뜻을 직접 입력할 수 있습니다." }
+      ], "수동 입력");
+    }
+
+    function renderDictionaryResult(word, phonetic, meanings, sourceName) {
+      document.getElementById('dictLoading').classList.add('hidden');
+      document.getElementById('dictResultArea').classList.remove('hidden');
+
+      document.getElementById('dictWordDisplay').textContent = word;
+      document.getElementById('dictPhoneticDisplay').textContent = phonetic || `/${word}/`;
+      document.getElementById('dictSourceTag').textContent = sourceName;
+
+      currentDictData = { word, phonetic, meanings };
+      selectedMeaningText = "";
+      selectedPos = "";
+
+      const container = document.getElementById('meaningsContainer');
+      container.innerHTML = "";
+
+      meanings.forEach((m, idx) => {
+        const option = document.createElement('label');
+        option.className = "flex items-start gap-3 p-2.5 rounded-xl border border-slate-200 bg-white hover:border-indigo-400 cursor-pointer transition text-xs shadow-sm";
+        option.innerHTML = `
+          <input type="radio" name="meaningRadio" value="${idx}" class="mt-0.5 accent-indigo-600" onchange="selectMeaning(${idx})">
+          <div class="flex-1">
+            <span class="inline-block px-1.5 py-0.5 bg-indigo-50 text-indigo-700 font-bold rounded text-[10px] mr-1.5">${m.pos}</span>
+            <span class="text-slate-900 font-bold">${m.def}</span>
+          </div>
+        `;
+        container.appendChild(option);
+      });
+
+      // Default select first meaning
+      if (meanings.length > 0) {
+        const firstRadio = container.querySelector('input[type="radio"]');
+        if (firstRadio) {
+          firstRadio.checked = true;
+          selectMeaning(0);
+        }
+      }
+    }
+
+    function selectMeaning(idx) {
+      if (!currentDictData || !currentDictData.meanings[idx]) return;
+      selectedMeaningText = currentDictData.meanings[idx].def;
+      selectedPos = currentDictData.meanings[idx].pos;
+
+      const saveBtn = document.getElementById('saveWordBtn');
+      saveBtn.disabled = false;
+      saveBtn.className = "w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-6 py-2.5 text-xs rounded-xl shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer";
+    }
+
+    function applyCustomMeaning() {
+      const customVal = document.getElementById('customMeaningInput').value.trim();
+      if (!customVal) {
+        alert("뜻을 입력해 주세요!");
+        return;
+      }
+      selectedMeaningText = customVal;
+      selectedPos = "사용자 정의";
+
+      const container = document.getElementById('meaningsContainer');
+      const newOption = document.createElement('label');
+      newOption.className = "flex items-start gap-3 p-2.5 rounded-xl border-2 border-indigo-500 bg-indigo-50/50 cursor-pointer transition text-xs shadow-sm";
+      newOption.innerHTML = `
+        <input type="radio" name="meaningRadio" checked class="mt-0.5 accent-indigo-600">
+        <div class="flex-1">
+          <span class="inline-block px-1.5 py-0.5 bg-indigo-600 text-white font-bold rounded text-[10px] mr-1.5">직접입력</span>
+          <span class="text-slate-900 font-bold">${customVal}</span>
+        </div>
+      `;
+      container.prepend(newOption);
+
+      const saveBtn = document.getElementById('saveWordBtn');
+      saveBtn.disabled = false;
+      saveBtn.className = "w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-6 py-2.5 text-xs rounded-xl shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer";
+    }
+
+    function saveToVocabulary() {
+      if (!currentDictData || !selectedMeaningText) return;
+
+      const contextSentence = document.getElementById('inputContext').value.trim();
+      const sourceMemo = document.getElementById('inputSource').value.trim();
+
+      const newItem = {
+        id: "vocab_" + Date.now(),
+        word: currentDictData.word,
+        phonetic: currentDictData.phonetic,
+        partOfSpeech: selectedPos,
+        selectedMeaning: selectedMeaningText,
+        allMeanings: currentDictData.meanings.map(m => m.def),
+        contextSentence: contextSentence || `This is a sentence containing the word ${currentDictData.word}.`,
+        sourceMemo: sourceMemo || "원서 메모",
+        date: new Date().toISOString().slice(0, 10)
+      };
+
+      vocabulary.unshift(newItem);
+      saveVocabularyStorage();
+
+      // Reset
+      document.getElementById('inputWord').value = "";
+      document.getElementById('inputContext').value = "";
+      document.getElementById('inputSource').value = "";
+      document.getElementById('dictResultArea').classList.add('hidden');
+      document.getElementById('dictPlaceholder').classList.remove('hidden');
+
+      alert(`'${newItem.word}' (${newItem.selectedMeaning}) 저장 완료!\n[5지선다 퀴즈]에서 복습할 수 있습니다.`);
+      switchTab('list');
+    }
+
+    function fillSample(word, context, source) {
+      document.getElementById('inputWord').value = word;
+      document.getElementById('inputContext').value = context;
+      document.getElementById('inputSource').value = source;
+      searchDictionary();
+    }
+
+    // ==========================================
+    // TAB 2: VOCABULARY LIST RENDERING
+    // ==========================================
+    function renderVocabList() {
+      const container = document.getElementById('vocabListContainer');
+      const emptyNotice = document.getElementById('vocabEmptyNotice');
+
+      if (vocabulary.length === 0) {
+        container.innerHTML = "";
+        emptyNotice.classList.remove('hidden');
+        return;
+      }
+
+      emptyNotice.classList.add('hidden');
+      container.innerHTML = "";
+
+      vocabulary.forEach((item) => {
+        const card = document.createElement('div');
+        card.className = "bg-white rounded-2xl border border-slate-200 p-5 shadow-sm hover:shadow-md transition flex flex-col justify-between";
+
+        const highlightedContext = highlightWordInText(item.contextSentence, item.word);
+
+        card.innerHTML = `
+          <div>
+            <div class="flex items-start justify-between mb-2">
+              <div>
+                <div class="flex items-center gap-2">
+                  <h3 class="text-lg font-black text-slate-900">${item.word}</h3>
+                  <span class="text-xs text-slate-400 font-mono">${item.phonetic || ''}</span>
+                </div>
+                <div class="flex items-center gap-1.5 mt-1">
+                  <span class="text-[10px] bg-indigo-50 text-indigo-700 font-bold px-1.5 py-0.5 rounded">${item.partOfSpeech || '단어'}</span>
+                  <span class="text-xs text-slate-900 font-bold">${item.selectedMeaning}</span>
+                </div>
+              </div>
+              <div class="flex items-center gap-1">
+                <button onclick="speakWord('${item.word}')" class="p-1.5 text-slate-400 hover:text-indigo-600 rounded-lg hover:bg-indigo-50 transition" title="발음 듣기">
+                  🔊
+                </button>
+                <button onclick="deleteVocabItem('${item.id}')" class="p-1.5 text-slate-300 hover:text-rose-600 rounded-lg hover:bg-rose-50 transition" title="삭제">
+                  🗑️
+                </button>
+              </div>
+            </div>
+
+            <!-- Context Sentence with Highlight -->
+            <div class="mt-3 p-3 bg-slate-50 border border-slate-100 rounded-xl">
+              <div class="flex items-center justify-between mb-1">
+                <span class="text-[10px] font-bold text-slate-400">원서 원문:</span>
+                <button onclick="speakText('${escapeQuotes(item.contextSentence)}')" class="text-[10px] text-indigo-600 hover:underline flex items-center gap-0.5 font-bold">
+                  🔊 문장 전체 듣기
+                </button>
+              </div>
+              <p class="text-xs text-slate-700 leading-relaxed font-serif">${highlightedContext}</p>
+            </div>
+          </div>
+
+          <div class="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
+            <span>출처: ${item.sourceMemo || '원서'}</span>
+            <span>${item.date}</span>
+          </div>
+        `;
+        container.appendChild(card);
+      });
+    }
+
+    function deleteVocabItem(id) {
+      if (!confirm("이 단어를 단어장에서 삭제할까요?")) return;
+      vocabulary = vocabulary.filter(v => v.id !== id);
+      saveVocabularyStorage();
+      renderVocabList();
+    }
+
+    function highlightWordInText(text, word) {
+      if (!text || !word) return text || "";
+      const regex = new RegExp(`(${word}[a-z]*)`, 'gi');
+      return text.replace(regex, '<span class="highlight-word">$1</span>');
+    }
+
+    function escapeQuotes(str) {
+      return (str || '').replace(/'/g, "\\'").replace(/"/g, '&quot;');
+    }
+
+    // ==========================================
+    // TAB 3: 5-CHOICE MULTIPLE CHOICE QUIZ
+    // ==========================================
+    function startQuizNow() {
+      switchTab('quiz');
+    }
+
+    function initQuiz() {
+      if (vocabulary.length === 0) {
+        alert("퀴즈를 풀기 전에 먼저 단어를 1개 이상 등록해 주세요!");
+        switchTab('add');
+        return;
+      }
+
+      quizList = [...vocabulary].sort(() => 0.5 - Math.random());
+      currentQuizIndex = 0;
+      quizScore = 0;
+      document.getElementById('quizScoreText').textContent = "0";
+
+      loadQuestion(0);
+    }
+
+    function loadQuestion(index) {
+      if (index >= quizList.length) {
+        showQuizFinished();
+        return;
+      }
+
+      currentQuizIndex = index;
+      currentQuizWord = quizList[index];
+
+      // Update Header
+      document.getElementById('quizProgressText').textContent = `문제 ${index + 1} / ${quizList.length}`;
+      document.getElementById('quizQuestionWord').textContent = currentQuizWord.word;
+      document.getElementById('quizWordPhonetic').textContent = currentQuizWord.phonetic || `/${currentQuizWord.word}/`;
+
+      // Hide Feedback Area
+      document.getElementById('quizResultFeedback').classList.add('hidden');
+
+      // Generate 5 Korean Options: 1 Correct + 4 Distractors
+      const correctAnswer = currentQuizWord.selectedMeaning;
+      const options = [correctAnswer];
+
+      // Gather candidate wrong answers from other vocab words
+      const otherVocabMeanings = vocabulary
+        .filter(v => v.word !== currentQuizWord.word)
+        .map(v => v.selectedMeaning);
+
+      const shuffledOthers = [...otherVocabMeanings].sort(() => 0.5 - Math.random());
+      for (const m of shuffledOthers) {
+        if (!options.includes(m) && options.length < 5) {
+          options.push(m);
+        }
+      }
+
+      // If still fewer than 5, pull from Korean distractor pool
+      const shuffledDistractors = [...DISTRACTOR_POOL_KOREAN].sort(() => 0.5 - Math.random());
+      for (const d of shuffledDistractors) {
+        if (!options.includes(d) && options.length < 5) {
+          options.push(d);
+        }
+      }
+
+      // Shuffle the 5 options
+      const finalOptions = options.sort(() => 0.5 - Math.random());
+
+      // Render 5 Buttons
+      const container = document.getElementById('quizOptionsContainer');
+      container.innerHTML = "";
+
+      const optionLabels = ["①", "②", "③", "④", "⑤"];
+
+      finalOptions.forEach((opt, idx) => {
+        const btn = document.createElement('button');
+        btn.className = "quiz-option-btn w-full text-left p-3.5 rounded-xl border border-slate-200 bg-white hover:border-indigo-500 hover:bg-indigo-50/40 text-xs font-bold text-slate-900 transition flex items-center gap-3 shadow-sm";
+        btn.innerHTML = `
+          <span class="w-6 h-6 rounded-full bg-slate-100 text-slate-700 font-black flex items-center justify-center text-xs border border-slate-200 shrink-0">
+            ${optionLabels[idx]}
+          </span>
+          <span class="flex-1">${opt}</span>
+        `;
+        btn.onclick = () => handleQuizAnswer(opt, btn, correctAnswer);
+        container.appendChild(btn);
+      });
+    }
+
+    function handleQuizAnswer(chosen, chosenBtn, correctAnswer) {
+      const isCorrect = (chosen === correctAnswer);
+      const allButtons = document.querySelectorAll('.quiz-option-btn');
+
+      allButtons.forEach(btn => {
+        btn.disabled = true;
+        btn.classList.remove('hover:border-indigo-500', 'hover:bg-indigo-50/40');
+      });
+
+      const feedback = document.getElementById('quizResultFeedback');
+      const statusBanner = document.getElementById('quizAnswerStatusBanner');
+      feedback.classList.remove('hidden');
+
+      if (isCorrect) {
+        quizScore++;
+        document.getElementById('quizScoreText').textContent = quizScore;
+        
+        chosenBtn.className = "w-full text-left p-3.5 rounded-xl border-2 border-emerald-500 bg-emerald-50 text-xs font-black text-emerald-900 transition flex items-center gap-3";
+        statusBanner.className = "p-3 rounded-xl bg-emerald-500 text-white flex items-center justify-between";
+        statusBanner.innerHTML = `
+          <div class="flex items-center gap-2 font-bold text-xs">
+            <span class="text-base">🎉</span>
+            <span>정답입니다!</span>
+          </div>
+          <span class="text-[11px] bg-white/20 px-2 py-0.5 rounded font-mono">+1 Point</span>
+        `;
+
+        // Automatically play word pronunciation
+        speakWord(currentQuizWord.word);
+      } else {
+        chosenBtn.className = "w-full text-left p-3.5 rounded-xl border-2 border-rose-400 bg-rose-50 text-xs font-bold text-rose-900 transition flex items-center gap-3";
+        
+        allButtons.forEach(btn => {
+          if (btn.textContent.includes(correctAnswer)) {
+            btn.className = "w-full text-left p-3.5 rounded-xl border-2 border-emerald-500 bg-emerald-50 text-xs font-black text-emerald-900 transition flex items-center gap-3";
+          }
+        });
+
+        statusBanner.className = "p-3 rounded-xl bg-rose-500 text-white flex items-center justify-between";
+        statusBanner.innerHTML = `
+          <div class="flex items-center gap-2 font-bold text-xs">
+            <span class="text-base">💡</span>
+            <span>오답! 정답은 [${correctAnswer}] 입니다.</span>
+          </div>
+        `;
+      }
+
+      // Populate Context Sentence with Highlight
+      const contextP = document.getElementById('quizContextText');
+      contextP.innerHTML = highlightWordInText(currentQuizWord.contextSentence, currentQuizWord.word);
+      document.getElementById('quizSourceMemo').textContent = `출처: ${currentQuizWord.sourceMemo || '원서'}`;
+
+      // Set Read Context Audio Button
+      const readBtn = document.getElementById('readContextBtn');
+      readBtn.onclick = () => speakText(currentQuizWord.contextSentence);
+
+      // Auto-read context sentence if answer was correct
+      if (isCorrect) {
+        setTimeout(() => {
+          speakText(currentQuizWord.contextSentence);
+        }, 1000);
+      }
+    }
+
+    function nextQuizQuestion() {
+      loadQuestion(currentQuizIndex + 1);
+    }
+
+    function showQuizFinished() {
+      const container = document.getElementById('quizOptionsContainer');
+      container.innerHTML = `
+        <div class="text-center py-10 space-y-4">
+          <p class="text-5xl">🏆</p>
+          <h3 class="text-xl font-black text-slate-900">퀴즈 완료!</h3>
+          <p class="text-xs text-slate-600">
+            총 <strong>${quizList.length}</strong>문제 중 <strong class="text-indigo-600 text-base font-black">${quizScore}</strong>문제를 맞히셨습니다.
+          </p>
+          <div class="pt-4 flex justify-center gap-2">
+            <button onclick="initQuiz()" class="bg-indigo-600 text-white font-bold text-xs px-5 py-2.5 rounded-xl shadow transition">
+              다시 풀기 🔄
+            </button>
+            <button onclick="switchTab('list')" class="bg-slate-200 text-slate-800 font-bold text-xs px-5 py-2.5 rounded-xl transition">
+              단어장 확인하기
+            </button>
+          </div>
+        </div>
+      `;
+      document.getElementById('quizResultFeedback').classList.add('hidden');
+      document.getElementById('quizQuestionWord').textContent = "수고하셨습니다!";
+      document.getElementById('quizWordPhonetic').textContent = "";
+    }
+
+    // ==========================================
+    // TEXT-TO-SPEECH (TTS - 100% Free Web Speech API)
+    // ==========================================
+    function speakWord(word) {
+      if (!word) return;
+      speakText(word, 0.9);
+    }
+
+    function speakText(text, rate = 0.95) {
+      if (!('speechSynthesis' in window)) {
+        alert("현재 브라우저가 음성 재생을 지원하지 않습니다.");
+        return;
+      }
+
+      window.speechSynthesis.cancel();
+
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = rate;
+
+      const selectedVoiceCode = document.getElementById('ttsVoiceSelect')?.value || 'en-US';
+      utterance.lang = selectedVoiceCode;
+
+      const voices = window.speechSynthesis.getVoices();
+      const matchedVoice = voices.find(v => v.lang.startsWith(selectedVoiceCode));
+      if (matchedVoice) {
+        utterance.voice = matchedVoice;
+      }
+
+      window.speechSynthesis.speak(utterance);
+    }
+
+    // ==========================================
+    // DOWNLOAD TO MAC FUNCTION
+    // ==========================================
+    function downloadAppToMac() {
+      const htmlContent = document.documentElement.outerHTML;
+      const blob = new Blob(["<!DOCTYPE html>\n" + htmlContent], { type: "text/html;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "ContextVocab_원서단어장.html";
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      alert("맥북의 [다운로드] 폴더에 'ContextVocab_원서단어장.html' 파일이 저장되었습니다!\n\n맥북에서 파일을 더블클릭하면 사파리나 크롬에서 바로 실행됩니다.");
+    }
+
+    // ==========================================
+    // SETTINGS & STORAGE
+    // ==========================================
+    function toggleSettingsModal() {
+      const modal = document.getElementById('settingsModal');
+      modal.classList.toggle('hidden');
+    }
+
+    function loadSettings() {
+      const apiKey = localStorage.getItem('gemini_api_key') || '';
+      document.getElementById('geminiApiKeyInput').value = apiKey;
+      const voice = localStorage.getItem('tts_voice') || 'en-US';
+      document.getElementById('ttsVoiceSelect').value = voice;
+    }
+
+    function saveSettings() {
+      const apiKey = document.getElementById('geminiApiKeyInput').value.trim();
+      const voice = document.getElementById('ttsVoiceSelect').value;
+
+      localStorage.setItem('gemini_api_key', apiKey);
+      localStorage.setItem('tts_voice', voice);
+
+      toggleSettingsModal();
+      alert("설정이 저장되었습니다.");
+    }
+
+    function resetWithSamples() {
+      if (!confirm("기본 샘플 단어 5개로 단어장을 초기화할까요?")) return;
+      vocabulary = [...INITIAL_SAMPLES];
+      saveVocabularyStorage();
+      renderVocabList();
+      toggleSettingsModal();
+    }
+
+    function clearAllData() {
+      if (!confirm("정말 모든 단어를 삭제할까요?")) return;
+      vocabulary = [];
+      saveVocabularyStorage();
+      renderVocabList();
+      toggleSettingsModal();
+    }
+  </script>
+</body>
+</html>
