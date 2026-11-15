@@ -17,6 +17,7 @@ import {
   DISTRACTOR_POOL_KOREAN,
 } from '@/lib/dictionary';
 import { getLiveDictCandidates, SuggestionItem } from '@/lib/autocomplete';
+import { extractTextFromPageImage, findSentenceWithWord } from '@/lib/ocr';
 import { fireConfetti } from '@/lib/confetti';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import {
@@ -35,6 +36,10 @@ import {
   BookMarked,
   Layers,
   BarChart3,
+  Camera,
+  ScanLine,
+  Check,
+  RotateCw,
 } from 'lucide-react';
 
 export default function Home() {
@@ -55,6 +60,13 @@ export default function Home() {
   const [selectedPos, setSelectedPos] = useState('');
   const [customMeaning, setCustomMeaning] = useState('');
   const inputWordRef = useRef<HTMLInputElement>(null);
+
+  // OCR Book Page Scan State (현재 촬영한 페이지 텍스트 & 캐시)
+  const [pageOcrText, setPageOcrText] = useState<string>('');
+  const [isOcrProcessing, setIsOcrProcessing] = useState(false);
+  const [ocrProgress, setOcrProgress] = useState(0);
+  const [ocrDetectedNotice, setOcrDetectedNotice] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Filter & Grouping State
   const [selectedBookFilter, setSelectedBookFilter] = useState<string>('all');
@@ -97,6 +109,9 @@ export default function Home() {
 
       const lastBook = localStorage.getItem('context_vocab_last_book_title');
       if (lastBook) setInputBookTitle(lastBook);
+
+      const savedPageOcr = localStorage.getItem('context_vocab_cached_page_ocr');
+      if (savedPageOcr) setPageOcrText(savedPageOcr);
     }
   }, []);
 
@@ -116,6 +131,39 @@ export default function Home() {
     setIsLoaded(true);
   }
 
+  // OCR 페이지 사진 촬영 / 업로드 핸들러
+  async function handlePagePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsOcrProcessing(true);
+    setOcrProgress(0);
+
+    try {
+      const extractedText = await extractTextFromPageImage(file, (p) => setOcrProgress(p));
+      setPageOcrText(extractedText);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('context_vocab_cached_page_ocr', extractedText);
+      }
+
+      triggerToast('페이지 사진 인식 완료! 📸', '이 페이지에서 모르는 단어를 입력하면 원문 문장을 자동으로 찾아줍니다.');
+
+      // 만약 이미 검색어에 단어가 입력되어 있다면 즉시 문장 자동 탐색
+      if (inputWord.trim()) {
+        const found = findSentenceWithWord(extractedText, inputWord.trim());
+        if (found) {
+          setInputContext(found);
+          setOcrDetectedNotice(`촬영한 페이지에서 문장을 자동으로 찾았습니다: "${found.slice(0, 50)}..."`);
+        }
+      }
+    } catch (err) {
+      alert('페이지 글자 인식 중 오류가 발생했습니다. 사진이 선명한지 확인해 주세요.');
+    } finally {
+      setIsOcrProcessing(false);
+      if (fileInputRef.current) fileInputRef.current.value = '';
+    }
+  }
+
   // Handle Dictionary Search with target word
   async function executeSearch(targetWord?: string) {
     const wordToSearch = (targetWord || inputWord).trim();
@@ -123,6 +171,16 @@ export default function Home() {
       alert('조회할 영어 단어를 입력해 주세요!');
       return;
     }
+
+    // 만약 현재 촬영해둔 페이지 텍스트가 있다면, 해당 단어가 쓰인 원문 문장을 자동 탐색하여 채움!
+    if (pageOcrText) {
+      const found = findSentenceWithWord(pageOcrText, wordToSearch);
+      if (found) {
+        setInputContext(found);
+        setOcrDetectedNotice(`📸 촬영한 페이지에서 원문 문장을 자동으로 찾았습니다!`);
+      }
+    }
+
     setIsSearchingDict(true);
     try {
       const res = await lookupDictionary(wordToSearch);
@@ -548,6 +606,94 @@ export default function Home() {
                   )}
                 </div>
 
+                {/* Hidden File/Camera Input */}
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handlePagePhotoUpload}
+                  className="hidden"
+                />
+
+                {/* Page Photo Capture / Scanner Card */}
+                <div className="bg-gradient-to-r from-indigo-50 to-purple-50 p-3.5 rounded-xl border border-indigo-100">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-xs font-bold text-indigo-950 flex items-center gap-1.5">
+                      <Camera className="w-4 h-4 text-indigo-600" />
+                      <span>책 페이지 찰칵 찍기 (문장 자동 인식)</span>
+                    </span>
+                    {pageOcrText && (
+                      <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <Check className="w-3 h-3" /> 페이지 인식됨
+                      </span>
+                    )}
+                  </div>
+
+                  {isOcrProcessing ? (
+                    <div className="py-2.5 space-y-1.5">
+                      <div className="flex items-center justify-between text-xs font-bold text-indigo-700">
+                        <span className="flex items-center gap-1.5">
+                          <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>페이지 텍스트를 읽어내는 중...</span>
+                        </span>
+                        <span>{ocrProgress}%</span>
+                      </div>
+                      <div className="w-full bg-indigo-200/50 rounded-full h-1.5 overflow-hidden">
+                        <div
+                          className="bg-indigo-600 h-1.5 transition-all duration-200"
+                          style={{ width: `${ocrProgress}%` }}
+                        ></div>
+                      </div>
+                    </div>
+                  ) : pageOcrText ? (
+                    <div className="space-y-2 pt-1">
+                      <p className="text-[11px] text-indigo-900/80 line-clamp-2 italic bg-white/70 p-2 rounded-lg border border-indigo-100">
+                        &quot;{pageOcrText.slice(0, 120)}...&quot;
+                      </p>
+                      <div className="flex items-center justify-between">
+                        <span className="text-[10px] text-slate-500">
+                          💡 단어를 입력하면 이 페이지에서 문장을 자동으로 찾습니다!
+                        </span>
+                        <div className="flex items-center gap-2">
+                          <button
+                            type="button"
+                            onClick={() => fileInputRef.current?.click()}
+                            className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline flex items-center gap-1"
+                          >
+                            <Camera className="w-3 h-3" />
+                            <span>새 페이지 찍기</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPageOcrText('');
+                              if (typeof window !== 'undefined') localStorage.removeItem('context_vocab_cached_page_ocr');
+                            }}
+                            className="text-[11px] text-slate-400 hover:text-rose-500"
+                          >
+                            지우기
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="pt-1.5 flex items-center justify-between">
+                      <p className="text-[11px] text-slate-500">
+                        페이지를 찍어두면 단어 등록 시 원문 문장을 일일이 치지 않아도 알아서 채워집니다.
+                      </p>
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="bg-white hover:bg-indigo-50 border border-indigo-300 text-indigo-700 text-xs font-bold px-3 py-1.5 rounded-lg shadow-xs transition shrink-0 flex items-center gap-1.5"
+                      >
+                        <Camera className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>사진 찍기 / 업로드</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
                 {/* Word Input */}
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
@@ -565,8 +711,18 @@ export default function Home() {
                       type="text"
                       value={inputWord}
                       onChange={(e) => {
-                        setInputWord(e.target.value);
+                        const val = e.target.value;
+                        setInputWord(val);
                         setDictResult(null); // 타이핑 시 이전 상세 결과 닫고 실시간 리스트 표시
+
+                        // 타이핑 도중에도 현재 페이지 텍스트에서 단어 문장 자동 탐색
+                        if (pageOcrText && val.trim().length >= 3) {
+                          const found = findSentenceWithWord(pageOcrText, val.trim());
+                          if (found && !inputContext) {
+                            setInputContext(found);
+                            setOcrDetectedNotice('📸 촬영한 페이지에서 원문 문장을 자동으로 찾았습니다!');
+                          }
+                        }
                       }}
                       onKeyDown={handleInputKeyDown}
                       placeholder="단어를 입력하세요 (예: tra, prev, miti)"
@@ -584,14 +740,24 @@ export default function Home() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                    원서 / 레포트 원문 문장 <span className="text-slate-400 font-normal">(권장)</span>
-                  </label>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-bold text-slate-700">
+                      원서 / 레포트 원문 문장 <span className="text-slate-400 font-normal">(권장)</span>
+                    </label>
+                    {ocrDetectedNotice && (
+                      <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded animate-toast">
+                        {ocrDetectedNotice}
+                      </span>
+                    )}
+                  </div>
                   <textarea
                     rows={3}
                     value={inputContext}
-                    onChange={(e) => setInputContext(e.target.value)}
-                    placeholder="예: It was an unspeakable tragedy that shook the entire nation."
+                    onChange={(e) => {
+                      setInputContext(e.target.value);
+                      setOcrDetectedNotice(null);
+                    }}
+                    placeholder="예: It was an unspeakable tragedy that shook the entire nation. (페이지 사진을 찍으면 자동 입력됩니다)"
                     className="w-full px-3.5 py-2.5 text-xs bg-white text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 leading-relaxed"
                   />
                   <p className="text-[11px] text-slate-400 mt-1">
