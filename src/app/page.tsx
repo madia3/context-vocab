@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { VocabItem, DictSearchResult } from '@/types/vocab';
 import {
   fetchVocabulary,
@@ -15,6 +15,7 @@ import {
   speakSentenceTTS,
   DISTRACTOR_POOL_KOREAN,
 } from '@/lib/dictionary';
+import { getAutocompleteSuggestions } from '@/lib/autocomplete';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import {
   Volume2,
@@ -25,7 +26,6 @@ import {
   Settings,
   Sparkles,
   Search,
-  ExternalLink,
   CheckCircle2,
   AlertCircle,
   Database,
@@ -45,6 +45,12 @@ export default function Home() {
   const [selectedMeaning, setSelectedMeaning] = useState('');
   const [selectedPos, setSelectedPos] = useState('');
   const [customMeaning, setCustomMeaning] = useState('');
+
+  // Autocomplete State
+  const [suggestions, setSuggestions] = useState<string[]>([]);
+  const [showSuggestions, setShowSuggestions] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(-1);
+  const autocompleteRef = useRef<HTMLDivElement>(null);
 
   // Quiz State
   const [quizList, setQuizList] = useState<VocabItem[]>([]);
@@ -71,21 +77,53 @@ export default function Home() {
     }
   }, []);
 
+  // Close suggestions when clicking outside
+  useEffect(() => {
+    function handleClickOutside(event: MouseEvent) {
+      if (autocompleteRef.current && !autocompleteRef.current.contains(event.target as Node)) {
+        setShowSuggestions(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, []);
+
+  // Autocomplete debounce effect
+  useEffect(() => {
+    if (!inputWord.trim()) {
+      setSuggestions([]);
+      setShowSuggestions(false);
+      setHighlightedIndex(-1);
+      return;
+    }
+
+    const timer = setTimeout(async () => {
+      const results = await getAutocompleteSuggestions(inputWord);
+      setSuggestions(results);
+      setShowSuggestions(results.length > 0);
+      setHighlightedIndex(-1);
+    }, 120);
+
+    return () => clearTimeout(timer);
+  }, [inputWord]);
+
   async function loadData() {
     const list = await fetchVocabulary();
     setVocabulary(list);
     setIsLoaded(true);
   }
 
-  // Handle Dictionary Search
-  async function handleSearchDictionary() {
-    if (!inputWord.trim()) {
+  // Handle Dictionary Search with target word
+  async function executeSearch(targetWord?: string) {
+    const wordToSearch = (targetWord || inputWord).trim();
+    if (!wordToSearch) {
       alert('조회할 영어 단어를 입력해 주세요!');
       return;
     }
+    setShowSuggestions(false);
     setIsSearchingDict(true);
     try {
-      const res = await lookupDictionary(inputWord);
+      const res = await lookupDictionary(wordToSearch);
       setDictResult(res);
       if (res.meanings.length > 0) {
         setSelectedMeaning(res.meanings[0].def);
@@ -96,6 +134,47 @@ export default function Home() {
     } finally {
       setIsSearchingDict(false);
     }
+  }
+
+  // Handle Input Keydown for Autocomplete navigation
+  function handleInputKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (showSuggestions && suggestions.length > 0) {
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setHighlightedIndex((prev) => (prev < suggestions.length - 1 ? prev + 1 : 0));
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setHighlightedIndex((prev) => (prev > 0 ? prev - 1 : suggestions.length - 1));
+        return;
+      }
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        if (highlightedIndex >= 0 && highlightedIndex < suggestions.length) {
+          const selected = suggestions[highlightedIndex];
+          setInputWord(selected);
+          executeSearch(selected);
+        } else {
+          executeSearch();
+        }
+        return;
+      }
+      if (e.key === 'Escape') {
+        setShowSuggestions(false);
+        return;
+      }
+    }
+
+    if (e.key === 'Enter') {
+      executeSearch();
+    }
+  }
+
+  function handleSelectSuggestion(word: string) {
+    setInputWord(word);
+    setShowSuggestions(false);
+    executeSearch(word);
   }
 
   // Save to Vocabulary
@@ -228,6 +307,7 @@ export default function Home() {
     setInputWord(w);
     setInputContext(c);
     setInputSource(s);
+    executeSearch(w);
   }
 
   const currentQuizItem = quizList[currentQuizIndex];
@@ -311,7 +391,7 @@ export default function Home() {
           <div className="flex items-center gap-2">
             <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse"></span>
             <span>
-              <strong>🇰🇷 정밀 영한 사전 엔진</strong>: 단어 입력 시 품사별 한국어 뜻 목록 실시간 제공
+              <strong>⚡ 실시간 자동완성 & 정밀 사전</strong>: 타이핑 시 예상 단어 추천 + 품사별 뜻 즉시 제공
             </span>
           </div>
           <div className="flex items-center gap-2">
@@ -345,23 +425,32 @@ export default function Home() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              {/* Left Column: Form */}
+              {/* Left Column: Form with Autocomplete */}
               <div className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                    영어 단어 <span className="text-rose-500">*</span>
-                  </label>
-                  <div className="flex gap-2">
+                <div className="relative" ref={autocompleteRef}>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-bold text-slate-700">
+                      영어 단어 <span className="text-rose-500">*</span>
+                    </label>
+                    <span className="text-[10px] text-indigo-600 font-medium">
+                      💡 방향키(↑↓)로 선택 후 Enter
+                    </span>
+                  </div>
+
+                  <div className="flex gap-2 relative">
                     <input
                       type="text"
                       value={inputWord}
                       onChange={(e) => setInputWord(e.target.value)}
-                      onKeyDown={(e) => e.key === 'Enter' && handleSearchDictionary()}
-                      placeholder="예: tragedy, prevalent, mitigate"
+                      onKeyDown={handleInputKeyDown}
+                      onFocus={() => {
+                        if (suggestions.length > 0) setShowSuggestions(true);
+                      }}
+                      placeholder="단어 앞 글자를 치면 자동완성됩니다 (예: trag, prev, miti)"
                       className="flex-1 px-3.5 py-2.5 text-sm bg-white text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
                     />
                     <button
-                      onClick={handleSearchDictionary}
+                      onClick={() => executeSearch()}
                       disabled={isSearchingDict}
                       className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2.5 text-xs rounded-xl shadow-sm transition flex items-center gap-1.5 shrink-0 disabled:opacity-50"
                     >
@@ -369,6 +458,33 @@ export default function Home() {
                       <span>{isSearchingDict ? '조회중...' : '영한 사전 조회'}</span>
                     </button>
                   </div>
+
+                  {/* Autocomplete Dropdown */}
+                  {showSuggestions && suggestions.length > 0 && (
+                    <div className="absolute left-0 right-0 top-full mt-1.5 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-hidden divide-y divide-slate-100 max-h-60 overflow-y-auto">
+                      <div className="px-3 py-1.5 bg-slate-50 text-[10px] font-bold text-slate-400 flex items-center justify-between">
+                        <span>추천 단어 목록 ({suggestions.length})</span>
+                        <span>방향키로 이동</span>
+                      </div>
+                      {suggestions.map((item, idx) => (
+                        <div
+                          key={item}
+                          onClick={() => handleSelectSuggestion(item)}
+                          className={`px-3.5 py-2.5 text-xs cursor-pointer flex items-center justify-between transition ${
+                            highlightedIndex === idx
+                              ? 'bg-indigo-50 text-indigo-900 font-bold'
+                              : 'text-slate-800 hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2">
+                            <Search className="w-3 h-3 text-slate-400" />
+                            <span className="font-semibold">{item}</span>
+                          </div>
+                          <span className="text-[10px] text-slate-400">선택 ↵</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
 
                 <div>
