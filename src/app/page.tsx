@@ -16,7 +16,7 @@ import {
   speakSentenceTTS,
   DISTRACTOR_POOL_KOREAN,
 } from '@/lib/dictionary';
-import { getLiveDictCandidates, SuggestionItem } from '@/lib/autocomplete';
+import { getLiveDictCandidates, fetchLiveDictSuggestions, SuggestionItem } from '@/lib/autocomplete';
 import { extractTextFromPageImage, findSentenceWithWord } from '@/lib/ocr';
 import { fireConfetti } from '@/lib/confetti';
 import { isSupabaseConfigured } from '@/lib/supabase';
@@ -115,14 +115,27 @@ export default function Home() {
     }
   }, []);
 
-  // Live Dictionary candidate update on typing
+  // Live Dictionary candidate update on typing (0ms 로컬 + 비동기 글로벌 확장)
   useEffect(() => {
     if (!inputWord.trim()) {
       setLiveCandidates([]);
       return;
     }
-    const candidates = getLiveDictCandidates(inputWord);
-    setLiveCandidates(candidates);
+    // 1) 0ms 즉각 로컬 사전 매칭
+    const local = getLiveDictCandidates(inputWord);
+    setLiveCandidates(local);
+
+    // 2) 10만 단어 어휘 비동기 보완
+    let isCurrent = true;
+    fetchLiveDictSuggestions(inputWord).then((candidates) => {
+      if (isCurrent && candidates.length > 0) {
+        setLiveCandidates(candidates);
+      }
+    });
+
+    return () => {
+      isCurrent = false;
+    };
   }, [inputWord]);
 
   async function loadData() {
@@ -798,7 +811,7 @@ export default function Home() {
                   {!dictResult && !isSearchingDict && (
                     <>
                       {liveCandidates.length > 0 ? (
-                        <div className="space-y-2 animate-toast">
+                        <div className="space-y-2 w-full">
                           <div className="flex items-center justify-between pb-1 text-[11px] font-bold text-indigo-700">
                             <span className="flex items-center gap-1">
                               <Sparkles className="w-3.5 h-3.5" />
@@ -975,6 +988,50 @@ export default function Home() {
                           </div>
                         </details>
                       </div>
+
+                      {/* 혹시 이 단어를 찾으셨나요? (연관 완성 단어 추천 섹션) */}
+                      {(() => {
+                        const related = liveCandidates.filter((c) => c.word.toLowerCase() !== dictResult.word.toLowerCase());
+                        if (related.length === 0) return null;
+                        return (
+                          <div className="pt-3 mt-3 border-t border-slate-200 space-y-2">
+                            <div className="flex items-center justify-between text-[11px] font-bold text-indigo-700">
+                              <span className="flex items-center gap-1">
+                                <Sparkles className="w-3.5 h-3.5" />
+                                <span>혹시 이 단어를 찾으셨나요? (연관 추천)</span>
+                              </span>
+                              <span className="text-[10px] text-slate-400">클릭하여 단어 변경</span>
+                            </div>
+                            <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
+                              {related.map((c) => (
+                                <button
+                                  key={c.word}
+                                  type="button"
+                                  onClick={() => handleSelectCandidate(c.word)}
+                                  className="w-full text-left p-2.5 rounded-xl border border-slate-200 bg-white hover:border-indigo-500 hover:bg-indigo-50/50 transition flex items-center justify-between shadow-xs group cursor-pointer"
+                                >
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <span className="font-black text-slate-900 group-hover:text-indigo-600 text-xs">
+                                      {c.word}
+                                    </span>
+                                    {c.pos && (
+                                      <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded font-semibold shrink-0">
+                                        {c.pos}
+                                      </span>
+                                    )}
+                                    <span className="text-xs text-slate-600 font-medium truncate">
+                                      {c.quickMeaning}
+                                    </span>
+                                  </div>
+                                  <span className="text-[10px] bg-indigo-50 text-indigo-700 font-bold px-2 py-0.5 rounded shrink-0 group-hover:bg-indigo-600 group-hover:text-white transition">
+                                    단어 변경 ↵
+                                  </span>
+                                </button>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   )}
                 </div>

@@ -534,9 +534,48 @@ export function getLiveDictCandidates(query: string): SuggestionItem[] {
         quickMeaning: data.meaning,
         pos: data.pos,
       });
-      if (results.length >= 6) break;
+      if (results.length >= 8) break;
     }
   }
 
   return results;
+}
+
+// 10만 단어 영어 말뭉치(Datamuse API) 비동기 보강 (로컬 사전에 없는 희귀/파생 단어도 자동 보완)
+export async function fetchLiveDictSuggestions(query: string): Promise<SuggestionItem[]> {
+  const local = getLiveDictCandidates(query);
+  const clean = query.trim().toLowerCase();
+  if (!clean || clean.length < 2) return local;
+
+  try {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 1200);
+    const res = await fetch(`https://api.datamuse.com/sug?s=${encodeURIComponent(clean)}`, {
+      signal: controller.signal,
+    });
+    clearTimeout(timer);
+
+    if (res.ok) {
+      const data: { word: string }[] = await res.json();
+      const existing = new Set(local.map((item) => item.word.toLowerCase()));
+
+      for (const item of data) {
+        const w = item.word.toLowerCase();
+        if (!existing.has(w) && /^[a-z]+$/.test(w)) {
+          const dictEntry = COMMON_VOCAB_DICT[w];
+          local.push({
+            word: w,
+            quickMeaning: dictEntry ? dictEntry.meaning : '연관 단어 완성',
+            pos: dictEntry ? dictEntry.pos : undefined,
+          });
+          existing.add(w);
+          if (local.length >= 8) break;
+        }
+      }
+    }
+  } catch {
+    // 네트워크 실패 시 로컬 결과 그대로 활용
+  }
+
+  return local;
 }
