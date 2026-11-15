@@ -2,6 +2,8 @@
 
 영어 원서나 레포트를 읽다가 모르는 단어를 발견했을 때, 문맥(원문 문장)과 함께 저장하고 5지선다 객관식 퀴즈로 복습할 수 있는 웹 애플리케이션입니다.
 
+**Next.js 14 + Tailwind CSS + Supabase + Vercel** 풀스택 환경으로 구축되었습니다.
+
 ---
 
 ## ✨ 주요 기능
@@ -23,36 +25,50 @@
    - 내가 입력했던 **원문 문장 속 해당 단어가 형광펜으로 강조**되어 표시됩니다.
    - 브라우저 내장 Web Speech API를 통해 **원문 문장 전체를 원어민 발음으로 읽어줍니다.**
 
-5. **완전 무료 & 서버 불필요 (0원 유지)**:
-   - 외부 유료 서버나 데이터베이스 없이 브라우저의 `localStorage`에 안전하게 저장됩니다.
-   - 브라우저 내장 음성 합성(SpeechSynthesis)으로 비용 없이 무제한 발음 청취가 가능합니다.
-
----
-
-## 💻 맥북(Mac)에서 실행하는 방법
-
-### 방법 1: Git Clone 후 바로 열기 (추천)
-맥북의 **터미널(Terminal)** 앱을 열고 아래 명령어를 순서대로 입력하세요:
-
-```bash
-# 1. 레포지토리 복제
-git clone https://github.com/madia3/context-vocab.git
-
-# 2. 폴더 이동
-cd context-vocab
-
-# 3. 브라우저로 열기 (Chrome 또는 Safari)
-open index.html
-```
-
-### 방법 2: Finder에서 더블클릭
-1. 복제된 `context-vocab` 폴더로 이동합니다.
-2. `index.html` 파일을 더블클릭하면 즉시 실행됩니다!
+5. **Supabase 클라우드 DB & 온디바이스 Fallback**:
+   - Supabase를 연동하면 기기 간 실시간 동기화가 이루어집니다.
+   - Supabase 설정이 없더라도 브라우저 `localStorage`로 즉시 동작합니다.
 
 ---
 
 ## 🛠️ 기술 스택
-- **Frontend**: HTML5, Vanilla JavaScript, Tailwind CSS
+- **Framework**: Next.js 14 (App Router, TypeScript)
+- **Styling**: Tailwind CSS
+- **Database**: Supabase (PostgreSQL)
+- **Deployment**: Vercel
 - **TTS Engine**: Web Speech API (Browser Native)
 - **Dictionary**: Google Translate Dictionary Engine & Open API
-- **Storage**: Browser LocalStorage
+
+---
+
+## 🚀 빠른 시작 가이드 (Local Run)
+
+```bash
+# 1. 패키지 설치
+npm install
+
+# 2. 로컬 개발 서버 실행
+npm run dev
+# 브라우저에서 http://localhost:3000 접속
+```
+
+---
+
+## 🗄️ Supabase 설정 방법
+
+1. [Supabase](https://supabase.com/)에서 새 프로젝트를 생성합니다.
+2. 좌측 메뉴 **SQL Editor**로 이동하여 [`supabase/schema.sql`](./supabase/schema.sql) 파일의 내용을 복사해 붙여넣고 실행(Run)합니다.
+3. 좌측 하단 **Project Settings** -> **API**에서 `Project URL`과 `anon public key`를 복사합니다.
+4. 프로젝트 루트의 `.env.local` 파일에 다음과 같이 추가합니다:
+   ```env
+   NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
+   NEXT_PUBLIC_SUPABASE_ANON_KEY=your-anon-key
+   ```
+
+---
+
+## ☁️ Vercel 배포 방법
+
+1. 비공개(Private) GitHub 레포지토리에 코드를 푸시합니다.
+2. [Vercel](https://vercel.com/) 대시보드에서 **Add New Project** 클릭 후 GitHub 레포지토리를 불러옵니다.
+3. **Environment Variables**에 위 Supabase 환경 변수 2개를 입력하고 **Deploy**를 누르면 끝납니다.
