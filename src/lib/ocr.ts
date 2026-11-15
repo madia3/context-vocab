@@ -143,44 +143,59 @@ export function splitIntoSentences(text: string): string[] {
     .filter((s) => s.length > 5);
 }
 
+// 특정 단어가 포함된 모든 원문 문장 목록을 탐색 (동일 단어가 페이지에 여러 번 쓰인 경우)
+export function findAllSentencesWithWordSmart(
+  fullText: string,
+  word: string
+): { sentence: string; matchedWord: string }[] {
+  if (!fullText || !word) return [];
+
+  const sentences = splitIntoSentences(fullText);
+  const variants = generateWordVariants(word);
+  const results: { sentence: string; matchedWord: string }[] = [];
+  const seenSentences = new Set<string>();
+
+  for (const sentence of sentences) {
+    if (seenSentences.has(sentence)) continue;
+
+    // 1. 단어 경계(\b) 기준 정확한 변화형 일치
+    let matched: string | null = null;
+    for (const variant of variants) {
+      const boundaryRegex = new RegExp(`\\b${variant}\\b`, 'i');
+      if (boundaryRegex.test(sentence)) {
+        matched = variant;
+        break;
+      }
+    }
+
+    // 2. 접두사 확장 형태 (\bword[a-z]*\b) 매칭
+    if (!matched) {
+      const prefixRegex = new RegExp(`\\b${word.trim().toLowerCase()}[a-z]*\\b`, 'i');
+      const m = sentence.match(prefixRegex);
+      if (m) matched = m[0];
+    }
+
+    // 3. 단순 포함
+    if (!matched && sentence.toLowerCase().includes(word.trim().toLowerCase())) {
+      matched = word.trim();
+    }
+
+    if (matched) {
+      seenSentences.add(sentence);
+      results.push({ sentence, matchedWord: matched });
+    }
+  }
+
+  return results;
+}
+
 // 특정 단어가 포함된 원문 문장을 형태소 규칙 기반으로 스마트 탐색
 export function findSentenceWithWordSmart(
   fullText: string,
   word: string
 ): { sentence: string; matchedWord: string } | null {
-  if (!fullText || !word) return null;
-
-  const sentences = splitIntoSentences(fullText);
-  const variants = generateWordVariants(word);
-
-  // 1순위: 원형 및 변화형과 단어 경계(\b)가 완벽히 일치하는 문장 탐색
-  for (const variant of variants) {
-    const boundaryRegex = new RegExp(`\\b${variant}\\b`, 'i');
-    for (const sentence of sentences) {
-      if (boundaryRegex.test(sentence)) {
-        return { sentence, matchedWord: variant };
-      }
-    }
-  }
-
-  // 2순위: 접두사 확장 형태 (\bword[a-z]*\b) 매칭
-  const prefixRegex = new RegExp(`\\b${word.trim().toLowerCase()}[a-z]*\\b`, 'i');
-  for (const sentence of sentences) {
-    const match = sentence.match(prefixRegex);
-    if (match) {
-      return { sentence, matchedWord: match[0] };
-    }
-  }
-
-  // 3순위: 단순 포함
-  const lowerWord = word.trim().toLowerCase();
-  for (const sentence of sentences) {
-    if (sentence.toLowerCase().includes(lowerWord)) {
-      return { sentence, matchedWord: word };
-    }
-  }
-
-  return null;
+  const all = findAllSentencesWithWordSmart(fullText, word);
+  return all.length > 0 ? all[0] : null;
 }
 
 // 이전 버전 호환 함수

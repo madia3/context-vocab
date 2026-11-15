@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
 
     const prompt = `You are an expert English linguist and vocabulary reading assistant.
-Given the target English vocabulary word and the book page text below, identify the exact sentence where this vocabulary word (or any of its inflected/derived forms, such as plural noun, past tense, present participle, singular, adverb, or comparative/superlative form; e.g. "party" -> "parties", "walk" -> "walked"/"walking", "tradition" -> "traditional"/"traditions") is used.
+Given the target English vocabulary word and the book page text below, identify ALL complete sentences where this vocabulary word (or any of its inflected/derived forms, such as plural noun, past tense, present participle, singular, adverb, or comparative/superlative form; e.g. "party" -> "parties", "walk" -> "walked"/"walking", "prevalent" -> "prevalent") is used.
 
 Target Word: "${word}"
 
@@ -35,11 +35,20 @@ ${pageText}
 """
 
 Instructions:
-1. Find the single most relevant complete English sentence in the text where this word or its variant appears.
-2. Return ONLY a valid JSON object in the following format with NO markdown fences, NO preamble, and NO extra text:
-{"found": true, "sentence": "Complete exact sentence here.", "matchedWord": "the exact word form found in the sentence"}
+1. Find all distinct complete English sentences in the text where this word or its variant appears.
+2. If multiple sentences contain the word, include all of them in the "allMatches" array, and set "sentence" to the first/most representative one.
+3. Return ONLY a valid JSON object in the following format with NO markdown fences, NO preamble, and NO extra text:
+{
+  "found": true,
+  "sentence": "First or most representative complete sentence",
+  "matchedWord": "the exact word form found",
+  "allMatches": [
+    { "sentence": "Complete exact sentence 1", "matchedWord": "form1" },
+    { "sentence": "Complete exact sentence 2", "matchedWord": "form2" }
+  ]
+}
 If the word or any of its forms does NOT appear anywhere in the text, return:
-{"found": false, "sentence": "", "matchedWord": ""}`;
+{"found": false, "sentence": "", "matchedWord": "", "allMatches": []}`;
 
     const geminiRes = await fetch(geminiUrl, {
       method: 'POST',

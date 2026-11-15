@@ -96,6 +96,7 @@ export async function fetchVocabulary(): Promise<VocabItem[]> {
           selectedMeaning: row.selected_meaning,
           allMeanings: row.all_meanings || [],
           contextSentence: row.context_sentence || '',
+          candidateSentences: row.candidate_sentences || [],
           sourceMemo: row.source_memo || '',
           bookTitle: row.book_title || row.source_memo || '기본 단어장',
           quizCount: row.quiz_count || 0,
@@ -219,6 +220,35 @@ export async function updateQuizStat(id: string, isCorrect: boolean): Promise<vo
       console.warn('Supabase update stat exception:', e);
     }
   }
+}
+
+export async function updateVocabularyContext(id: string, newContextSentence: string): Promise<boolean> {
+  if (typeof window !== 'undefined') {
+    const current = await fetchVocabulary();
+    const updated = current.map((item) => {
+      if (item.id === id) {
+        return {
+          ...item,
+          contextSentence: newContextSentence,
+        };
+      }
+      return item;
+    });
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+  }
+
+  if (isSupabaseConfigured && supabase) {
+    try {
+      await supabase
+        .from('vocab_words')
+        .update({ context_sentence: newContextSentence })
+        .eq('id', id);
+    } catch (e) {
+      console.warn('Supabase update context sentence exception:', e);
+    }
+  }
+
+  return true;
 }
 
 export async function deleteVocabularyItem(id: string): Promise<boolean> {

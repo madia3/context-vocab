@@ -68,12 +68,23 @@ export async function extractTextWithAI(
   return { text: fallbackText, method: 'tesseract' };
 }
 
-// AI로 단어의 원형/복수형/시제 변화형을 문맥에서 파악하여 해당 원문 문장 적출
+export interface MatchedSentenceItem {
+  sentence: string;
+  matchedWord?: string;
+}
+
+// AI로 단어의 원형/복수형/시제 변화형을 문맥에서 파악하여 해당 원문 문장(복수 문장 포함) 적출
 export async function findSentenceWithAI(
   pageText: string,
   word: string,
   customApiKey?: string
-): Promise<{ found: boolean; sentence: string; matchedWord?: string; method: 'gemini' | 'rule' }> {
+): Promise<{
+  found: boolean;
+  sentence: string;
+  matchedWord?: string;
+  allMatches: MatchedSentenceItem[];
+  method: 'gemini' | 'rule';
+}> {
   const apiKey = customApiKey || getStoredGeminiKey();
 
   try {
@@ -89,10 +100,19 @@ export async function findSentenceWithAI(
     if (res.ok) {
       const data = await res.json();
       if (data.found && data.sentence) {
+        const matches: MatchedSentenceItem[] =
+          Array.isArray(data.allMatches) && data.allMatches.length > 0
+            ? data.allMatches.map((m: any) => ({
+                sentence: (m.sentence || '').trim(),
+                matchedWord: m.matchedWord,
+              })).filter((m: MatchedSentenceItem) => m.sentence.length > 0)
+            : [{ sentence: data.sentence.trim(), matchedWord: data.matchedWord }];
+
         return {
           found: true,
           sentence: data.sentence.trim(),
           matchedWord: data.matchedWord,
+          allMatches: matches,
           method: 'gemini',
         };
       }
@@ -102,12 +122,13 @@ export async function findSentenceWithAI(
   }
 
   // AI 키 미등록 또는 오류 시 규칙 기반 스마트 형태소 검색 fallback
-  const { findSentenceWithWordSmart } = await import('./ocr');
-  const matched = findSentenceWithWordSmart(pageText, word);
+  const { findAllSentencesWithWordSmart } = await import('./ocr');
+  const all = findAllSentencesWithWordSmart(pageText, word);
   return {
-    found: !!matched,
-    sentence: matched ? matched.sentence : '',
-    matchedWord: matched ? matched.matchedWord : undefined,
+    found: all.length > 0,
+    sentence: all.length > 0 ? all[0].sentence : '',
+    matchedWord: all.length > 0 ? all[0].matchedWord : undefined,
+    allMatches: all,
     method: 'rule',
   };
 }

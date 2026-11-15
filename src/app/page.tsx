@@ -6,6 +6,7 @@ import {
   fetchVocabulary,
   addVocabularyItem,
   deleteVocabularyItem,
+  updateVocabularyContext,
   updateQuizStat,
   resetWithSamples,
   clearAllVocab,
@@ -17,7 +18,12 @@ import {
   DISTRACTOR_POOL_KOREAN,
 } from '@/lib/dictionary';
 import { getLiveDictCandidates, fetchLiveDictSuggestions, SuggestionItem } from '@/lib/autocomplete';
-import { extractTextFromPageImage, findSentenceWithWord, findSentenceWithWordSmart } from '@/lib/ocr';
+import {
+  extractTextFromPageImage,
+  findSentenceWithWord,
+  findSentenceWithWordSmart,
+  findAllSentencesWithWordSmart,
+} from '@/lib/ocr';
 import {
   extractTextWithAI,
   findSentenceWithAI,
@@ -75,6 +81,7 @@ export default function Home() {
   const [isOcrProcessing, setIsOcrProcessing] = useState(false);
   const [ocrProgress, setOcrProgress] = useState(0);
   const [ocrDetectedNotice, setOcrDetectedNotice] = useState<string | null>(null);
+  const [detectedCandidateSentences, setDetectedCandidateSentences] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Filter & Grouping State
@@ -187,11 +194,19 @@ export default function Home() {
       if (inputWord.trim()) {
         const matchRes = await findSentenceWithAI(extractedText, inputWord.trim(), geminiApiKey);
         if (matchRes.found && matchRes.sentence) {
+          const sentences = matchRes.allMatches.map((m) => m.sentence);
+          setDetectedCandidateSentences(sentences);
           setInputContext(matchRes.sentence);
-          const notice = matchRes.matchedWord && matchRes.matchedWord.toLowerCase() !== inputWord.trim().toLowerCase()
-            ? `🤖 AI가 형태소 변화형("${matchRes.matchedWord}")을 감지하여 원문 문장을 자동 선택했습니다!`
-            : `📸 촬영한 페이지에서 원문 문장을 자동으로 찾았습니다!`;
-          setOcrDetectedNotice(notice);
+          if (sentences.length > 1) {
+            setOcrDetectedNotice(`✨ 페이지 내에서 이 단어가 ${sentences.length}번 쓰였습니다! 아래에서 대표 문맥을 선택하세요.`);
+          } else {
+            const notice = matchRes.matchedWord && matchRes.matchedWord.toLowerCase() !== inputWord.trim().toLowerCase()
+              ? `🤖 AI가 형태소 변화형("${matchRes.matchedWord}")을 감지하여 원문 문장을 자동 선택했습니다!`
+              : `📸 촬영한 페이지에서 원문 문장을 자동으로 찾았습니다!`;
+            setOcrDetectedNotice(notice);
+          }
+        } else {
+          setDetectedCandidateSentences([]);
         }
       }
     } catch (err) {
@@ -214,11 +229,19 @@ export default function Home() {
     if (pageOcrText) {
       findSentenceWithAI(pageOcrText, wordToSearch, geminiApiKey).then((matchRes) => {
         if (matchRes.found && matchRes.sentence) {
+          const sentences = matchRes.allMatches.map((m) => m.sentence);
+          setDetectedCandidateSentences(sentences);
           setInputContext(matchRes.sentence);
-          const notice = matchRes.matchedWord && matchRes.matchedWord.toLowerCase() !== wordToSearch.toLowerCase()
-            ? `🤖 AI가 형태소 변화형("${matchRes.matchedWord}")을 감지하여 원문 문장을 자동 선택했습니다!`
-            : `📸 촬영한 페이지에서 원문 문장을 자동으로 찾았습니다!`;
-          setOcrDetectedNotice(notice);
+          if (sentences.length > 1) {
+            setOcrDetectedNotice(`✨ 페이지 내에서 이 단어가 ${sentences.length}번 쓰였습니다! 아래에서 대표 문맥을 선택하세요.`);
+          } else {
+            const notice = matchRes.matchedWord && matchRes.matchedWord.toLowerCase() !== wordToSearch.toLowerCase()
+              ? `🤖 AI가 형태소 변화형("${matchRes.matchedWord}")을 감지하여 원문 문장을 자동 선택했습니다!`
+              : `📸 촬영한 페이지에서 원문 문장을 자동으로 찾았습니다!`;
+            setOcrDetectedNotice(notice);
+          }
+        } else {
+          setDetectedCandidateSentences([]);
         }
       });
     }
@@ -254,6 +277,12 @@ export default function Home() {
     if (!dictResult || !selectedMeaning) return;
 
     const bookToSave = inputBookTitle.trim() || '기본 단어장';
+    const finalContext =
+      inputContext.trim() || `This sentence illustrates the word ${dictResult.word}.`;
+    const finalCandidates =
+      detectedCandidateSentences.length > 0
+        ? Array.from(new Set([finalContext, ...detectedCandidateSentences]))
+        : [finalContext];
 
     const newItem: VocabItem = {
       id: 'vocab_' + Date.now(),
@@ -262,8 +291,8 @@ export default function Home() {
       partOfSpeech: selectedPos || '단어',
       selectedMeaning: selectedMeaning,
       allMeanings: dictResult.meanings.map((m) => m.def),
-      contextSentence:
-        inputContext.trim() || `This sentence illustrates the word ${dictResult.word}.`,
+      contextSentence: finalContext,
+      candidateSentences: finalCandidates,
       sourceMemo: inputSource.trim() || '원서 메모',
       bookTitle: bookToSave,
       quizCount: 0,
@@ -289,6 +318,8 @@ export default function Home() {
     setCustomMeaning('');
     setIsCustomBook(false);
     setCustomBookInput('');
+    setDetectedCandidateSentences([]);
+    setOcrDetectedNotice(null);
 
     // 팡! 터지는 화려한 폭죽 효과
     fireConfetti({ particleCount: 80, spread: 70, origin: { x: 0.35, y: 0.55 } });
@@ -778,13 +809,19 @@ export default function Home() {
 
                         // 타이핑 도중에도 현재 페이지 텍스트에서 단어 문장 자동 탐색 (복수형, 시제 변화형 스마트 매칭)
                         if (pageOcrText && val.trim().length >= 3) {
-                          const matched = findSentenceWithWordSmart(pageOcrText, val.trim());
-                          if (matched && !inputContext) {
-                            setInputContext(matched.sentence);
-                            const notice = matched.matchedWord.toLowerCase() !== val.trim().toLowerCase()
-                              ? `💡 변화형("${matched.matchedWord}")이 포함된 원문 문장을 자동으로 찾았습니다!`
-                              : '📸 촬영한 페이지에서 원문 문장을 자동으로 찾았습니다!';
-                            setOcrDetectedNotice(notice);
+                          const matches = findAllSentencesWithWordSmart(pageOcrText, val.trim());
+                          if (matches.length > 0 && !inputContext) {
+                            const sentences = matches.map((m) => m.sentence);
+                            setDetectedCandidateSentences(sentences);
+                            setInputContext(matches[0].sentence);
+                            if (sentences.length > 1) {
+                              setOcrDetectedNotice(`✨ 페이지 내에서 이 단어가 ${sentences.length}번 쓰였습니다! 아래에서 대표 문맥을 선택하세요.`);
+                            } else {
+                              const notice = matches[0].matchedWord.toLowerCase() !== val.trim().toLowerCase()
+                                ? `💡 변화형("${matches[0].matchedWord}")이 포함된 원문 문장을 자동으로 찾았습니다!`
+                                : '📸 촬영한 페이지에서 원문 문장을 자동으로 찾았습니다!';
+                              setOcrDetectedNotice(notice);
+                            }
                           }
                         }
                       }}
@@ -814,6 +851,53 @@ export default function Home() {
                       </span>
                     )}
                   </div>
+
+                  {/* 페이지 내 복수 문장 발견 시 대표 문맥 선택 리스트 */}
+                  {detectedCandidateSentences.length > 1 && (
+                    <div className="bg-gradient-to-r from-indigo-50/90 to-purple-50/90 p-3 rounded-xl border border-indigo-200 space-y-2 mb-2.5">
+                      <div className="flex items-center justify-between text-xs font-bold text-indigo-950">
+                        <span className="flex items-center gap-1.5">
+                          <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                          <span>페이지 내 {detectedCandidateSentences.length}개 문장 발견 (대표 문맥 선택)</span>
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-normal">선택 안 된 문장도 함께 자동 보관</span>
+                      </div>
+                      <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                        {detectedCandidateSentences.map((sent, sIdx) => {
+                          const isChosen = inputContext.trim() === sent.trim();
+                          return (
+                            <button
+                              key={sIdx}
+                              type="button"
+                              onClick={() => setInputContext(sent)}
+                              className={`w-full text-left p-2.5 rounded-lg border text-xs transition flex items-start gap-2.5 cursor-pointer ${
+                                isChosen
+                                  ? 'bg-white border-indigo-600 ring-2 ring-indigo-200 font-bold text-slate-900 shadow-xs'
+                                  : 'bg-white/80 border-slate-200 text-slate-600 hover:border-indigo-300 hover:bg-white'
+                              }`}
+                            >
+                              <span
+                                className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 mt-0.5 ${
+                                  isChosen ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-600'
+                                }`}
+                              >
+                                {sIdx + 1}
+                              </span>
+                              <span className="flex-1 font-serif leading-relaxed line-clamp-3">
+                                &quot;{sent}&quot;
+                              </span>
+                              {isChosen && (
+                                <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-bold shrink-0">
+                                  선택됨 ✓
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
                   <textarea
                     rows={3}
                     value={inputContext}
@@ -1436,9 +1520,9 @@ export default function Home() {
                         </div>
 
                         {/* Context Sentence */}
-                        <div className="mt-3 p-3 bg-slate-50 border border-slate-100 rounded-xl">
+                        <div className="mt-3 p-3 bg-slate-50 border border-slate-100 rounded-xl space-y-2">
                           <div className="flex items-center justify-between mb-1">
-                            <span className="text-[10px] font-bold text-slate-400">원서 원문:</span>
+                            <span className="text-[10px] font-bold text-slate-400">대표 원문:</span>
                             <button
                               onClick={() => speakSentenceTTS(item.contextSentence, ttsVoice)}
                               className="text-[10px] text-indigo-600 hover:underline flex items-center gap-0.5 font-bold"
@@ -1450,6 +1534,55 @@ export default function Home() {
                           <p className="text-xs text-slate-700 leading-relaxed font-serif">
                             {renderHighlightedContext(item.contextSentence, item.word)}
                           </p>
+
+                          {/* 해당 페이지의 다른 원문 문장 목록 (나중에 변경 가능) */}
+                          {item.candidateSentences && item.candidateSentences.length > 1 && (
+                            <details className="pt-2 border-t border-slate-200/80 text-xs text-slate-600 group">
+                              <summary className="cursor-pointer font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 text-[11px]">
+                                <Sparkles className="w-3 h-3 text-indigo-600" />
+                                <span>이 페이지의 다른 문맥 ({item.candidateSentences.length}개 보관됨)</span>
+                              </summary>
+                              <div className="mt-2 space-y-1.5 pl-1.5 border-l-2 border-indigo-200">
+                                {item.candidateSentences.map((sent, sIdx) => {
+                                  const isCurrent = item.contextSentence.trim() === sent.trim();
+                                  return (
+                                    <div
+                                      key={sIdx}
+                                      className={`p-2 rounded-lg border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
+                                        isCurrent
+                                          ? 'bg-indigo-50/90 border-indigo-300 font-bold text-slate-900 shadow-xs'
+                                          : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
+                                      }`}
+                                    >
+                                      <p className="flex-1 font-serif text-[11px] leading-relaxed">
+                                        &quot;{sent}&quot;
+                                      </p>
+                                      {isCurrent ? (
+                                        <span className="text-[10px] bg-indigo-600 text-white px-2 py-0.5 rounded font-bold shrink-0 self-start sm:self-auto">
+                                          현재 대표 ✓
+                                        </span>
+                                      ) : (
+                                        <button
+                                          type="button"
+                                          onClick={async () => {
+                                            await updateVocabularyContext(item.id, sent);
+                                            await loadData();
+                                            triggerToast(
+                                              '대표 원문 문장 변경 완료! 📖',
+                                              `앞으로 퀴즈 복습 시 변경된 문장이 출제됩니다.`
+                                            );
+                                          }}
+                                          className="text-[10px] bg-white border border-indigo-300 text-indigo-700 hover:bg-indigo-600 hover:text-white px-2 py-0.5 rounded font-bold transition shrink-0 self-start sm:self-auto cursor-pointer"
+                                        >
+                                          이 문장으로 변경 ➔
+                                        </button>
+                                      )}
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </details>
+                          )}
                         </div>
                       </div>
 
