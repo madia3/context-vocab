@@ -301,21 +301,31 @@ export default function Home() {
     const current = list[index];
     setQuizAnswerState({ answered: false, chosen: '', isCorrect: false });
 
-    // Options: 1 correct + 4 distractors
+    // Options: 1 correct + 4 distractors (다른 단어장 뜻을 우선 교차 배치하여 헷갈리게 구성)
     const correct = current.selectedMeaning;
     const opts = [correct];
 
-    // Other vocab items
-    const otherVocab = vocabulary
-      .filter((v) => v.word !== current.word)
-      .map((v) => v.selectedMeaning);
-    const shuffledOthers = [...otherVocab].sort(() => 0.5 - Math.random());
+    const currentBook = current.bookTitle || '기본 단어장';
 
-    for (const m of shuffledOthers) {
+    // 1순위: '다른 단어장(책/레포트)'에 등록된 단어들의 뜻을 우선 선별 (헷갈리는 매력적인 오답)
+    const otherBookMeanings = vocabulary
+      .filter((v) => (v.bookTitle || '기본 단어장') !== currentBook && v.word !== current.word)
+      .map((v) => v.selectedMeaning);
+    const shuffledOtherBooks = [...otherBookMeanings].sort(() => 0.5 - Math.random());
+    for (const m of shuffledOtherBooks) {
       if (!opts.includes(m) && opts.length < 5) opts.push(m);
     }
 
-    // Distractor pool
+    // 2순위: 같은 단어장 내의 다른 단어 뜻 선별
+    const sameBookMeanings = vocabulary
+      .filter((v) => (v.bookTitle || '기본 단어장') === currentBook && v.word !== current.word)
+      .map((v) => v.selectedMeaning);
+    const shuffledSameBook = [...sameBookMeanings].sort(() => 0.5 - Math.random());
+    for (const m of shuffledSameBook) {
+      if (!opts.includes(m) && opts.length < 5) opts.push(m);
+    }
+
+    // 3순위: 선지가 5개 미만인 경우 내장 오답 풀에서 정밀 보충
     const shuffledDistractors = [...DISTRACTOR_POOL_KOREAN].sort(() => 0.5 - Math.random());
     for (const d of shuffledDistractors) {
       if (!opts.includes(d) && opts.length < 5) opts.push(d);
