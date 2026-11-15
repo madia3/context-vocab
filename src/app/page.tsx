@@ -86,6 +86,12 @@ export default function Home() {
   const [detectedCandidateSentences, setDetectedCandidateSentences] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Background Non-blocking Processing State (백그라운드 분석 및 저장 대기)
+  const [isSourceProcessing, setIsSourceProcessing] = useState(false);
+  const [sourceProcessTaskName, setSourceProcessTaskName] = useState<string>('');
+  const [isSavingAwaitingSource, setIsSavingAwaitingSource] = useState(false);
+  const sourceTaskPromiseRef = useRef<Promise<string | null> | null>(null);
+
   // Web URL Scraper State (웹페이지 URL에서 문장 가져오기)
   const [inputWebUrl, setInputWebUrl] = useState<string>('');
   const [isUrlModalOpen, setIsUrlModalOpen] = useState(false);
@@ -215,57 +221,91 @@ export default function Home() {
     setIsLoaded(true);
   }
 
-  // OCR 페이지 사진 촬영 / 업로드 핸들러 (AI Vision 우선 + 로컬 Tesseract fallback)
+  // 원문 소스(사진 또는 웹 URL) 백그라운드 비동기 처리 함수
+  function startBackgroundSourceAnalysis(
+    taskName: string,
+    sourceType: 'camera' | 'web',
+    processFn: () => Promise<{ text: string; title?: string; sourceUrl?: string; sentenceCount?: number }>
+  ) {
+    setIsSourceProcessing(true);
+    setSourceProcessTaskName(taskName);
+
+    const taskPromise = (async () => {
+      try {
+        const result = await processFn();
+        setPageOcrText(result.text);
+        setLoadedSourceType(sourceType);
+        if (result.title) {
+          setLoadedWebTitle(result.title);
+          setInputBookTitle(result.title);
+        }
+        if (result.sourceUrl) {
+          setInputSource(result.sourceUrl);
+        }
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('context_vocab_cached_page_ocr', result.text);
+        }
+
+        // 백그라운드 분석이 끝났을 때 사용자가 이미 입력해 둔 단어가 있거나 사전 결과가 있다면 즉시 문장 자동 매칭!
+        const currentWord = (inputWord || dictResult?.word || '').trim();
+        if (currentWord) {
+          const matchRes = await findSentenceWithAI(result.text, currentWord, geminiApiKey);
+          if (matchRes.found && matchRes.sentence) {
+            const sentences = matchRes.allMatches.map((m) => m.sentence);
+            setDetectedCandidateSentences(sentences);
+            setInputContext(matchRes.sentence);
+            if (sentences.length > 1) {
+              setOcrDetectedNotice(`✨ 분석 완료! 본문 내에서 '${currentWord}'가 ${sentences.length}번 쓰였습니다.`);
+            } else {
+              setOcrDetectedNotice(`✨ 백그라운드 분석 완료! 원문 속 문장을 자동으로 연결했습니다.`);
+            }
+          }
+        }
+
+        triggerToast(
+          `${taskName} 완료! ✅`,
+          sourceType === 'web'
+            ? `"${result.title || '웹 기사'}" 본문 문장들이 준비되었습니다. 이제 단어를 등록해 보세요!`
+            : `책 페이지 글자 인식이 완료되어 원문 문장이 준비되었습니다.`
+        );
+
+        return result.text;
+      } catch (err: any) {
+        console.error('Source processing error:', err);
+        triggerToast('원문 분석 실패 ⚠️', err.message || '텍스트를 읽어오지 못했습니다.');
+        return null;
+      } finally {
+        setIsSourceProcessing(false);
+        setIsOcrProcessing(false);
+        setIsUrlScraping(false);
+      }
+    })();
+
+    sourceTaskPromiseRef.current = taskPromise;
+    return taskPromise;
+  }
+
+  // OCR 페이지 사진 촬영 / 업로드 핸들러 (백그라운드 비동기 처리 - 블로킹 없음)
   async function handlePagePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
 
+    if (fileInputRef.current) fileInputRef.current.value = '';
+
     setIsOcrProcessing(true);
-    setOcrProgress(20);
+    setOcrProgress(30);
 
-    try {
-      const { text: extractedText, method } = await extractTextWithAI(file, geminiApiKey);
+    triggerToast('사진 분석 시작! 📸', '백그라운드에서 글자를 읽는 동안 단어를 먼저 입력하고 뜻을 고르세요.');
+
+    startBackgroundSourceAnalysis('책 사진 분석', 'camera', async () => {
+      setOcrProgress(60);
+      const { text: extractedText } = await extractTextWithAI(file, geminiApiKey);
       setOcrProgress(100);
-      setPageOcrText(extractedText);
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('context_vocab_cached_page_ocr', extractedText);
-      }
-
-      if (method === 'gemini') {
-        triggerToast('AI 비전 페이지 인식 완료! 🤖', '오타 교정과 줄바꿈 하이픈이 복원된 고품질 영문이 준비되었습니다.');
-      } else {
-        triggerToast('페이지 사진 인식 완료! 📸', '이 페이지에서 모르는 단어를 입력하면 원문 문장을 자동으로 찾아줍니다.');
-      }
-
-      // 만약 이미 검색어에 단어가 입력되어 있다면 즉시 AI 문맥 문장 자동 탐색
-      if (inputWord.trim()) {
-        const matchRes = await findSentenceWithAI(extractedText, inputWord.trim(), geminiApiKey);
-        if (matchRes.found && matchRes.sentence) {
-          const sentences = matchRes.allMatches.map((m) => m.sentence);
-          setDetectedCandidateSentences(sentences);
-          setInputContext(matchRes.sentence);
-          if (sentences.length > 1) {
-            setOcrDetectedNotice(`✨ 페이지 내에서 이 단어가 ${sentences.length}번 쓰였습니다! 아래에서 대표 문맥을 선택하세요.`);
-          } else {
-            const notice = matchRes.matchedWord && matchRes.matchedWord.toLowerCase() !== inputWord.trim().toLowerCase()
-              ? `🤖 AI가 형태소 변화형("${matchRes.matchedWord}")을 감지하여 원문 문장을 자동 선택했습니다!`
-              : `📸 촬영한 페이지에서 원문 문장을 자동으로 찾았습니다!`;
-            setOcrDetectedNotice(notice);
-          }
-        } else {
-          setDetectedCandidateSentences([]);
-        }
-      }
-    } catch (err) {
-      alert('페이지 글자 인식 중 오류가 발생했습니다. 사진이 선명한지 확인해 주세요.');
-    } finally {
-      setIsOcrProcessing(false);
-      setLoadedSourceType('camera');
-      if (fileInputRef.current) fileInputRef.current.value = '';
-    }
+      return { text: extractedText };
+    });
   }
 
-  // Handle Web Page URL Scraping
+  // Handle Web Page URL Scraping (백그라운드 비동기 처리 - 블로킹 없음)
   async function handleScrapeUrl() {
     const targetUrl = inputWebUrl.trim();
     if (!targetUrl) {
@@ -273,10 +313,14 @@ export default function Home() {
       return;
     }
 
-    setIsUrlScraping(true);
     setUrlScrapeError(null);
+    setIsUrlModalOpen(false); // 모달 즉시 닫고 사용자가 바로 다른 작업 하도록 허용!
+    setInputWebUrl('');
 
-    try {
+    triggerToast('웹페이지 분석 시작! 🌐', '백그라운드에서 기사를 읽어오는 동안 단어를 먼저 입력하고 뜻을 고르세요.');
+
+    startBackgroundSourceAnalysis('웹페이지 URL 분석', 'web', async () => {
+      setIsUrlScraping(true);
       const res = await fetch('/api/scrape-url', {
         method: 'POST',
         headers: {
@@ -291,49 +335,13 @@ export default function Home() {
         throw new Error(data.error || '웹페이지를 불러오지 못했습니다.');
       }
 
-      setPageOcrText(data.text);
-      setLoadedSourceType('web');
-      setLoadedWebTitle(data.title || data.hostname);
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('context_vocab_cached_page_ocr', data.text);
-      }
-
-      // 책/레포트 제목에 웹페이지 타이틀 자동 세팅
-      if (data.title) {
-        setInputBookTitle(data.title);
-      }
-      if (data.sourceUrl) {
-        setInputSource(data.sourceUrl);
-      }
-
-      setIsUrlModalOpen(false);
-      setInputWebUrl('');
-      triggerToast('웹페이지 문장 로드 완료! 🌐', `"${data.title}" 에서 문장 ${data.sentenceCount}개를 불러왔습니다.`);
-
-      // 만약 이미 검색어에 단어가 입력되어 있다면 즉시 AI 문맥 문장 자동 탐색
-      if (inputWord.trim()) {
-        const matchRes = await findSentenceWithAI(data.text, inputWord.trim(), geminiApiKey);
-        if (matchRes.found && matchRes.sentence) {
-          const sentences = matchRes.allMatches.map((m) => m.sentence);
-          setDetectedCandidateSentences(sentences);
-          setInputContext(matchRes.sentence);
-          if (sentences.length > 1) {
-            setOcrDetectedNotice(`✨ 웹페이지 내에서 이 단어가 ${sentences.length}번 쓰였습니다! 아래에서 대표 문맥을 선택하세요.`);
-          } else {
-            const notice = matchRes.matchedWord && matchRes.matchedWord.toLowerCase() !== inputWord.trim().toLowerCase()
-              ? `🤖 AI가 형태소 변화형("${matchRes.matchedWord}")을 감지하여 원문 문장을 자동 선택했습니다!`
-              : `🌐 웹페이지에서 원문 문장을 자동으로 찾았습니다!`;
-            setOcrDetectedNotice(notice);
-          }
-        } else {
-          setDetectedCandidateSentences([]);
-        }
-      }
-    } catch (err: any) {
-      setUrlScrapeError(err.message || '웹페이지를 분석하는 중 오류가 발생했습니다.');
-    } finally {
-      setIsUrlScraping(false);
-    }
+      return {
+        text: data.text,
+        title: data.title,
+        sourceUrl: data.sourceUrl,
+        sentenceCount: data.sentenceCount,
+      };
+    });
   }
 
   // Handle Dictionary Search with target word
@@ -395,12 +403,39 @@ export default function Home() {
   async function handleSaveWord() {
     if (!dictResult || !selectedMeaning) return;
 
+    // 만약 사용자가 저장을 눌렀는데 원문 분석이 아직 백그라운드에서 진행 중이고 문장이 비어있다면:
+    // 백그라운드 분석이 완료될 때까지 잠시 대기했다가 자동으로 문맥 문장을 찾아 함께 저장!
+    let matchedContext = inputContext.trim();
+    let candidatesList = detectedCandidateSentences;
+
+    if (!matchedContext && isSourceProcessing && sourceTaskPromiseRef.current) {
+      setIsSavingAwaitingSource(true);
+      try {
+        const sourceText = await Promise.race([
+          sourceTaskPromiseRef.current,
+          new Promise<null>((res) => setTimeout(() => res(null), 6000)),
+        ]);
+
+        if (sourceText) {
+          const matchRes = await findSentenceWithAI(sourceText, dictResult.word, geminiApiKey);
+          if (matchRes.found && matchRes.sentence) {
+            matchedContext = matchRes.sentence;
+            candidatesList = matchRes.allMatches.map((m) => m.sentence);
+          }
+        }
+      } catch (err) {
+        console.warn('Awaiting source analysis error:', err);
+      } finally {
+        setIsSavingAwaitingSource(false);
+      }
+    }
+
     const bookToSave = inputBookTitle.trim() || '기본 단어장';
     const finalContext =
-      inputContext.trim() || `This sentence illustrates the word ${dictResult.word}.`;
+      matchedContext || `This sentence illustrates the word ${dictResult.word}.`;
     const finalCandidates =
-      detectedCandidateSentences.length > 0
-        ? Array.from(new Set([finalContext, ...detectedCandidateSentences]))
+      candidatesList.length > 0
+        ? Array.from(new Set([finalContext, ...candidatesList]))
         : [finalContext];
 
     const newItem: VocabItem = {
@@ -863,25 +898,18 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {isOcrProcessing ? (
-                    <div className="py-2.5 space-y-1.5">
-                      <div className="flex items-center justify-between text-xs font-bold text-indigo-700">
+                  {isSourceProcessing ? (
+                    <div className="py-2 px-3 bg-white/80 rounded-xl border border-indigo-200 shadow-xs space-y-1.5 animate-pulse">
+                      <div className="flex items-center justify-between text-xs font-bold text-indigo-800">
                         <span className="flex items-center gap-1.5">
-                          <RotateCw className="w-3.5 h-3.5 animate-spin" />
-                          <span>
-                            {geminiApiKey
-                              ? '🤖 AI Vision으로 책 페이지를 정밀 분석 및 오타 교정 중...'
-                              : '페이지 텍스트를 읽어내는 중...'}
-                          </span>
+                          <RotateCw className="w-3.5 h-3.5 animate-spin text-indigo-600" />
+                          <span>백그라운드에서 {sourceProcessTaskName || '원문 텍스트'} 분석 중...</span>
                         </span>
-                        <span>{ocrProgress}%</span>
+                        <span className="text-[10px] bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full font-bold">비동기 처리중</span>
                       </div>
-                      <div className="w-full bg-indigo-200/50 rounded-full h-1.5 overflow-hidden">
-                        <div
-                          className="bg-indigo-600 h-1.5 transition-all duration-200"
-                          style={{ width: `${ocrProgress}%` }}
-                        ></div>
-                      </div>
+                      <p className="text-[11px] text-slate-600 font-medium">
+                        ✨ <strong>기다릴 필요 없습니다!</strong> 아래에서 영어 단어를 입력하고 뜻을 고르고 계시면, 분석이 끝나는 즉시 문장을 자동으로 찾아 연결해 드립니다.
+                      </p>
                     </div>
                   ) : pageOcrText ? (
                     <div className="space-y-2 pt-1">
@@ -1353,14 +1381,23 @@ export default function Home() {
                 <div className="pt-3 mt-3 border-t border-slate-200 flex justify-end">
                   <button
                     onClick={handleSaveWord}
-                    disabled={!dictResult || !selectedMeaning}
+                    disabled={!dictResult || !selectedMeaning || isSavingAwaitingSource}
                     className={`w-full sm:w-auto font-bold px-6 py-2.5 text-xs rounded-xl shadow-md transition flex items-center justify-center gap-1.5 ${
-                      dictResult && selectedMeaning
+                      isSavingAwaitingSource
+                        ? 'bg-amber-600 text-white cursor-wait animate-pulse'
+                        : dictResult && selectedMeaning
                         ? 'bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer'
                         : 'bg-slate-300 text-slate-500 cursor-not-allowed'
                     }`}
                   >
-                    <span>⭐ [{inputBookTitle || '기본 단어장'}]에 저장하기</span>
+                    {isSavingAwaitingSource ? (
+                      <>
+                        <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                        <span>원문 문장 분석 완료 대기 중...</span>
+                      </>
+                    ) : (
+                      <span>⭐ [{inputBookTitle || '기본 단어장'}]에 저장하기</span>
+                    )}
                   </button>
                 </div>
               </div>
