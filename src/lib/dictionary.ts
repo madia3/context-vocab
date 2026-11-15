@@ -1,4 +1,5 @@
 import { DictSearchResult, MeaningOption } from '@/types/vocab';
+import { speakNatural } from './tts';
 
 export const BUILTIN_KOREAN_DICT: Record<string, { phonetic: string; meanings: MeaningOption[] }> = {
   tragedy: {
@@ -230,29 +231,9 @@ export async function lookupDictionary(rawWord: string): Promise<DictSearchResul
 }
 
 export function speakWordTTS(word: string, voiceCode: string = "en-US") {
-  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-  window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(word);
-  utterance.rate = 0.9;
-  utterance.lang = voiceCode;
-
-  const voices = window.speechSynthesis.getVoices();
-  const matched = voices.find((v) => v.lang.startsWith(voiceCode));
-  if (matched) utterance.voice = matched;
-
-  window.speechSynthesis.speak(utterance);
+  speakNatural(word, voiceCode);
 }
 
 export function speakSentenceTTS(text: string, voiceCode: string = "en-US") {
-  if (typeof window === "undefined" || !("speechSynthesis" in window)) return;
-  window.speechSynthesis.cancel();
-  const utterance = new SpeechSynthesisUtterance(text);
-  utterance.rate = 0.95;
-  utterance.lang = voiceCode;
-
-  const voices = window.speechSynthesis.getVoices();
-  const matched = voices.find((v) => v.lang.startsWith(voiceCode));
-  if (matched) utterance.voice = matched;
-
-  window.speechSynthesis.speak(utterance);
+  speakNatural(text, voiceCode);
 }

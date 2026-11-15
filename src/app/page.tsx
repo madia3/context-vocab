@@ -296,10 +296,10 @@ export default function Home() {
     if (isCorrect) {
       setQuizScore((prev) => prev + 1);
       fireConfetti({ particleCount: 50, spread: 60, origin: { x: 0.5, y: 0.6 } });
-      speakWordTTS(current.word, ttsVoice);
-      setTimeout(() => {
-        speakSentenceTTS(current.contextSentence, ttsVoice);
-      }, 1000);
+
+      // 정답 선택 즉시 지연 없이 원문 문장 원어민 고음질 낭독 시작
+      const textToRead = current.contextSentence?.trim() || current.word;
+      speakSentenceTTS(textToRead, ttsVoice);
     }
   }
 
