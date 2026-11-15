@@ -47,6 +47,8 @@ export default function Home() {
   const [inputContext, setInputContext] = useState('');
   const [inputSource, setInputSource] = useState('');
   const [inputBookTitle, setInputBookTitle] = useState('햄릿 (Hamlet)');
+  const [isCustomBook, setIsCustomBook] = useState(false);
+  const [customBookInput, setCustomBookInput] = useState('');
   const [isSearchingDict, setIsSearchingDict] = useState(false);
   const [dictResult, setDictResult] = useState<DictSearchResult | null>(null);
   const [selectedMeaning, setSelectedMeaning] = useState('');
@@ -239,6 +241,8 @@ export default function Home() {
     setSelectedMeaning('');
     setSelectedPos('');
     setCustomMeaning('');
+    setIsCustomBook(false);
+    setCustomBookInput('');
 
     // 팡! 터지는 화려한 폭죽 효과
     fireConfetti({ particleCount: 80, spread: 70, origin: { x: 0.35, y: 0.55 } });
@@ -530,32 +534,65 @@ export default function Home() {
                   <div className="flex items-center justify-between mb-1.5">
                     <label className="block text-xs font-bold text-slate-700 flex items-center gap-1">
                       <BookMarked className="w-3.5 h-3.5 text-indigo-600" />
-                      <span>단어장 / 책 이름 <span className="text-rose-500">*</span></span>
+                      <span>저장할 단어장 선택 <span className="text-rose-500">*</span></span>
                     </label>
-                    <span className="text-[10px] text-slate-400">이전 등록한 단어장 자동 유지</span>
+                    <span className="text-[10px] text-indigo-600 font-semibold">이전 단어장 자동 선택됨</span>
                   </div>
 
-                  <input
-                    type="text"
-                    value={inputBookTitle}
-                    onChange={(e) => setInputBookTitle(e.target.value)}
-                    placeholder="예: 햄릿 (Hamlet), 타임지 11월호, ESG 경영 리포트"
-                    className="w-full px-3 py-2 text-xs bg-white text-slate-900 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-semibold"
-                  />
+                  {/* 선택형 드롭다운 */}
+                  <select
+                    value={isCustomBook ? '__custom__' : inputBookTitle}
+                    onChange={(e) => {
+                      if (e.target.value === '__custom__') {
+                        setIsCustomBook(true);
+                      } else {
+                        setIsCustomBook(false);
+                        setInputBookTitle(e.target.value);
+                      }
+                    }}
+                    className="w-full px-3 py-2 text-xs bg-white text-slate-900 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold cursor-pointer"
+                  >
+                    {availableBookTitles.map((title) => (
+                      <option key={title} value={title}>
+                        📖 {title}
+                      </option>
+                    ))}
+                    <option value="__custom__">➕ + 새 단어장 직접 추가하기...</option>
+                  </select>
+
+                  {/* 새 단어장 직접 입력란 (필요할 때만 펼쳐짐) */}
+                  {isCustomBook && (
+                    <div className="mt-2 animate-toast">
+                      <input
+                        type="text"
+                        value={customBookInput}
+                        onChange={(e) => {
+                          setCustomBookInput(e.target.value);
+                          setInputBookTitle(e.target.value);
+                        }}
+                        placeholder="새 단어장/책 이름을 입력하세요 (예: 코스모스, 논문 2편)"
+                        className="w-full px-3 py-2 text-xs bg-white text-slate-900 border-2 border-indigo-500 rounded-lg focus:outline-none font-bold"
+                        autoFocus
+                      />
+                    </div>
+                  )}
 
                   {/* Previous Book Title Chips */}
                   {availableBookTitles.length > 0 && (
-                    <div className="mt-2 flex flex-wrap items-center gap-1.5">
-                      <span className="text-[10px] text-slate-400 font-medium">최근 단어장:</span>
-                      {availableBookTitles.slice(0, 4).map((title) => (
+                    <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+                      <span className="text-[10px] text-slate-400 font-medium">빠른 선택:</span>
+                      {availableBookTitles.map((title) => (
                         <button
                           key={title}
                           type="button"
-                          onClick={() => setInputBookTitle(title)}
+                          onClick={() => {
+                            setIsCustomBook(false);
+                            setInputBookTitle(title);
+                          }}
                           className={`text-[10px] px-2 py-0.5 rounded-md border transition ${
-                            inputBookTitle === title
-                              ? 'bg-indigo-50 text-indigo-700 border-indigo-300 font-bold'
-                              : 'bg-white text-slate-600 border-slate-200 hover:border-slate-400'
+                            !isCustomBook && inputBookTitle === title
+                              ? 'bg-indigo-600 text-white border-indigo-600 font-bold shadow-xs'
+                              : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300'
                           }`}
                         >
                           {title}
