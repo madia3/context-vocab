@@ -46,6 +46,7 @@ export default function Home() {
   const [selectedMeaning, setSelectedMeaning] = useState('');
   const [selectedPos, setSelectedPos] = useState('');
   const [customMeaning, setCustomMeaning] = useState('');
+  const inputWordRef = useRef<HTMLInputElement>(null);
 
   // Autocomplete State
   const [suggestions, setSuggestions] = useState<string[]>([]);
@@ -208,7 +209,7 @@ export default function Home() {
     await addVocabularyItem(newItem);
     await loadData();
 
-    // Reset Form
+    // Reset Form for next word entry
     setInputWord('');
     setInputContext('');
     setInputSource('');
@@ -217,14 +218,18 @@ export default function Home() {
     setSelectedPos('');
     setCustomMeaning('');
 
-    // 팡! 터지는 화려한 폭죽 효과 (좌우 더블 발사)
+    // 팡! 터지는 화려한 폭죽 효과
     fireConfetti({ particleCount: 80, spread: 70, origin: { x: 0.35, y: 0.55 } });
     setTimeout(() => {
       fireConfetti({ particleCount: 80, spread: 70, origin: { x: 0.65, y: 0.55 } });
     }, 200);
 
-    triggerToast(`'${newItem.word}' 저장 완료! 🎉`, `'${newItem.selectedMeaning}' 뜻으로 단어장에 추가되었습니다.`);
-    setActiveTab('list');
+    triggerToast(`'${newItem.word}' 저장 완료! 🎉`, `단어장에 추가되었습니다. 다음 단어를 바로 등록해 보세요!`);
+    
+    // 다음 단어를 바로 입력할 수 있도록 입력창에 포커스
+    setTimeout(() => {
+      inputWordRef.current?.focus();
+    }, 100);
   }
 
   // Delete Item
@@ -462,6 +467,7 @@ export default function Home() {
 
                   <div className="flex gap-2 relative">
                     <input
+                      ref={inputWordRef}
                       type="text"
                       value={inputWord}
                       onChange={(e) => setInputWord(e.target.value)}
@@ -856,100 +862,90 @@ export default function Home() {
                       </div>
                     </div>
 
-                    {/* 5 Options */}
-                    <div className="mt-5 space-y-2.5">
-                      {quizOptions.map((opt, idx) => {
-                        const labels = ['①', '②', '③', '④', '⑤'];
-                        const isCorrectOption = opt === currentQuizItem.selectedMeaning;
-                        const isSelected = quizAnswerState.chosen === opt;
-
-                        let btnClass =
-                          'quiz-option-btn w-full text-left p-3.5 rounded-xl border text-xs font-bold transition flex items-center gap-3 shadow-sm ';
-
-                        if (!quizAnswerState.answered) {
-                          btnClass +=
-                            'border-slate-200 bg-white hover:border-indigo-500 hover:bg-indigo-50/40 text-slate-900';
-                        } else {
-                          if (isCorrectOption) {
-                            btnClass += 'border-2 border-emerald-500 bg-emerald-50 text-emerald-900';
-                          } else if (isSelected && !quizAnswerState.isCorrect) {
-                            btnClass += 'border-2 border-rose-400 bg-rose-50 text-rose-900';
-                          } else {
-                            btnClass += 'border-slate-200 bg-slate-50 text-slate-400 opacity-60';
-                          }
-                        }
-
-                        return (
-                          <button
-                            key={idx}
-                            disabled={quizAnswerState.answered}
-                            onClick={() => handleSelectOption(opt)}
-                            className={btnClass}
-                          >
-                            <span className="w-6 h-6 rounded-full bg-slate-100 text-slate-700 font-black flex items-center justify-center text-xs border border-slate-200 shrink-0">
-                              {labels[idx]}
-                            </span>
-                            <span className="flex-1">{opt}</span>
-                          </button>
-                        );
-                      })}
-                    </div>
-
-                    {/* Feedback Banner & Context */}
-                    {quizAnswerState.answered && (
-                      <div className="mt-6 pt-5 border-t border-slate-200 space-y-4">
+                    {/* 5 Options: 정답 선택 전에는 5개 선지 표시, 선택 후에는 깔끔하게 사라짐 */}
+                    {!quizAnswerState.answered ? (
+                      <div className="mt-5 space-y-2.5">
+                        {quizOptions.map((opt, idx) => {
+                          const labels = ['①', '②', '③', '④', '⑤'];
+                          return (
+                            <button
+                              key={idx}
+                              onClick={() => handleSelectOption(opt)}
+                              className="quiz-option-btn w-full text-left p-3.5 rounded-xl border border-slate-200 bg-white hover:border-indigo-500 hover:bg-indigo-50/40 text-xs font-bold text-slate-900 transition flex items-center gap-3 shadow-sm active:scale-[0.99]"
+                            >
+                              <span className="w-6 h-6 rounded-full bg-slate-100 text-slate-700 font-black flex items-center justify-center text-xs border border-slate-200 shrink-0">
+                                {labels[idx]}
+                              </span>
+                              <span className="flex-1">{opt}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      /* 정답 선택 후: 선지들은 사라지고 원문 문맥 + 원어민 발음 + 다음 문제만 시원하게 표시 */
+                      <div className="mt-5 space-y-4 animate-toast">
+                        {/* Status Result Banner */}
                         <div
-                          className={`p-3 rounded-xl flex items-center justify-between text-white ${
+                          className={`p-4 rounded-2xl flex items-center justify-between text-white shadow-md ${
                             quizAnswerState.isCorrect ? 'bg-emerald-500' : 'bg-rose-500'
                           }`}
                         >
-                          <div className="flex items-center gap-2 font-bold text-xs">
+                          <div className="flex items-center gap-3">
                             {quizAnswerState.isCorrect ? (
-                              <>
-                                <CheckCircle2 className="w-4 h-4" />
-                                <span>정답입니다! 🎉</span>
-                              </>
+                              <CheckCircle2 className="w-6 h-6 shrink-0" />
                             ) : (
-                              <>
-                                <AlertCircle className="w-4 h-4" />
-                                <span>오답! 정답은 [{currentQuizItem.selectedMeaning}] 입니다.</span>
-                              </>
+                              <AlertCircle className="w-6 h-6 shrink-0" />
                             )}
+                            <div>
+                              <div className="text-base font-black leading-tight">
+                                {quizAnswerState.isCorrect ? '정답입니다! 🎉' : '오답입니다! 💡'}
+                              </div>
+                              <div className="text-xs text-white/90 mt-0.5">
+                                알맞은 뜻: <span className="font-bold underline decoration-white/40">{currentQuizItem.selectedMeaning}</span>
+                              </div>
+                            </div>
                           </div>
                           {quizAnswerState.isCorrect && (
-                            <span className="text-[11px] bg-white/20 px-2 py-0.5 rounded font-mono">+1 Point</span>
+                            <span className="text-xs bg-white/20 px-2.5 py-1 rounded-xl font-mono font-bold">+1 Point</span>
                           )}
                         </div>
 
-                        {/* Context Sentence */}
-                        <div className="bg-amber-50/90 border border-amber-200 rounded-xl p-4">
-                          <div className="flex items-center justify-between mb-2">
-                            <span className="text-[11px] font-bold text-amber-900 flex items-center gap-1">
+                        {/* Context Sentence Card */}
+                        <div className="bg-amber-50/95 border border-amber-200 rounded-2xl p-5 shadow-sm space-y-3">
+                          <div className="flex items-center justify-between">
+                            <span className="text-xs font-black text-amber-900 flex items-center gap-1.5">
                               📖 원서 / 레포트 속 실제 원문 문맥
                             </span>
                             <button
                               onClick={() => speakSentenceTTS(currentQuizItem.contextSentence, ttsVoice)}
-                              className="text-xs bg-amber-200/80 hover:bg-amber-300 text-amber-900 font-bold px-2.5 py-1 rounded-lg flex items-center gap-1 shadow-sm transition"
+                              className="text-xs bg-amber-200/90 hover:bg-amber-300 text-amber-900 font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-sm transition active:scale-95"
                             >
                               <Volume2 className="w-3.5 h-3.5" />
-                              <span>원문 읽어주기 (TTS)</span>
+                              <span>원문 다시 듣기 (TTS)</span>
                             </button>
                           </div>
-                          <p className="text-sm text-slate-800 leading-relaxed font-serif">
+                          <p className="text-base text-slate-800 leading-relaxed font-serif pt-1">
                             {renderHighlightedContext(currentQuizItem.contextSentence, currentQuizItem.word)}
                           </p>
-                          <div className="mt-2 text-[11px] text-slate-500 font-sans">
-                            출처: {currentQuizItem.sourceMemo || '원서'}
+                          <div className="flex items-center justify-between pt-2 border-t border-amber-200/60 text-xs text-slate-500">
+                            <span>출처: {currentQuizItem.sourceMemo || '원서'}</span>
+                            <button
+                              onClick={() => speakWordTTS(currentQuizItem.word, ttsVoice)}
+                              className="text-indigo-600 hover:underline flex items-center gap-1 font-semibold"
+                            >
+                              <Volume2 className="w-3 h-3" />
+                              <span>단어만 다시 듣기</span>
+                            </button>
                           </div>
                         </div>
 
-                        {/* Next Button */}
-                        <div className="flex justify-end pt-1">
+                        {/* Big Next Button */}
+                        <div className="pt-2 flex justify-end">
                           <button
                             onClick={handleNextQuestion}
-                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm px-6 py-2.5 rounded-xl shadow-md transition flex items-center gap-2"
+                            className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm px-8 py-3.5 rounded-xl shadow-lg transition flex items-center justify-center gap-2 active:scale-95"
                           >
-                            <span>다음 문제</span>
+                            <span>다음 문제 풀기</span>
                             <span>➔</span>
                           </button>
                         </div>
