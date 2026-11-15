@@ -7,6 +7,9 @@ export interface VocabItem {
   allMeanings?: string[];
   contextSentence: string;
   sourceMemo: string;
+  bookTitle?: string; // 책 또는 레포트 이름
+  quizCount?: number; // 퀴즈 푼 횟수
+  correctCount?: number; // 맞춘 횟수
   date: string;
   created_at?: string;
   user_id?: string;
