@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
     // Google Gemini REST API 호출
     const cleanBase64 = base64.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, '');
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`;
 
     const prompt = `You are a high-precision OCR and document layout restoration AI for English books.
 Carefully read the photographed English book page and transcribe all text.

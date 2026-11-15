@@ -22,7 +22,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`;
+    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`;
 
     const prompt = `You are an expert English linguist and vocabulary reading assistant.
 Given the target English vocabulary word and the book page text below, identify ALL complete sentences where this vocabulary word (or any of its inflected/derived forms, such as plural noun, past tense, present participle, singular, adverb, or comparative/superlative form; e.g. "party" -> "parties", "walk" -> "walked"/"walking", "prevalent" -> "prevalent") is used.
