@@ -17,7 +17,13 @@ import {
   DISTRACTOR_POOL_KOREAN,
 } from '@/lib/dictionary';
 import { getLiveDictCandidates, fetchLiveDictSuggestions, SuggestionItem } from '@/lib/autocomplete';
-import { extractTextFromPageImage, findSentenceWithWord } from '@/lib/ocr';
+import { extractTextFromPageImage, findSentenceWithWord, findSentenceWithWordSmart } from '@/lib/ocr';
+import {
+  extractTextWithAI,
+  findSentenceWithAI,
+  getStoredGeminiKey,
+  setStoredGeminiKey,
+} from '@/lib/gemini';
 import { fireConfetti } from '@/lib/confetti';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import {
@@ -40,6 +46,9 @@ import {
   ScanLine,
   Check,
   RotateCw,
+  Bot,
+  Key,
+  ExternalLink,
 } from 'lucide-react';
 
 export default function Home() {
@@ -89,6 +98,8 @@ export default function Home() {
   // Settings State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [ttsVoice, setTtsVoice] = useState('en-US');
+  const [geminiApiKey, setGeminiApiKey] = useState('');
+  const [geminiKeyInput, setGeminiKeyInput] = useState('');
 
   // Floating Toast State
   const [toast, setToast] = useState<{ show: boolean; title: string; subtitle?: string } | null>(null);
@@ -112,6 +123,12 @@ export default function Home() {
 
       const savedPageOcr = localStorage.getItem('context_vocab_cached_page_ocr');
       if (savedPageOcr) setPageOcrText(savedPageOcr);
+
+      const savedGeminiKey = getStoredGeminiKey();
+      if (savedGeminiKey) {
+        setGeminiApiKey(savedGeminiKey);
+        setGeminiKeyInput(savedGeminiKey);
+      }
     }
   }, []);
 
@@ -144,29 +161,37 @@ export default function Home() {
     setIsLoaded(true);
   }
 
-  // OCR 페이지 사진 촬영 / 업로드 핸들러
+  // OCR 페이지 사진 촬영 / 업로드 핸들러 (AI Vision 우선 + 로컬 Tesseract fallback)
   async function handlePagePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
 
     setIsOcrProcessing(true);
-    setOcrProgress(0);
+    setOcrProgress(20);
 
     try {
-      const extractedText = await extractTextFromPageImage(file, (p) => setOcrProgress(p));
+      const { text: extractedText, method } = await extractTextWithAI(file, geminiApiKey);
+      setOcrProgress(100);
       setPageOcrText(extractedText);
       if (typeof window !== 'undefined') {
         localStorage.setItem('context_vocab_cached_page_ocr', extractedText);
       }
 
-      triggerToast('페이지 사진 인식 완료! 📸', '이 페이지에서 모르는 단어를 입력하면 원문 문장을 자동으로 찾아줍니다.');
+      if (method === 'gemini') {
+        triggerToast('AI 비전 페이지 인식 완료! 🤖', '오타 교정과 줄바꿈 하이픈이 복원된 고품질 영문이 준비되었습니다.');
+      } else {
+        triggerToast('페이지 사진 인식 완료! 📸', '이 페이지에서 모르는 단어를 입력하면 원문 문장을 자동으로 찾아줍니다.');
+      }
 
-      // 만약 이미 검색어에 단어가 입력되어 있다면 즉시 문장 자동 탐색
+      // 만약 이미 검색어에 단어가 입력되어 있다면 즉시 AI 문맥 문장 자동 탐색
       if (inputWord.trim()) {
-        const found = findSentenceWithWord(extractedText, inputWord.trim());
-        if (found) {
-          setInputContext(found);
-          setOcrDetectedNotice(`촬영한 페이지에서 문장을 자동으로 찾았습니다: "${found.slice(0, 50)}..."`);
+        const matchRes = await findSentenceWithAI(extractedText, inputWord.trim(), geminiApiKey);
+        if (matchRes.found && matchRes.sentence) {
+          setInputContext(matchRes.sentence);
+          const notice = matchRes.matchedWord && matchRes.matchedWord.toLowerCase() !== inputWord.trim().toLowerCase()
+            ? `🤖 AI가 형태소 변화형("${matchRes.matchedWord}")을 감지하여 원문 문장을 자동 선택했습니다!`
+            : `📸 촬영한 페이지에서 원문 문장을 자동으로 찾았습니다!`;
+          setOcrDetectedNotice(notice);
         }
       }
     } catch (err) {
@@ -185,13 +210,17 @@ export default function Home() {
       return;
     }
 
-    // 만약 현재 촬영해둔 페이지 텍스트가 있다면, 해당 단어가 쓰인 원문 문장을 자동 탐색하여 채움!
+    // 만약 현재 촬영해둔 페이지 텍스트가 있다면, AI를 통해 복수/단수/시제 변화형을 문맥에서 스마트 탐색!
     if (pageOcrText) {
-      const found = findSentenceWithWord(pageOcrText, wordToSearch);
-      if (found) {
-        setInputContext(found);
-        setOcrDetectedNotice(`📸 촬영한 페이지에서 원문 문장을 자동으로 찾았습니다!`);
-      }
+      findSentenceWithAI(pageOcrText, wordToSearch, geminiApiKey).then((matchRes) => {
+        if (matchRes.found && matchRes.sentence) {
+          setInputContext(matchRes.sentence);
+          const notice = matchRes.matchedWord && matchRes.matchedWord.toLowerCase() !== wordToSearch.toLowerCase()
+            ? `🤖 AI가 형태소 변화형("${matchRes.matchedWord}")을 감지하여 원문 문장을 자동 선택했습니다!`
+            : `📸 촬영한 페이지에서 원문 문장을 자동으로 찾았습니다!`;
+          setOcrDetectedNotice(notice);
+        }
+      });
     }
 
     setIsSearchingDict(true);
@@ -636,11 +665,26 @@ export default function Home() {
                       <Camera className="w-4 h-4 text-indigo-600" />
                       <span>책 페이지 찰칵 찍기 (문장 자동 인식)</span>
                     </span>
-                    {pageOcrText && (
-                      <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
-                        <Check className="w-3 h-3" /> 페이지 인식됨
-                      </span>
-                    )}
+                    <div className="flex items-center gap-1.5">
+                      {geminiApiKey ? (
+                        <span className="text-[10px] bg-purple-100 text-purple-800 font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <Bot className="w-3 h-3 text-purple-600" /> AI 비전 모드
+                        </span>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setIsSettingsOpen(true)}
+                          className="text-[10px] bg-white border border-indigo-200 text-indigo-700 hover:bg-indigo-50 font-bold px-2 py-0.5 rounded-full flex items-center gap-1 transition cursor-pointer"
+                        >
+                          <Sparkles className="w-3 h-3 text-indigo-600" /> AI 연동하기
+                        </button>
+                      )}
+                      {pageOcrText && (
+                        <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                          <Check className="w-3 h-3" /> 페이지 인식됨
+                        </span>
+                      )}
+                    </div>
                   </div>
 
                   {isOcrProcessing ? (
@@ -648,7 +692,11 @@ export default function Home() {
                       <div className="flex items-center justify-between text-xs font-bold text-indigo-700">
                         <span className="flex items-center gap-1.5">
                           <RotateCw className="w-3.5 h-3.5 animate-spin" />
-                          <span>페이지 텍스트를 읽어내는 중...</span>
+                          <span>
+                            {geminiApiKey
+                              ? '🤖 AI Vision으로 책 페이지를 정밀 분석 및 오타 교정 중...'
+                              : '페이지 텍스트를 읽어내는 중...'}
+                          </span>
                         </span>
                         <span>{ocrProgress}%</span>
                       </div>
@@ -666,7 +714,7 @@ export default function Home() {
                       </p>
                       <div className="flex items-center justify-between">
                         <span className="text-[10px] text-slate-500">
-                          💡 단어를 입력하면 이 페이지에서 문장을 자동으로 찾습니다!
+                          💡 단어를 입력하면 AI가 복수/시제 변화형까지 문맥에서 감지합니다!
                         </span>
                         <div className="flex items-center gap-2">
                           <button
@@ -728,12 +776,15 @@ export default function Home() {
                         setInputWord(val);
                         setDictResult(null); // 타이핑 시 이전 상세 결과 닫고 실시간 리스트 표시
 
-                        // 타이핑 도중에도 현재 페이지 텍스트에서 단어 문장 자동 탐색
+                        // 타이핑 도중에도 현재 페이지 텍스트에서 단어 문장 자동 탐색 (복수형, 시제 변화형 스마트 매칭)
                         if (pageOcrText && val.trim().length >= 3) {
-                          const found = findSentenceWithWord(pageOcrText, val.trim());
-                          if (found && !inputContext) {
-                            setInputContext(found);
-                            setOcrDetectedNotice('📸 촬영한 페이지에서 원문 문장을 자동으로 찾았습니다!');
+                          const matched = findSentenceWithWordSmart(pageOcrText, val.trim());
+                          if (matched && !inputContext) {
+                            setInputContext(matched.sentence);
+                            const notice = matched.matchedWord.toLowerCase() !== val.trim().toLowerCase()
+                              ? `💡 변화형("${matched.matchedWord}")이 포함된 원문 문장을 자동으로 찾았습니다!`
+                              : '📸 촬영한 페이지에서 원문 문장을 자동으로 찾았습니다!';
+                            setOcrDetectedNotice(notice);
                           }
                         }
                       }}
@@ -1454,6 +1505,79 @@ export default function Home() {
                     ? '단어가 Supabase 클라우드 데이터베이스에 실시간 동기화됩니다.'
                     : '.env.local 파일에 NEXT_PUBLIC_SUPABASE_URL 및 NEXT_PUBLIC_SUPABASE_ANON_KEY를 입력하면 클라우드 동기화가 활성화됩니다.'}
                 </p>
+              </div>
+
+              {/* Google Gemini AI Vision & Sentence Matcher Settings */}
+              <div className="bg-purple-50/70 p-3.5 rounded-xl border border-purple-200/80 space-y-2">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-purple-950 flex items-center gap-1.5 text-xs">
+                    <Bot className="w-4 h-4 text-purple-600" />
+                    <span>Google Gemini AI 비전 & 문맥 분석</span>
+                  </span>
+                  {geminiApiKey ? (
+                    <span className="text-[10px] bg-purple-200 text-purple-900 font-bold px-2 py-0.5 rounded-full">
+                      연동 활성화됨
+                    </span>
+                  ) : (
+                    <span className="text-[10px] bg-slate-200 text-slate-700 font-bold px-2 py-0.5 rounded-full">
+                      미등록 (기본 모드)
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-purple-900/80 leading-relaxed">
+                  Gemini API를 연동하면 책 사진의 오타·잘린 줄바꿈을 완벽히 복원하고, 단어의 복수형(parties)/과거형(walked) 등 형태소 변화형까지 AI가 문맥에서 스스로 찾아냅니다.
+                </p>
+                <div className="flex gap-1.5 pt-1">
+                  <input
+                    type="password"
+                    value={geminiKeyInput}
+                    onChange={(e) => setGeminiKeyInput(e.target.value)}
+                    placeholder="AIzaSy... (Gemini API 키 입력)"
+                    className="flex-1 px-2.5 py-1.5 bg-white border border-purple-200 rounded-lg text-xs font-mono focus:outline-none focus:ring-1 focus:ring-purple-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setStoredGeminiKey(geminiKeyInput);
+                      setGeminiApiKey(geminiKeyInput.trim());
+                      triggerToast(
+                        geminiKeyInput.trim() ? 'AI 키 저장 완료! 🤖' : 'AI 키가 삭제되었습니다.',
+                        geminiKeyInput.trim()
+                          ? '책 사진 촬영 시 Gemini Vision과 AI 문장 추출이 적용됩니다.'
+                          : '기본 로컬 엔진으로 작동합니다.'
+                      );
+                    }}
+                    className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition shrink-0 cursor-pointer"
+                  >
+                    저장
+                  </button>
+                  {geminiApiKey && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setStoredGeminiKey('');
+                        setGeminiApiKey('');
+                        setGeminiKeyInput('');
+                        triggerToast('AI 키 삭제됨', '기본 로컬 모드로 전환되었습니다.');
+                      }}
+                      className="bg-white border border-purple-300 text-purple-700 hover:bg-purple-100 font-bold px-2.5 py-1.5 rounded-lg text-xs transition shrink-0 cursor-pointer"
+                    >
+                      해제
+                    </button>
+                  )}
+                </div>
+                <div className="flex items-center justify-between pt-0.5 text-[10px] text-purple-700">
+                  <span>💡 개인용 무료 키 발급 (신용카드 불필요)</span>
+                  <a
+                    href="https://aistudio.google.com/app/apikey"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="font-bold underline flex items-center gap-0.5 hover:text-purple-900"
+                  >
+                    <span>Google AI Studio 열기</span>
+                    <ExternalLink className="w-2.5 h-2.5" />
+                  </a>
+                </div>
               </div>
 
               {/* TTS Voice Select */}
