@@ -16,6 +16,7 @@ import {
   DISTRACTOR_POOL_KOREAN,
 } from '@/lib/dictionary';
 import { getAutocompleteSuggestions } from '@/lib/autocomplete';
+import { fireConfetti } from '@/lib/confetti';
 import { isSupabaseConfigured } from '@/lib/supabase';
 import {
   Volume2,
@@ -67,6 +68,16 @@ export default function Home() {
   // Settings State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [ttsVoice, setTtsVoice] = useState('en-US');
+
+  // Floating Toast State
+  const [toast, setToast] = useState<{ show: boolean; title: string; subtitle?: string } | null>(null);
+
+  function triggerToast(title: string, subtitle?: string) {
+    setToast({ show: true, title, subtitle });
+    setTimeout(() => {
+      setToast(null);
+    }, 3500);
+  }
 
   // Load Data on Mount
   useEffect(() => {
@@ -206,7 +217,13 @@ export default function Home() {
     setSelectedPos('');
     setCustomMeaning('');
 
-    alert(`'${newItem.word}' (${newItem.selectedMeaning}) 저장 완료!`);
+    // 팡! 터지는 화려한 폭죽 효과 (좌우 더블 발사)
+    fireConfetti({ particleCount: 80, spread: 70, origin: { x: 0.35, y: 0.55 } });
+    setTimeout(() => {
+      fireConfetti({ particleCount: 80, spread: 70, origin: { x: 0.65, y: 0.55 } });
+    }, 200);
+
+    triggerToast(`'${newItem.word}' 저장 완료! 🎉`, `'${newItem.selectedMeaning}' 뜻으로 단어장에 추가되었습니다.`);
     setActiveTab('list');
   }
 
@@ -236,6 +253,11 @@ export default function Home() {
   function setupQuestion(index: number, list: VocabItem[]) {
     if (index >= list.length) {
       setIsQuizFinished(true);
+      fireConfetti({ particleCount: 120, origin: { x: 0.5, y: 0.5 } });
+      setTimeout(() => {
+        fireConfetti({ particleCount: 100, origin: { x: 0.3, y: 0.5 } });
+        fireConfetti({ particleCount: 100, origin: { x: 0.7, y: 0.5 } });
+      }, 300);
       return;
     }
     const current = list[index];
@@ -273,6 +295,7 @@ export default function Home() {
 
     if (isCorrect) {
       setQuizScore((prev) => prev + 1);
+      fireConfetti({ particleCount: 50, spread: 60, origin: { x: 0.5, y: 0.6 } });
       speakWordTTS(current.word, ttsVoice);
       setTimeout(() => {
         speakSentenceTTS(current.contextSentence, ttsVoice);
@@ -1058,6 +1081,29 @@ export default function Home() {
                 닫기
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Floating Animated Toast Notification */}
+      {toast && (
+        <div className="fixed top-6 left-1/2 -translate-x-1/2 z-[9999] animate-toast">
+          <div className="bg-slate-900/95 text-white px-5 py-3.5 rounded-2xl shadow-2xl border border-slate-700/60 backdrop-blur-md flex items-center gap-3.5 max-w-md min-w-[300px]">
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-400 to-rose-400 flex items-center justify-center text-lg shadow-md shrink-0">
+              🎉
+            </div>
+            <div className="flex-1 min-w-0">
+              <h4 className="text-sm font-black text-white leading-tight">{toast.title}</h4>
+              {toast.subtitle && (
+                <p className="text-[11px] text-slate-300 truncate mt-0.5">{toast.subtitle}</p>
+              )}
+            </div>
+            <button
+              onClick={() => setToast(null)}
+              className="text-slate-400 hover:text-white text-xs p-1 rounded-lg"
+            >
+              ✕
+            </button>
           </div>
         </div>
       )}
