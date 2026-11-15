@@ -1,0 +1,23 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+.highlight-word {
+  background-color: #fef08a !important;
+  color: #854d0e !important;
+  font-weight: 800;
+  padding: 2px 6px;
+  border-radius: 4px;
+  display: inline-block;
+  border-bottom: 2px solid #ca8a04;
+}
+
+.quiz-option-btn:hover:not(:disabled) {
+  transform: translateY(-2px);
+}
+
+/* Ensure clean input styling */
+input, textarea, select {
+  background-color: #ffffff;
+  color: #0f172a;
+}
