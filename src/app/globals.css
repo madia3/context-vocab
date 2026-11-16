@@ -16,10 +16,11 @@
   transform: translateY(-2px);
 }
 
-/* Ensure clean input styling */
+/* Ensure clean input styling & Prevent iOS Safari Auto Zoom (Font size >= 16px) */
 input, textarea, select {
   background-color: #ffffff;
   color: #0f172a;
+  font-size: 16px !important;
 }
 
 /* 부드러운 인라인 페이드인 (수평 이동 없음 - 레이아웃 쏠림 원천 방지) */
