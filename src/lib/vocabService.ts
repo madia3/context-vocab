@@ -1,5 +1,6 @@
 import { VocabItem } from '@/types/vocab';
-import { supabase, isSupabaseConfigured } from './supabase';
+import { supabase, checkIsSupabaseConfigured, getCurrentUser } from './supabase';
+import { User } from '@supabase/supabase-js';
 
 export const INITIAL_SAMPLES: VocabItem[] = [
   {
@@ -14,6 +15,9 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     bookTitle: "햄릿 (Hamlet)",
     quizCount: 3,
     correctCount: 3,
+    wrongCount: 0,
+    consecutiveCorrect: 3,
+    lastQuizDate: "2026-11-15",
     date: "2026-11-15"
   },
   {
@@ -28,6 +32,9 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     bookTitle: "의학 저널 (Medical Journal)",
     quizCount: 2,
     correctCount: 1,
+    wrongCount: 1,
+    consecutiveCorrect: 1,
+    lastQuizDate: "2026-11-15",
     date: "2026-11-15"
   },
   {
@@ -42,6 +49,9 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     bookTitle: "AI & 테크 리포트",
     quizCount: 4,
     correctCount: 4,
+    wrongCount: 0,
+    consecutiveCorrect: 4,
+    lastQuizDate: "2026-11-15",
     date: "2026-11-15"
   },
   {
@@ -56,6 +66,9 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     bookTitle: "지구 온난화 특별 보고서",
     quizCount: 1,
     correctCount: 1,
+    wrongCount: 0,
+    consecutiveCorrect: 1,
+    lastQuizDate: "2026-11-15",
     date: "2026-11-15"
   },
   {
@@ -70,24 +83,46 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     bookTitle: "린 스타트업 (Lean Startup)",
     quizCount: 2,
     correctCount: 2,
+    wrongCount: 0,
+    consecutiveCorrect: 2,
+    lastQuizDate: "2026-11-15",
     date: "2026-11-15"
   }
 ];
 
-const STORAGE_KEY = 'context_vocab_data';
+const GUEST_STORAGE_KEY = 'context_vocab_data';
 
-export async function fetchVocabulary(): Promise<VocabItem[]> {
-  // If Supabase is configured, fetch from Supabase
-  if (isSupabaseConfigured && supabase) {
+function getUserStorageKey(userId?: string): string {
+  return userId ? `context_vocab_user_${userId}` : GUEST_STORAGE_KEY;
+}
+
+/**
+ * 단어 목록을 가져옵니다.
+ * - 로그인된 유저가 있으면: Supabase에서 user_id로 격리된 단어를 가져오며, 사용자 로컬 캐시에 동기화
+ * - 비로그인(게스트) 상태면: 게스트용 로컬 스토리지 또는 샘플 단어 반환
+ */
+export async function fetchVocabulary(targetUser?: User | null): Promise<VocabItem[]> {
+  const isConfigured = checkIsSupabaseConfigured();
+  const user = targetUser !== undefined ? targetUser : await getCurrentUser();
+  const storageKey = getUserStorageKey(user?.id);
+
+  // 1. Supabase 연동 시도
+  if (isConfigured && supabase) {
     try {
-      const { data, error } = await supabase
+      let query = supabase
         .from('vocab_words')
         .select('*')
         .order('created_at', { ascending: false });
 
+      if (user?.id) {
+        query = query.eq('user_id', user.id);
+      }
+
+      const { data, error } = await query;
+
       if (error) {
-        console.warn('Supabase fetch error, falling back to localStorage:', error);
-      } else if (data && data.length > 0) {
+        console.warn('Supabase fetch error, fallback to local storage:', error);
+      } else if (data) {
         const formatted: VocabItem[] = data.map((row: any) => ({
           id: row.id,
           word: row.word,
@@ -101,13 +136,16 @@ export async function fetchVocabulary(): Promise<VocabItem[]> {
           bookTitle: row.book_title || row.source_memo || '기본 단어장',
           quizCount: row.quiz_count || 0,
           correctCount: row.correct_count || 0,
+          wrongCount: row.wrong_count || 0,
+          consecutiveCorrect: row.consecutive_correct || 0,
+          lastQuizDate: row.last_quiz_date || undefined,
           date: row.created_at ? row.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
           created_at: row.created_at,
           user_id: row.user_id,
         }));
-        // Update local cache
+
         if (typeof window !== 'undefined') {
-          localStorage.setItem(STORAGE_KEY, JSON.stringify(formatted));
+          localStorage.setItem(storageKey, JSON.stringify(formatted));
         }
         return formatted;
       }
@@ -116,59 +154,84 @@ export async function fetchVocabulary(): Promise<VocabItem[]> {
     }
   }
 
-  // Fallback to localStorage or Samples
+  // 2. LocalStorage 로드
   if (typeof window !== 'undefined') {
-    const local = localStorage.getItem(STORAGE_KEY);
+    const local = localStorage.getItem(storageKey);
     if (local) {
       try {
         const parsed = JSON.parse(local);
-        // Ensure bookTitle and quiz stats exist
         return parsed.map((item: any) => ({
           ...item,
           bookTitle: item.bookTitle || item.sourceMemo || '기본 단어장',
           quizCount: item.quizCount || 0,
           correctCount: item.correctCount || 0,
+          wrongCount: item.wrongCount || 0,
+          consecutiveCorrect: item.consecutiveCorrect || 0,
         }));
       } catch (e) {
         console.error(e);
       }
     }
-    // Set initial samples if first time
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_SAMPLES));
+
+    // 게스트 첫 방문 시 샘플 단어 제공
+    if (!user) {
+      localStorage.setItem(storageKey, JSON.stringify(INITIAL_SAMPLES));
+      return INITIAL_SAMPLES;
+    }
   }
-  return INITIAL_SAMPLES;
+
+  return [];
 }
 
-export async function addVocabularyItem(item: VocabItem): Promise<boolean> {
+/**
+ * 단어를 추가합니다.
+ */
+export async function addVocabularyItem(item: VocabItem, userId?: string): Promise<boolean> {
   const normalizedItem: VocabItem = {
     ...item,
     bookTitle: item.bookTitle?.trim() || '기본 단어장',
     quizCount: item.quizCount || 0,
     correctCount: item.correctCount || 0,
+    wrongCount: item.wrongCount || 0,
+    consecutiveCorrect: item.consecutiveCorrect || 0,
+    user_id: userId,
   };
 
-  // Local storage save first
+  const storageKey = getUserStorageKey(userId);
+
+  // 로컬 스토리지에 즉각 캐싱
   if (typeof window !== 'undefined') {
-    const current = await fetchVocabulary();
+    const local = localStorage.getItem(storageKey);
+    let current: VocabItem[] = [];
+    if (local) {
+      try {
+        current = JSON.parse(local);
+      } catch {}
+    }
     const updated = [normalizedItem, ...current];
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+    localStorage.setItem(storageKey, JSON.stringify(updated));
   }
 
-  // Sync to Supabase if configured
-  if (isSupabaseConfigured && supabase) {
+  // Supabase 동기화
+  if (checkIsSupabaseConfigured() && supabase) {
     try {
       const { error } = await supabase.from('vocab_words').insert({
         id: normalizedItem.id,
+        user_id: userId || null,
         word: normalizedItem.word,
         phonetic: normalizedItem.phonetic,
         part_of_speech: normalizedItem.partOfSpeech,
         selected_meaning: normalizedItem.selectedMeaning,
         all_meanings: normalizedItem.allMeanings || [],
         context_sentence: normalizedItem.contextSentence,
+        candidate_sentences: normalizedItem.candidateSentences || [],
         source_memo: normalizedItem.sourceMemo,
         book_title: normalizedItem.bookTitle,
         quiz_count: normalizedItem.quizCount,
         correct_count: normalizedItem.correctCount,
+        wrong_count: normalizedItem.wrongCount,
+        consecutive_correct: normalizedItem.consecutiveCorrect,
+        last_quiz_date: normalizedItem.lastQuizDate || null,
       });
       if (error) {
         console.warn('Supabase insert error:', error);
@@ -181,98 +244,125 @@ export async function addVocabularyItem(item: VocabItem): Promise<boolean> {
   return true;
 }
 
-export async function updateQuizStat(id: string, isCorrect: boolean): Promise<void> {
+/**
+ * 퀴즈 풀이 결과를 갱신합니다.
+ */
+export async function updateQuizStat(id: string, isCorrect: boolean, userId?: string): Promise<void> {
   const todayStr = new Date().toISOString().slice(0, 10);
+  const storageKey = getUserStorageKey(userId);
+
+  let nextQ = 1;
+  let nextC = isCorrect ? 1 : 0;
+  let nextW = isCorrect ? 0 : 1;
+  let nextCons = isCorrect ? 1 : 0;
 
   if (typeof window !== 'undefined') {
-    const current = await fetchVocabulary();
-    const updated = current.map((item) => {
-      if (item.id === id) {
-        const qCount = (item.quizCount || 0) + 1;
-        const cCount = (item.correctCount || 0) + (isCorrect ? 1 : 0);
-        const wCount = (item.wrongCount || 0) + (isCorrect ? 0 : 1);
-        const consCount = isCorrect ? (item.consecutiveCorrect || 0) + 1 : 0;
-        return {
-          ...item,
-          quizCount: qCount,
-          correctCount: cCount,
-          wrongCount: wCount,
-          consecutiveCorrect: consCount,
-          lastQuizDate: todayStr,
-        };
+    const local = localStorage.getItem(storageKey);
+    if (local) {
+      try {
+        const current: VocabItem[] = JSON.parse(local);
+        const updated = current.map((item) => {
+          if (item.id === id) {
+            nextQ = (item.quizCount || 0) + 1;
+            nextC = (item.correctCount || 0) + (isCorrect ? 1 : 0);
+            nextW = (item.wrongCount || 0) + (isCorrect ? 0 : 1);
+            nextCons = isCorrect ? (item.consecutiveCorrect || 0) + 1 : 0;
+            return {
+              ...item,
+              quizCount: nextQ,
+              correctCount: nextC,
+              wrongCount: nextW,
+              consecutiveCorrect: nextCons,
+              lastQuizDate: todayStr,
+            };
+          }
+          return item;
+        });
+        localStorage.setItem(storageKey, JSON.stringify(updated));
+      } catch (e) {
+        console.error(e);
       }
-      return item;
-    });
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+    }
   }
 
-  // Update Supabase if configured
-  if (isSupabaseConfigured && supabase) {
+  if (checkIsSupabaseConfigured() && supabase) {
     try {
-      const { data } = await supabase
+      await supabase
         .from('vocab_words')
-        .select('quiz_count, correct_count')
-        .eq('id', id)
-        .single();
-
-      if (data) {
-        const nextQ = (data.quiz_count || 0) + 1;
-        const nextC = (data.correct_count || 0) + (isCorrect ? 1 : 0);
-        await supabase
-          .from('vocab_words')
-          .update({ quiz_count: nextQ, correct_count: nextC })
-          .eq('id', id);
-      }
+        .update({
+          quiz_count: nextQ,
+          correct_count: nextC,
+          wrong_count: nextW,
+          consecutive_correct: nextCons,
+          last_quiz_date: todayStr,
+        })
+        .eq('id', id);
     } catch (e) {
       console.warn('Supabase update stat exception:', e);
     }
   }
 }
 
-export async function updateVocabularyContext(id: string, newContextSentence: string): Promise<boolean> {
+/**
+ * 원문 문맥을 교체합니다.
+ */
+export async function updateVocabularyContext(
+  id: string,
+  newContextSentence: string,
+  userId?: string
+): Promise<boolean> {
+  const storageKey = getUserStorageKey(userId);
+
   if (typeof window !== 'undefined') {
-    const current = await fetchVocabulary();
-    const updated = current.map((item) => {
-      if (item.id === id) {
-        return {
-          ...item,
-          contextSentence: newContextSentence,
-        };
-      }
-      return item;
-    });
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+    const local = localStorage.getItem(storageKey);
+    if (local) {
+      try {
+        const current: VocabItem[] = JSON.parse(local);
+        const updated = current.map((item) => {
+          if (item.id === id) {
+            return { ...item, contextSentence: newContextSentence };
+          }
+          return item;
+        });
+        localStorage.setItem(storageKey, JSON.stringify(updated));
+      } catch {}
+    }
   }
 
-  if (isSupabaseConfigured && supabase) {
+  if (checkIsSupabaseConfigured() && supabase) {
     try {
       await supabase
         .from('vocab_words')
         .update({ context_sentence: newContextSentence })
         .eq('id', id);
     } catch (e) {
-      console.warn('Supabase update context sentence exception:', e);
+      console.warn('Supabase update context exception:', e);
     }
   }
 
   return true;
 }
 
-export async function deleteVocabularyItem(id: string): Promise<boolean> {
-  // Local storage remove
+/**
+ * 단어를 삭제합니다.
+ */
+export async function deleteVocabularyItem(id: string, userId?: string): Promise<boolean> {
+  const storageKey = getUserStorageKey(userId);
+
   if (typeof window !== 'undefined') {
-    const current = await fetchVocabulary();
-    const updated = current.filter((v) => v.id !== id);
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+    const local = localStorage.getItem(storageKey);
+    if (local) {
+      try {
+        const current: VocabItem[] = JSON.parse(local);
+        const updated = current.filter((v) => v.id !== id);
+        localStorage.setItem(storageKey, JSON.stringify(updated));
+      } catch {}
+    }
   }
 
-  // Remove from Supabase if configured
-  if (isSupabaseConfigured && supabase) {
+  if (checkIsSupabaseConfigured() && supabase) {
     try {
-      const { error } = await supabase.from('vocab_words').delete().eq('id', id);
-      if (error) {
-        console.warn('Supabase delete error:', error);
-      }
+      await supabase.from('vocab_words').delete().eq('id', id);
     } catch (err) {
       console.warn('Supabase delete exception:', err);
     }
@@ -281,20 +371,93 @@ export async function deleteVocabularyItem(id: string): Promise<boolean> {
   return true;
 }
 
+/**
+ * 로그인하지 않은 게스트 상태에서 저장해둔 단어들을 현재 로그인한 유저 계정으로 동기화(업로드)합니다.
+ */
+export async function syncGuestWordsToUser(userId: string): Promise<number> {
+  if (!checkIsSupabaseConfigured() || !supabase || !userId) return 0;
+
+  try {
+    const guestLocal = localStorage.getItem(GUEST_STORAGE_KEY);
+    if (!guestLocal) return 0;
+
+    const guestWords: VocabItem[] = JSON.parse(guestLocal);
+    if (!guestWords || guestWords.length === 0) return 0;
+
+    // Supabase에 배치 추가
+    const toInsert = guestWords.map((w) => ({
+      id: `${userId}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      user_id: userId,
+      word: w.word,
+      phonetic: w.phonetic,
+      part_of_speech: w.partOfSpeech,
+      selected_meaning: w.selectedMeaning,
+      all_meanings: w.allMeanings || [],
+      context_sentence: w.contextSentence,
+      candidate_sentences: w.candidateSentences || [],
+      source_memo: w.sourceMemo,
+      book_title: w.bookTitle || '기본 단어장',
+      quiz_count: w.quizCount || 0,
+      correct_count: w.correctCount || 0,
+      wrong_count: w.wrongCount || 0,
+      consecutive_correct: w.consecutiveCorrect || 0,
+      last_quiz_date: w.lastQuizDate || null,
+    }));
+
+    const { error } = await supabase.from('vocab_words').upsert(toInsert);
+    if (error) {
+      console.warn('Sync error:', error);
+      return 0;
+    }
+
+    return toInsert.length;
+  } catch (err) {
+    console.error('syncGuestWordsToUser exception:', err);
+    return 0;
+  }
+}
+
+/**
+ * 샘플 단어들을 현재 사용자 계정에 로드합니다.
+ */
+export async function loadSamplesForUser(userId: string): Promise<VocabItem[]> {
+  for (const sample of INITIAL_SAMPLES) {
+    await addVocabularyItem(
+      {
+        ...sample,
+        id: `${userId}_sample_${sample.word}_${Date.now()}`,
+      },
+      userId
+    );
+  }
+  return fetchVocabulary();
+}
+
+/**
+ * 초기 샘플로 리셋 (게스트 모드용)
+ */
 export async function resetWithSamples(): Promise<VocabItem[]> {
   if (typeof window !== 'undefined') {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(INITIAL_SAMPLES));
+    localStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(INITIAL_SAMPLES));
   }
   return INITIAL_SAMPLES;
 }
 
-export async function clearAllVocab(): Promise<void> {
+/**
+ * 단어장 전체 삭제
+ */
+export async function clearAllVocab(userId?: string): Promise<void> {
+  const storageKey = getUserStorageKey(userId);
   if (typeof window !== 'undefined') {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify([]));
+    localStorage.setItem(storageKey, JSON.stringify([]));
   }
-  if (isSupabaseConfigured && supabase) {
+  if (checkIsSupabaseConfigured() && supabase) {
     try {
-      await supabase.from('vocab_words').delete().neq('id', '');
+      if (userId) {
+        await supabase.from('vocab_words').delete().eq('user_id', userId);
+      } else {
+        await supabase.from('vocab_words').delete().neq('id', '');
+      }
     } catch (e) {
       console.warn('Supabase clear error:', e);
     }

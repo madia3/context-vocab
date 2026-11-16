@@ -10,6 +10,8 @@ import {
   updateQuizStat,
   resetWithSamples,
   clearAllVocab,
+  syncGuestWordsToUser,
+  loadSamplesForUser,
 } from '@/lib/vocabService';
 import {
   lookupDictionary,
@@ -31,7 +33,17 @@ import {
   setStoredGeminiKey,
 } from '@/lib/gemini';
 import { fireConfetti } from '@/lib/confetti';
-import { isSupabaseConfigured } from '@/lib/supabase';
+import {
+  checkIsSupabaseConfigured,
+  getStoredSupabaseConfig,
+  setStoredSupabaseConfig,
+  signInWithGoogle,
+  signOutUser,
+  getCurrentUser,
+  getSupabaseClient,
+  SUPABASE_SETUP_SQL,
+} from '@/lib/supabase';
+import { User } from '@supabase/supabase-js';
 import {
   Volume2,
   Trash2,
@@ -57,7 +69,35 @@ import {
   ExternalLink,
   Globe,
   Link2,
+  User as UserIcon,
+  LogOut,
+  Copy,
+  Cloud,
+  ChevronDown,
 } from 'lucide-react';
+
+function GoogleIcon({ className = 'w-4 h-4' }: { className?: string }) {
+  return (
+    <svg className={className} viewBox="0 0 24 24">
+      <path
+        fill="#4285F4"
+        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+      />
+      <path
+        fill="#34A853"
+        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.06H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.94l2.85-2.22.81-.63z"
+      />
+      <path
+        fill="#EA4335"
+        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.06l3.66 2.84c.87-2.6 3.3-4.52 6.16-4.52z"
+      />
+    </svg>
+  );
+}
 
 export default function Home() {
   const [activeTab, setActiveTab] = useState<'add' | 'list' | 'quiz'>('add');
@@ -119,6 +159,17 @@ export default function Home() {
   }>({ answered: false, chosen: '', isCorrect: false });
   const [isQuizFinished, setIsQuizFinished] = useState(false);
 
+  // User Authentication & Supabase Cloud State
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
+  const [isSupabaseReady, setIsSupabaseReady] = useState(false);
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
+  const [inputSupabaseUrl, setInputSupabaseUrl] = useState('');
+  const [inputSupabaseAnonKey, setInputSupabaseAnonKey] = useState('');
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [isCopiedSql, setIsCopiedSql] = useState(false);
+  const [isSyncingWords, setIsSyncingWords] = useState(false);
+
   // Settings State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
@@ -172,9 +223,63 @@ export default function Home() {
     }
   }
 
-  // Load Data on Mount
+  // Load Data
+  async function loadData(targetUser?: User | null) {
+    const userToUse = targetUser !== undefined ? targetUser : currentUser;
+    const list = await fetchVocabulary(userToUse);
+    setVocabulary(list);
+    setIsLoaded(true);
+  }
+
+  // Supabase Auth & Init Lifecycle
   useEffect(() => {
-    loadData();
+    const ready = checkIsSupabaseConfigured();
+    setIsSupabaseReady(ready);
+
+    const config = getStoredSupabaseConfig();
+    if (config.url) setInputSupabaseUrl(config.url);
+    if (config.anonKey) setInputSupabaseAnonKey(config.anonKey);
+
+    const client = getSupabaseClient();
+    if (client) {
+      client.auth.getUser().then(({ data: { user } }) => {
+        setCurrentUser(user ?? null);
+        loadData(user ?? null);
+      });
+
+      const {
+        data: { subscription },
+      } = client.auth.onAuthStateChange(async (event, session) => {
+        const user = session?.user ?? null;
+        setCurrentUser(user);
+
+        if (event === 'SIGNED_IN' && user) {
+          triggerToast(
+            'Google 로그인 완료! 🎉',
+            `${user.user_metadata?.full_name || user.email}님의 개인 클라우드 단어장이 연결되었습니다.`
+          );
+          await loadData(user);
+
+          // URL 해시(#access_token) 또는 쿼리(?code=) 정돈
+          if (typeof window !== 'undefined' && (window.location.hash || window.location.search.includes('code='))) {
+            window.history.replaceState({}, document.title, window.location.pathname);
+          }
+        } else if (event === 'SIGNED_OUT') {
+          triggerToast('로그아웃되었습니다', '로컬 단어장 모드로 전환되었습니다.');
+          await loadData(null);
+        }
+      });
+
+      return () => {
+        subscription.unsubscribe();
+      };
+    } else {
+      loadData(null);
+    }
+  }, []);
+
+  // Settings on Mount
+  useEffect(() => {
     if (typeof window !== 'undefined') {
       const savedVoice = localStorage.getItem('context_vocab_tts_voice');
       if (savedVoice) setTtsVoice(savedVoice);
@@ -193,33 +298,104 @@ export default function Home() {
     }
   }, []);
 
-  // Live Dictionary candidate update on typing (0ms 로컬 + 비동기 글로벌 확장)
-  useEffect(() => {
-    if (!inputWord.trim()) {
-      setLiveCandidates([]);
+  // Google Login Click Handler
+  async function handleGoogleLoginClick() {
+    if (!checkIsSupabaseConfigured()) {
+      setIsSupabaseModalOpen(true);
       return;
     }
-    // 1) 0ms 즉각 로컬 사전 매칭
-    const local = getLiveDictCandidates(inputWord);
-    setLiveCandidates(local);
 
-    // 2) 10만 단어 어휘 비동기 보완
-    let isCurrent = true;
-    fetchLiveDictSuggestions(inputWord).then((candidates) => {
-      if (isCurrent && candidates.length > 0) {
-        setLiveCandidates(candidates);
+    setIsLoggingIn(true);
+    try {
+      const { error } = await signInWithGoogle();
+      if (error) {
+        alert(`로그인 오류: ${error.message}`);
       }
-    });
+    } catch (e: any) {
+      alert(`로그인 중 문제가 발생했습니다: ${e?.message}`);
+    } finally {
+      setIsLoggingIn(false);
+    }
+  }
 
-    return () => {
-      isCurrent = false;
-    };
-  }, [inputWord]);
+  // Sign Out Handler
+  async function handleSignOut() {
+    setIsUserMenuOpen(false);
+    await signOutUser();
+    setCurrentUser(null);
+    await loadData(null);
+  }
 
-  async function loadData() {
-    const list = await fetchVocabulary();
-    setVocabulary(list);
-    setIsLoaded(true);
+  // Supabase Config Save
+  function handleSaveSupabaseConfig() {
+    const url = inputSupabaseUrl.trim();
+    const key = inputSupabaseAnonKey.trim();
+    if (!url || !key) {
+      alert('Supabase URL과 Anon Key를 모두 입력해 주세요.');
+      return;
+    }
+    setStoredSupabaseConfig(url, key);
+    const ready = checkIsSupabaseConfigured();
+    setIsSupabaseReady(ready);
+    setIsSupabaseModalOpen(false);
+    triggerToast(
+      'Supabase 연동 정보 저장 완료! ☁️',
+      'Google 소셜 로그인 및 개인별 클라우드 격리 저장이 활성화되었습니다.'
+    );
+    // Reload client
+    const client = getSupabaseClient();
+    if (client) {
+      client.auth.getUser().then(({ data: { user } }) => {
+        setCurrentUser(user ?? null);
+        loadData(user ?? null);
+      });
+    }
+  }
+
+  // Supabase Disconnect
+  function handleDisconnectSupabase() {
+    if (!confirm('Supabase 연동을 해제하시겠습니까? 로컬 스토리지 모드로 작동하게 됩니다.')) return;
+    setStoredSupabaseConfig('', '');
+    setInputSupabaseUrl('');
+    setInputSupabaseAnonKey('');
+    setIsSupabaseReady(false);
+    setCurrentUser(null);
+    setIsSupabaseModalOpen(false);
+    triggerToast('Supabase 연동 해제됨', '로컬 스토리지 단어장 모드로 전환되었습니다.');
+    loadData(null);
+  }
+
+  // Sync Guest Words to User
+  async function handleSyncWordsToCloud() {
+    if (!currentUser) return;
+    setIsSyncingWords(true);
+    try {
+      const count = await syncGuestWordsToUser(currentUser.id);
+      triggerToast(
+        '클라우드 동기화 완료! ☁️',
+        `${count}개의 로컬 단어가 내 계정으로 안전하게 등록되었습니다.`
+      );
+      await loadData(currentUser);
+    } catch {
+      alert('동기화 중 오류가 발생했습니다.');
+    } finally {
+      setIsSyncingWords(false);
+      setIsUserMenuOpen(false);
+    }
+  }
+
+  // Load Samples for User
+  async function handleImportSamples() {
+    if (!currentUser) return;
+    try {
+      await loadSamplesForUser(currentUser.id);
+      triggerToast('샘플 단어 추가 완료! 📚', '학습용 샘플 5개 단어가 내 계정에 등록되었습니다.');
+      await loadData(currentUser);
+    } catch {
+      alert('샘플 단어 로드 중 오류가 발생했습니다.');
+    } finally {
+      setIsUserMenuOpen(false);
+    }
   }
 
   // 원문 소스(사진 또는 웹 URL) 백그라운드 비동기 처리 함수
@@ -440,7 +616,7 @@ export default function Home() {
         : [finalContext];
 
     const newItem: VocabItem = {
-      id: 'vocab_' + Date.now(),
+      id: `${currentUser?.id ? currentUser.id + '_' : ''}vocab_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       word: dictResult.word,
       phonetic: dictResult.phonetic,
       partOfSpeech: selectedPos || '단어',
@@ -452,11 +628,14 @@ export default function Home() {
       bookTitle: bookToSave,
       quizCount: 0,
       correctCount: 0,
+      wrongCount: 0,
+      consecutiveCorrect: 0,
       date: new Date().toISOString().slice(0, 10),
+      user_id: currentUser?.id,
     };
 
-    await addVocabularyItem(newItem);
-    await loadData();
+    await addVocabularyItem(newItem, currentUser?.id);
+    await loadData(currentUser);
 
     // 바로 다음 단어 등록 시 이전 단어장(책이름) 기억!
     if (typeof window !== 'undefined') {
@@ -493,8 +672,8 @@ export default function Home() {
   // Delete Item
   async function handleDeleteWord(id: string) {
     if (!confirm('이 단어를 단어장에서 삭제할까요?')) return;
-    await deleteVocabularyItem(id);
-    await loadData();
+    await deleteVocabularyItem(id, currentUser?.id);
+    await loadData(currentUser);
   }
 
   // 퀴즈 출제 우선순위 점수 계산 함수 (망각 곡선 + 오답률 + 최근 등록 보너스 - 연속 정답 감점)
@@ -654,7 +833,7 @@ export default function Home() {
     setQuizAnswerState({ answered: true, chosen, isCorrect });
 
     // 퀴즈 통계 자동 업데이트 (푼 횟수 + 맞춘 횟수 + 오답 횟수 + 연속 정답 + 마지막 퀴즈일자)
-    await updateQuizStat(current.id, isCorrect);
+    await updateQuizStat(current.id, isCorrect, currentUser?.id);
     const todayStr = new Date().toISOString().slice(0, 10);
     setVocabulary((prev) =>
       prev.map((v) =>
@@ -750,27 +929,117 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Right Utility Controls (AI Badge & Settings) */}
+          {/* Right Utility Controls (AI Badge, Google Auth & Settings) */}
           <div className="flex items-center gap-1.5 shrink-0">
             {geminiApiKey ? (
               <button
                 type="button"
                 onClick={() => setIsAiModalOpen(true)}
-                className="text-xs bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 px-2.5 py-1.5 rounded-xl flex items-center gap-1 font-bold transition cursor-pointer"
+                className="text-xs bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 px-2 sm:px-2.5 py-1.5 rounded-xl flex items-center gap-1 font-bold transition cursor-pointer"
                 title="Google Gemini AI 연결됨"
               >
                 <Bot className="w-3.5 h-3.5 text-purple-600" />
-                <span>AI 켜짐</span>
+                <span className="hidden sm:inline">AI 켜짐</span>
               </button>
             ) : (
               <button
                 type="button"
                 onClick={() => setIsAiModalOpen(true)}
-                className="text-xs bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-2.5 py-1.5 rounded-xl flex items-center gap-1 font-bold shadow-xs hover:opacity-95 transition cursor-pointer"
+                className="text-xs bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-2 sm:px-2.5 py-1.5 rounded-xl flex items-center gap-1 font-bold shadow-xs hover:opacity-95 transition cursor-pointer"
                 title="Google Gemini AI 무료 연동"
               >
                 <Sparkles className="w-3.5 h-3.5" />
-                <span>AI 연동</span>
+                <span className="hidden sm:inline">AI 연동</span>
+              </button>
+            )}
+
+            {/* Google Authentication (Login or User Profile) */}
+            {currentUser ? (
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                  className="flex items-center gap-1.5 p-1 sm:px-2.5 sm:py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 transition cursor-pointer border border-slate-200 shadow-2xs"
+                  title={currentUser.email || '사용자 프로필'}
+                >
+                  {currentUser.user_metadata?.avatar_url ? (
+                    <img
+                      src={currentUser.user_metadata.avatar_url}
+                      alt="Profile"
+                      className="w-5 h-5 rounded-full object-cover shrink-0"
+                    />
+                  ) : (
+                    <div className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+                      {(currentUser.user_metadata?.full_name || currentUser.email || 'U')[0].toUpperCase()}
+                    </div>
+                  )}
+                  <span className="hidden sm:inline text-xs font-bold max-w-[85px] truncate">
+                    {currentUser.user_metadata?.full_name || currentUser.email?.split('@')[0]}
+                  </span>
+                  <ChevronDown className="w-3 h-3 text-slate-500 shrink-0" />
+                </button>
+
+                {/* User Dropdown Menu */}
+                {isUserMenuOpen && (
+                  <>
+                    <div
+                      className="fixed inset-0 z-40"
+                      onClick={() => setIsUserMenuOpen(false)}
+                    />
+                    <div className="absolute right-0 mt-1.5 w-64 bg-white rounded-2xl shadow-xl border border-slate-200 p-2 z-50 space-y-1 animate-fade-in text-xs">
+                      <div className="px-3 py-2 border-b border-slate-100">
+                        <p className="font-bold text-slate-900 truncate">
+                          {currentUser.user_metadata?.full_name || '로그인 사용자'}
+                        </p>
+                        <p className="text-[11px] text-slate-500 truncate">{currentUser.email}</p>
+                        <div className="mt-1.5 flex items-center gap-1 text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full w-fit">
+                          <Cloud className="w-3 h-3" />
+                          <span>개인 클라우드 동기화 중</span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleSyncWordsToCloud}
+                        disabled={isSyncingWords}
+                        className="w-full text-left px-3 py-2 hover:bg-indigo-50 text-indigo-700 font-bold rounded-xl flex items-center gap-2 transition cursor-pointer"
+                      >
+                        <Database className="w-3.5 h-3.5" />
+                        <span>{isSyncingWords ? '동기화 중...' : '게스트 단어 내 계정으로 가져오기'}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleImportSamples}
+                        className="w-full text-left px-3 py-2 hover:bg-slate-100 text-slate-700 font-semibold rounded-xl flex items-center gap-2 transition cursor-pointer"
+                      >
+                        <BookOpen className="w-3.5 h-3.5" />
+                        <span>샘플 단어 5개 추가</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleSignOut}
+                        className="w-full text-left px-3 py-2 hover:bg-rose-50 text-rose-600 font-bold rounded-xl flex items-center gap-2 transition cursor-pointer border-t border-slate-100"
+                      >
+                        <LogOut className="w-3.5 h-3.5" />
+                        <span>로그아웃</span>
+                      </button>
+                    </div>
+                  </>
+                )}
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={handleGoogleLoginClick}
+                disabled={isLoggingIn}
+                className="text-xs bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 px-2 sm:px-2.5 py-1.5 rounded-xl flex items-center gap-1.5 font-bold shadow-2xs transition cursor-pointer active:scale-95 shrink-0"
+                title="Google 계정으로 로그인하여 개인별 단어장을 클라우드에 보관하세요"
+              >
+                <GoogleIcon className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden sm:inline">Google 로그인</span>
+                <span className="sm:hidden text-[11px]">로그인</span>
               </button>
             )}
 
@@ -840,20 +1109,30 @@ export default function Home() {
           <div className="flex items-center gap-1.5 truncate">
             <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 animate-pulse"></span>
             <span className="truncate font-semibold text-[11px] sm:text-xs">
-              원서 단어장 & 5지선다 퀴즈 • <span className="text-emerald-700 font-bold">100% 무료</span>
+              {currentUser ? (
+                <span>
+                  <strong className="text-emerald-800">{currentUser.user_metadata?.full_name || currentUser.email?.split('@')[0]}</strong>님의 개인 클라우드 단어장
+                </span>
+              ) : (
+                <span>
+                  원서 단어장 & 5지선다 퀴즈 • <span className="text-emerald-700 font-bold">개인별 클라우드 보관 지원</span>
+                </span>
+              )}
             </span>
           </div>
           <div className="shrink-0 flex items-center gap-1">
-            <span
-              className={`text-[10px] px-2 py-0.5 rounded-full font-bold flex items-center gap-1 ${
-                isSupabaseConfigured
-                  ? 'bg-emerald-100 text-emerald-800'
-                  : 'bg-amber-100 text-amber-800'
+            <button
+              type="button"
+              onClick={() => setIsSupabaseModalOpen(true)}
+              className={`text-[10px] px-2 py-0.5 rounded-full font-bold flex items-center gap-1 transition cursor-pointer ${
+                isSupabaseReady
+                  ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800'
+                  : 'bg-amber-100 hover:bg-amber-200 text-amber-800'
               }`}
             >
               <Database className="w-2.5 h-2.5" />
-              <span>{isSupabaseConfigured ? '클라우드' : '로컬 보관'}</span>
-            </span>
+              <span>{isSupabaseReady ? (currentUser ? '개인 클라우드 ☁️' : 'Supabase 연결됨') : '로컬 보관 (연동 ⚙️)'}</span>
+            </button>
           </div>
         </div>
 
@@ -1858,8 +2137,8 @@ export default function Home() {
                                         <button
                                           type="button"
                                           onClick={async () => {
-                                            await updateVocabularyContext(item.id, sent);
-                                            await loadData();
+                                            await updateVocabularyContext(item.id, sent, currentUser?.id);
+                                            await loadData(currentUser);
                                             triggerToast(
                                               '대표 원문 문장 변경 완료! 📖',
                                               `앞으로 퀴즈 복습 시 변경된 문장이 출제됩니다.`
@@ -2437,26 +2716,40 @@ export default function Home() {
             </div>
 
             <div className="space-y-3 text-xs text-slate-600">
-              {/* Supabase Status Info */}
+              {/* Supabase Status Info & Connect Button */}
               <div
-                className={`p-3 rounded-xl border ${
-                  isSupabaseConfigured
+                className={`p-3.5 rounded-xl border ${
+                  isSupabaseReady
                     ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
                     : 'bg-amber-50 border-amber-200 text-amber-900'
                 }`}
               >
-                <div className="flex items-center gap-2 font-bold mb-1">
-                  <Database className="w-4 h-4" />
-                  <span>
-                    {isSupabaseConfigured
-                      ? 'Supabase 연동 완료됨'
-                      : 'Supabase 미연동 (로컬 스토리지 모드로 작동 중)'}
-                  </span>
+                <div className="flex items-center justify-between font-bold mb-1">
+                  <div className="flex items-center gap-1.5">
+                    <Database className="w-4 h-4" />
+                    <span>
+                      {isSupabaseReady
+                        ? (currentUser ? '개인 클라우드 계정 연결됨 ☁️' : 'Supabase 클라우드 연동됨')
+                        : 'Supabase 미연동 (로컬 스토리지 모드)'}
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsSettingsOpen(false);
+                      setIsSupabaseModalOpen(true);
+                    }}
+                    className="text-[11px] underline font-bold hover:opacity-80 cursor-pointer"
+                  >
+                    설정 열기
+                  </button>
                 </div>
                 <p className="text-[11px] leading-relaxed">
-                  {isSupabaseConfigured
-                    ? '단어가 Supabase 클라우드 데이터베이스에 실시간 동기화됩니다.'
-                    : '.env.local 파일에 NEXT_PUBLIC_SUPABASE_URL 및 NEXT_PUBLIC_SUPABASE_ANON_KEY를 입력하면 클라우드 동기화가 활성화됩니다.'}
+                  {isSupabaseReady
+                    ? (currentUser
+                        ? `${currentUser.email} 계정으로 RLS 보안 격리된 개인 단어장이 실시간 동기화됩니다.`
+                        : 'Google 로그인 시 사용자별 개인 단어장이 자동으로 클라우드에 백업됩니다.')
+                    : 'Supabase URL과 Anon Key를 등록하면 Google 로그인 및 개인별 클라우드 격리 저장이 활성화됩니다.'}
                 </p>
               </div>
 
@@ -2583,6 +2876,182 @@ export default function Home() {
               <button
                 onClick={() => setIsSettingsOpen(false)}
                 className="bg-indigo-600 text-white font-bold px-4 py-2 rounded-xl text-xs"
+              >
+                닫기
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Dedicated Supabase & Google Login Modal */}
+      {isSupabaseModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto p-6 sm:p-7 shadow-2xl border border-indigo-100 space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3.5">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-emerald-500 to-teal-600 text-white flex items-center justify-center shadow-md">
+                  <Database className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-base text-slate-900 leading-tight">
+                    Supabase & Google 로그인 연동
+                  </h3>
+                  <p className="text-[11px] text-emerald-600 font-semibold">
+                    개인별 단어장 클라우드 자동 보관 및 Google 계정 로그인
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsSupabaseModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg p-1 rounded-lg cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Current Status Banner */}
+            <div
+              className={`p-3.5 rounded-2xl border flex items-center justify-between ${
+                isSupabaseReady
+                  ? 'bg-emerald-50 border-emerald-200 text-emerald-950'
+                  : 'bg-amber-50 border-amber-200 text-amber-950'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <div
+                  className={`w-3 h-3 rounded-full shrink-0 ${
+                    isSupabaseReady ? 'bg-emerald-500 animate-pulse' : 'bg-amber-500'
+                  }`}
+                />
+                <div>
+                  <p className="font-bold text-xs">
+                    {isSupabaseReady
+                      ? (currentUser
+                          ? `연결 완료: ${currentUser.email} 님 계정`
+                          : 'Supabase 프로젝트 연동됨 (로그인 대기)')
+                      : 'Supabase 미연결 (로컬 스토리지 모드)'}
+                  </p>
+                  <p className="text-[11px] opacity-80">
+                    {isSupabaseReady
+                      ? 'RLS 보안 정책을 통해 다른 사용자가 내 단어를 볼 수 없습니다.'
+                      : '아래에 Supabase 정보를 입력하면 Google 로그인이 활성화됩니다.'}
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Supabase URL & Anon Key Inputs */}
+            <div className="space-y-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-800 mb-1">
+                  1. Supabase Project URL
+                </label>
+                <input
+                  type="text"
+                  value={inputSupabaseUrl}
+                  onChange={(e) => setInputSupabaseUrl(e.target.value)}
+                  placeholder="https://xyzcompany.supabase.co"
+                  className="w-full px-3.5 py-2.5 text-xs font-mono bg-slate-50 text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-800 mb-1">
+                  2. Supabase Anon (Public) Key
+                </label>
+                <input
+                  type="password"
+                  value={inputSupabaseAnonKey}
+                  onChange={(e) => setInputSupabaseAnonKey(e.target.value)}
+                  placeholder="eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9..."
+                  className="w-full px-3.5 py-2.5 text-xs font-mono bg-slate-50 text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                />
+              </div>
+
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={handleSaveSupabaseConfig}
+                  className="flex-1 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs py-2.5 rounded-xl shadow-md transition flex items-center justify-center gap-1.5 cursor-pointer"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                  <span>연동 정보 저장</span>
+                </button>
+                {isSupabaseReady && (
+                  <button
+                    type="button"
+                    onClick={handleDisconnectSupabase}
+                    className="px-4 bg-white border border-rose-300 text-rose-600 hover:bg-rose-50 font-bold text-xs py-2.5 rounded-xl transition cursor-pointer"
+                  >
+                    연동 해제
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Quick 1-Click SQL Copy Section */}
+            <div className="bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <span className="font-bold text-xs text-slate-900 flex items-center gap-1.5">
+                  <Database className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>3. Supabase SQL 테이블 생성</span>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (typeof navigator !== 'undefined') {
+                      navigator.clipboard.writeText(SUPABASE_SETUP_SQL);
+                      setIsCopiedSql(true);
+                      triggerToast('SQL 복사 완료! 📋', 'Supabase SQL Editor에 붙여넣고 [RUN]을 누르세요.');
+                      setTimeout(() => setIsCopiedSql(false), 2500);
+                    }
+                  }}
+                  className="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold px-2.5 py-1 rounded-lg border border-indigo-200 flex items-center gap-1 transition cursor-pointer"
+                >
+                  {isCopiedSql ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />}
+                  <span>{isCopiedSql ? '복사됨!' : 'SQL 복사'}</span>
+                </button>
+              </div>
+              <p className="text-[11px] text-slate-600 leading-relaxed">
+                Supabase Dashboard의 <strong>SQL Editor</strong>에서 위 복사한 SQL을 붙여넣고 실행하면 개인별 데이터 격리(RLS) 및 단어장 테이블이 자동 구축됩니다.
+              </p>
+            </div>
+
+            {/* Google OAuth Quick Guide */}
+            <div className="bg-indigo-50/60 border border-indigo-100 rounded-2xl p-4 space-y-2 text-xs text-slate-700">
+              <p className="font-bold text-indigo-950 flex items-center gap-1.5">
+                <GoogleIcon className="w-3.5 h-3.5" />
+                <span>Google 로그인 활성화 가이드 (1분)</span>
+              </p>
+              <ol className="list-decimal pl-4 space-y-1 text-[11px] text-slate-600 leading-relaxed">
+                <li>
+                  <a
+                    href="https://supabase.com/dashboard"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-indigo-600 underline font-bold"
+                  >
+                    Supabase Dashboard
+                  </a>
+                  {' > '}Authentication{' > '}Providers{' > '}<strong>Google</strong>을 활성화합니다.
+                </li>
+                <li>
+                  Google Cloud Console에서 OAuth 클라이언트 ID를 만들고 Callback URL에 다음을 등록합니다:
+                  <div className="mt-1 bg-white p-1.5 rounded border border-indigo-200 font-mono text-[10px] text-indigo-900 select-all">
+                    {inputSupabaseUrl
+                      ? `${inputSupabaseUrl.replace(/\/$/, '')}/auth/v1/callback`
+                      : 'https://<당신의-프로젝트-ID>.supabase.co/auth/v1/callback'}
+                  </div>
+                </li>
+              </ol>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setIsSupabaseModalOpen(false)}
+                className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold px-5 py-2.5 rounded-xl text-xs transition cursor-pointer"
               >
                 닫기
               </button>
