@@ -107,6 +107,7 @@ export default function Home() {
   const [liveCandidates, setLiveCandidates] = useState<SuggestionItem[]>([]);
 
   // Quiz State
+  const [quizMode, setQuizMode] = useState<'smart' | 'wrong' | 'recent' | 'all'>('smart');
   const [quizList, setQuizList] = useState<VocabItem[]>([]);
   const [currentQuizIndex, setCurrentQuizIndex] = useState(0);
   const [quizScore, setQuizScore] = useState(0);
@@ -496,9 +497,52 @@ export default function Home() {
     await loadData();
   }
 
+  // 퀴즈 출제 우선순위 점수 계산 함수 (망각 곡선 + 오답률 + 최근 등록 보너스 - 연속 정답 감점)
+  function calculateQuizPriority(item: VocabItem): number {
+    const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10);
+
+    // 1. 오답 횟수 (틀렸던 단어일수록 가중치 대폭 증가)
+    const wrongCount = item.wrongCount ?? Math.max(0, (item.quizCount || 0) - (item.correctCount || 0));
+    const wrongScore = wrongCount * 3.5;
+
+    // 2. 경과 일수 (망각 주기 계산 - 오랫동안 안 본 단어일수록 점수 증가)
+    let daysSinceQuiz = 7;
+    if (item.lastQuizDate) {
+      const lastDate = new Date(item.lastQuizDate);
+      const diffTime = Math.abs(now.getTime() - lastDate.getTime());
+      daysSinceQuiz = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    } else {
+      const regDate = new Date(item.date || todayStr);
+      const diffTime = Math.abs(now.getTime() - regDate.getTime());
+      daysSinceQuiz = Math.floor(diffTime / (1000 * 60 * 60 * 24)) + 2;
+    }
+    const spacedScore = Math.min(daysSinceQuiz * 1.5, 10);
+
+    // 3. 신규 등록 보너스 (최근 2일 이내 등록 단어)
+    let recencyBonus = 0;
+    if (item.date) {
+      const regDate = new Date(item.date);
+      const diffDays = Math.floor(Math.abs(now.getTime() - regDate.getTime()) / (1000 * 60 * 60 * 24));
+      if (diffDays <= 2) recencyBonus = 4;
+    }
+
+    // 4. 연속 정답 감점 (연속으로 맞출수록 이미 아는 단어이므로 출제 빈도 감소)
+    const consecutive =
+      item.consecutiveCorrect ??
+      (item.correctCount && item.correctCount === item.quizCount ? item.correctCount : 0);
+    const masteryPenalty = Math.min(consecutive * 2, 8);
+
+    // 자연스러운 랜덤 지터(0~1.5)
+    return wrongScore + spacedScore + recencyBonus - masteryPenalty + Math.random() * 1.5;
+  }
+
   // Quiz Logic
-  function startQuiz(targetBook?: string) {
+  function startQuiz(targetBook?: string, mode?: 'smart' | 'wrong' | 'recent' | 'all') {
     const bookFilter = targetBook || selectedBookFilter;
+    const currentMode = mode || quizMode;
+    setQuizMode(currentMode);
+
     let pool = vocabulary;
 
     if (bookFilter && bookFilter !== 'all') {
@@ -514,13 +558,46 @@ export default function Home() {
       return;
     }
 
-    const shuffled = [...pool].sort(() => 0.5 - Math.random());
-    setQuizList(shuffled);
+    let selectedList: VocabItem[] = [];
+
+    if (currentMode === 'wrong') {
+      // 1) 오답 격파 모드: 틀린 적이 있는 단어 우선
+      const wrongItems = pool.filter((item) => {
+        const wCount = item.wrongCount ?? Math.max(0, (item.quizCount || 0) - (item.correctCount || 0));
+        return wCount > 0;
+      });
+
+      if (wrongItems.length > 0) {
+        selectedList = [...wrongItems].sort((a, b) => {
+          const wA = a.wrongCount ?? ((a.quizCount || 0) - (a.correctCount || 0));
+          const wB = b.wrongCount ?? ((b.quizCount || 0) - (b.correctCount || 0));
+          return wB - wA;
+        });
+      } else {
+        triggerToast('오답 단어가 없습니다! 🎉', '틀렸던 단어가 없어 스마트 복습 모드로 진행합니다.');
+        selectedList = [...pool].sort((a, b) => calculateQuizPriority(b) - calculateQuizPriority(a));
+      }
+    } else if (currentMode === 'recent') {
+      // 2) 최근 단어 모드: 최근 등록 순
+      selectedList = [...pool].sort((a, b) => {
+        const dateA = new Date(a.date || '2000-01-01').getTime();
+        const dateB = new Date(b.date || '2000-01-01').getTime();
+        return dateB - dateA;
+      });
+    } else if (currentMode === 'all') {
+      // 3) 전체 랜덤 모드
+      selectedList = [...pool].sort(() => 0.5 - Math.random());
+    } else {
+      // 4) 스마트 추천 복습 (기본값): 오답 가중치 + 망각 곡선 주기 + 신규 보너스
+      selectedList = [...pool].sort((a, b) => calculateQuizPriority(b) - calculateQuizPriority(a));
+    }
+
+    setQuizList(selectedList);
     setCurrentQuizIndex(0);
     setQuizScore(0);
     setIsQuizFinished(false);
     setActiveTab('quiz');
-    setupQuestion(0, shuffled);
+    setupQuestion(0, selectedList);
   }
 
   function setupQuestion(index: number, list: VocabItem[]) {
@@ -576,9 +653,9 @@ export default function Home() {
 
     setQuizAnswerState({ answered: true, chosen, isCorrect });
 
-    // 퀴즈 통계 자동 업데이트 (푼 횟수 + 맞춘 횟수)
+    // 퀴즈 통계 자동 업데이트 (푼 횟수 + 맞춘 횟수 + 오답 횟수 + 연속 정답 + 마지막 퀴즈일자)
     await updateQuizStat(current.id, isCorrect);
-    // 로컬 목록 통계 갱신
+    const todayStr = new Date().toISOString().slice(0, 10);
     setVocabulary((prev) =>
       prev.map((v) =>
         v.id === current.id
@@ -586,6 +663,9 @@ export default function Home() {
               ...v,
               quizCount: (v.quizCount || 0) + 1,
               correctCount: (v.correctCount || 0) + (isCorrect ? 1 : 0),
+              wrongCount: (v.wrongCount || 0) + (isCorrect ? 0 : 1),
+              consecutiveCorrect: isCorrect ? (v.consecutiveCorrect || 0) + 1 : 0,
+              lastQuizDate: todayStr,
             }
           : v
       )
@@ -1815,13 +1895,63 @@ export default function Home() {
         {/* TAB 3: 5-CHOICE QUIZ */}
         {/* ========================================= */}
         {activeTab === 'quiz' && (
-          <section className="max-w-2xl mx-auto space-y-6">
+          <section className="max-w-2xl mx-auto space-y-4">
+            {/* 퀴즈 모드 선택 바 (스마트 복습 / 오답 격파 / 최근 단어 / 전체 랜덤) */}
+            <div className="bg-white/80 backdrop-blur-md p-2 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between sm:justify-start gap-1.5 overflow-x-auto no-scrollbar">
+              <button
+                onClick={() => startQuiz(selectedBookFilter, 'smart')}
+                className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
+                  quizMode === 'smart'
+                    ? 'bg-indigo-600 text-white shadow-sm'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                }`}
+              >
+                <span>🧠 스마트 복습</span>
+              </button>
+              <button
+                onClick={() => startQuiz(selectedBookFilter, 'wrong')}
+                className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
+                  quizMode === 'wrong'
+                    ? 'bg-rose-600 text-white shadow-sm'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                }`}
+              >
+                <span>🔥 오답 격파</span>
+              </button>
+              <button
+                onClick={() => startQuiz(selectedBookFilter, 'recent')}
+                className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
+                  quizMode === 'recent'
+                    ? 'bg-amber-500 text-white shadow-sm'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                }`}
+              >
+                <span>🆕 최근 단어</span>
+              </button>
+              <button
+                onClick={() => startQuiz(selectedBookFilter, 'all')}
+                className={`px-3 py-2 rounded-xl text-xs font-bold transition flex items-center gap-1.5 whitespace-nowrap shrink-0 ${
+                  quizMode === 'all'
+                    ? 'bg-slate-800 text-white shadow-sm'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                }`}
+              >
+                <span>🎲 전체 랜덤</span>
+              </button>
+            </div>
+
             <div className="bg-white rounded-2xl border border-slate-200 shadow-md overflow-hidden">
               {/* Quiz Header */}
               <div className="bg-slate-900 text-white p-4 flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <span className="text-xs bg-indigo-500/30 text-indigo-200 px-2 py-0.5 rounded font-mono font-bold">
-                    5지선다 객관식
+                    {quizMode === 'smart'
+                      ? '🧠 스마트 복습'
+                      : quizMode === 'wrong'
+                      ? '🔥 오답 격파'
+                      : quizMode === 'recent'
+                      ? '🆕 최근 단어'
+                      : '🎲 전체 랜덤'}
                   </span>
                   <span className="text-xs text-slate-300">
                     문제 {Math.min(currentQuizIndex + 1, quizList.length)} / {quizList.length}
@@ -1837,11 +1967,35 @@ export default function Home() {
                 {!isQuizFinished && currentQuizItem ? (
                   <>
                     <div className="text-center py-3 border-b border-slate-100">
-                      <div className="mb-2">
-                        <span className="text-[11px] bg-indigo-50 text-indigo-700 px-2 py-0.5 rounded-full font-bold inline-flex items-center gap-1">
+                      <div className="mb-2 flex items-center justify-center gap-1.5 flex-wrap">
+                        <span className="text-[11px] bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full font-bold inline-flex items-center gap-1">
                           <BookMarked className="w-3 h-3" />
-                          <span>{currentQuizItem.bookTitle || '단어장'}</span>
+                          <span>{currentQuizItem.bookTitle || '기본 단어장'}</span>
                         </span>
+                        {/* 학습 상태 태그 배지들 */}
+                        {(currentQuizItem.wrongCount || 0) > 0 && (
+                          <span className="text-[11px] bg-rose-50 text-rose-600 px-2.5 py-0.5 rounded-full font-bold inline-flex items-center gap-1 border border-rose-100">
+                            🔥 오답 {currentQuizItem.wrongCount}회
+                          </span>
+                        )}
+                        {(currentQuizItem.consecutiveCorrect || 0) >= 2 && (
+                          <span className="text-[11px] bg-emerald-50 text-emerald-700 px-2.5 py-0.5 rounded-full font-bold inline-flex items-center gap-1 border border-emerald-100">
+                            🎯 {currentQuizItem.consecutiveCorrect}연속 정답
+                          </span>
+                        )}
+                        {(() => {
+                          const isNew =
+                            currentQuizItem.date &&
+                            (Date.now() - new Date(currentQuizItem.date).getTime()) / (1000 * 60 * 60 * 24) < 2;
+                          if (isNew) {
+                            return (
+                              <span className="text-[11px] bg-amber-50 text-amber-700 px-2.5 py-0.5 rounded-full font-bold inline-flex items-center gap-1 border border-amber-100">
+                                ✨ 신규 단어
+                              </span>
+                            );
+                          }
+                          return null;
+                        })()}
                       </div>
                       <span className="text-xs font-bold text-indigo-600 tracking-wider uppercase mb-1 block">
                         다음 영어 단어의 알맞은 한국어 뜻을 고르세요
@@ -1961,18 +2115,30 @@ export default function Home() {
                       총 <strong>{quizList.length}</strong>문제 중{' '}
                       <strong className="text-indigo-600 text-base font-black">{quizScore}</strong>문제를 맞히셨습니다.
                     </p>
-                    <div className="pt-4 flex justify-center gap-2">
+                    <div className="pt-4 flex flex-wrap justify-center gap-2">
                       <button
-                        onClick={() => startQuiz(selectedBookFilter)}
-                        className="bg-indigo-600 text-white font-bold text-xs px-5 py-2.5 rounded-xl shadow transition"
+                        onClick={() => startQuiz(selectedBookFilter, quizMode)}
+                        className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow transition"
                       >
-                        다시 풀기 🔄
+                        현재 모드로 다시 풀기 🔄
+                      </button>
+                      <button
+                        onClick={() => startQuiz(selectedBookFilter, 'smart')}
+                        className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow transition"
+                      >
+                        🧠 스마트 복습
+                      </button>
+                      <button
+                        onClick={() => startQuiz(selectedBookFilter, 'wrong')}
+                        className="bg-rose-600 hover:bg-rose-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow transition"
+                      >
+                        🔥 오답만 격파
                       </button>
                       <button
                         onClick={() => setActiveTab('list')}
-                        className="bg-slate-200 text-slate-800 font-bold text-xs px-5 py-2.5 rounded-xl transition"
+                        className="bg-slate-200 hover:bg-slate-300 text-slate-800 font-bold text-xs px-4 py-2.5 rounded-xl transition"
                       >
-                        단어장 확인하기
+                        단어장 확인
                       </button>
                     </div>
                   </div>

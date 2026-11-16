@@ -11,6 +11,9 @@ export interface VocabItem {
   bookTitle?: string; // 책 또는 레포트 이름
   quizCount?: number; // 퀴즈 푼 횟수
   correctCount?: number; // 맞춘 횟수
+  wrongCount?: number; // 틀린 횟수
+  consecutiveCorrect?: number; // 연속 정답 횟수
+  lastQuizDate?: string; // 마지막 퀴즈 일자 (YYYY-MM-DD)
   date: string;
   created_at?: string;
   user_id?: string;

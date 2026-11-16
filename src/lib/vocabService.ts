@@ -182,16 +182,23 @@ export async function addVocabularyItem(item: VocabItem): Promise<boolean> {
 }
 
 export async function updateQuizStat(id: string, isCorrect: boolean): Promise<void> {
+  const todayStr = new Date().toISOString().slice(0, 10);
+
   if (typeof window !== 'undefined') {
     const current = await fetchVocabulary();
     const updated = current.map((item) => {
       if (item.id === id) {
         const qCount = (item.quizCount || 0) + 1;
         const cCount = (item.correctCount || 0) + (isCorrect ? 1 : 0);
+        const wCount = (item.wrongCount || 0) + (isCorrect ? 0 : 1);
+        const consCount = isCorrect ? (item.consecutiveCorrect || 0) + 1 : 0;
         return {
           ...item,
           quizCount: qCount,
           correctCount: cCount,
+          wrongCount: wCount,
+          consecutiveCorrect: consCount,
+          lastQuizDate: todayStr,
         };
       }
       return item;
