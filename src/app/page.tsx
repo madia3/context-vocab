@@ -42,6 +42,8 @@ import {
   checkIsSupabaseConfigured,
   getStoredSupabaseConfig,
   setStoredSupabaseConfig,
+  signInWithEmail,
+  signUpWithEmail,
   signInWithGoogle,
   signOutUser,
   getCurrentUser,
@@ -82,6 +84,8 @@ import {
   Image as ImageIcon,
   ClipboardPaste,
   Shuffle,
+  Mail,
+  Lock,
 } from 'lucide-react';
 
 function GoogleIcon({ className = 'w-4 h-4' }: { className?: string }) {
@@ -262,6 +266,16 @@ export default function Home() {
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isCopiedSql, setIsCopiedSql] = useState(false);
   const [isSyncingWords, setIsSyncingWords] = useState(false);
+
+  // Email / Password Auth Modal State
+  const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
+  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [authEmail, setAuthEmail] = useState('');
+  const [authPassword, setAuthPassword] = useState('');
+  const [authPasswordConfirm, setAuthPasswordConfirm] = useState('');
+  const [authError, setAuthError] = useState<string | null>(null);
+  const [authSuccessMsg, setAuthSuccessMsg] = useState<string | null>(null);
+  const [isAuthSubmitting, setIsAuthSubmitting] = useState(false);
 
   // Settings State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
@@ -457,6 +471,78 @@ export default function Home() {
       alert(`로그인 중 문제가 발생했습니다: ${e?.message}`);
     } finally {
       setIsLoggingIn(false);
+    }
+  }
+
+  // Email / Password Auth Submit Handler
+  async function handleEmailAuthSubmit(e?: React.FormEvent) {
+    if (e) e.preventDefault();
+    setAuthError(null);
+    setAuthSuccessMsg(null);
+
+    if (!authEmail.trim() || !authPassword) {
+      setAuthError('이메일과 비밀번호를 모두 입력해 주세요.');
+      return;
+    }
+
+    setIsAuthSubmitting(true);
+    try {
+      if (authMode === 'login') {
+        const { data, error } = await signInWithEmail(authEmail, authPassword);
+        if (error) {
+          const msg =
+            error.message === 'Invalid login credentials'
+              ? '이메일 또는 비밀번호가 일치하지 않습니다.'
+              : error.message;
+          setAuthError(msg);
+          return;
+        }
+        if (data?.user) {
+          setCurrentUser(data.user);
+          await syncGuestWordsToUser(data.user.id);
+          await loadData(data.user);
+          setIsAuthModalOpen(false);
+          setAuthEmail('');
+          setAuthPassword('');
+          triggerToast('로그인 성공! 🎉', `${data.user.email} 계정으로 클라우드에 연결되었습니다.`);
+        }
+      } else {
+        // 회원가입
+        if (authPassword !== authPasswordConfirm) {
+          setAuthError('비밀번호가 일치하지 않습니다.');
+          return;
+        }
+        if (authPassword.length < 6) {
+          setAuthError('비밀번호는 최소 6자 이상이어야 합니다.');
+          return;
+        }
+
+        const { data, error } = await signUpWithEmail(authEmail, authPassword);
+        if (error) {
+          setAuthError(error.message);
+          return;
+        }
+        if (data?.user) {
+          if (data.session) {
+            setCurrentUser(data.user);
+            await syncGuestWordsToUser(data.user.id);
+            await loadData(data.user);
+            setIsAuthModalOpen(false);
+            setAuthEmail('');
+            setAuthPassword('');
+            setAuthPasswordConfirm('');
+            triggerToast('회원가입 & 로그인 완료! 🎉', '이제 등록한 단어가 클라우드에 안전하게 보관됩니다.');
+          } else {
+            setAuthSuccessMsg(
+              '회원가입 요청 완료! 인증 메일이 발송되었거나 가입이 처리되었습니다. 로그인 탭에서 로그인해 보세요.'
+            );
+          }
+        }
+      }
+    } catch (err: any) {
+      setAuthError(err?.message || '인증 처리 중 오류가 발생했습니다.');
+    } finally {
+      setIsAuthSubmitting(false);
     }
   }
 
@@ -1998,13 +2084,16 @@ export default function Home() {
             ) : (
               <button
                 type="button"
-                onClick={handleGoogleLoginClick}
-                disabled={isLoggingIn}
-                className="text-xs bg-white hover:bg-slate-50 text-slate-800 border border-slate-200 px-2 sm:px-2.5 py-1.5 rounded-xl flex items-center gap-1.5 font-bold shadow-2xs transition cursor-pointer active:scale-95 shrink-0"
-                title="Google 계정으로 로그인하여 개인별 단어장을 클라우드에 보관하세요"
+                onClick={() => {
+                  setAuthError(null);
+                  setAuthSuccessMsg(null);
+                  setIsAuthModalOpen(true);
+                }}
+                className="text-xs bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white px-2.5 sm:px-3 py-1.5 rounded-xl flex items-center gap-1.5 font-bold shadow-2xs transition cursor-pointer active:scale-95 shrink-0"
+                title="로그인 또는 회원가입하여 개인 단어장을 클라우드에 영구 보관하세요"
               >
-                <GoogleIcon className="w-3.5 h-3.5 shrink-0" />
-                <span className="hidden sm:inline">Google 로그인</span>
+                <UserIcon className="w-3.5 h-3.5 shrink-0" />
+                <span className="hidden sm:inline">로그인 / 회원가입</span>
                 <span className="sm:hidden text-[11px]">로그인</span>
               </button>
             )}
@@ -4578,6 +4667,177 @@ export default function Home() {
                 닫기
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Email / Password Auth Modal */}
+      {isAuthModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl border border-indigo-100 space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3.5">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-600 text-white flex items-center justify-center shadow-md">
+                  <UserIcon className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-base text-slate-900 leading-tight">
+                    {authMode === 'login' ? '로그인' : '회원가입'}
+                  </h3>
+                  <p className="text-[11px] text-indigo-600 font-semibold">
+                    이메일 계정으로 어디서나 내 단어장 동기화
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsAuthModalOpen(false);
+                  setAuthError(null);
+                  setAuthSuccessMsg(null);
+                }}
+                className="text-slate-400 hover:text-slate-600 text-lg p-1 rounded-lg cursor-pointer transition"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Mode Switch Tabs */}
+            <div className="grid grid-cols-2 p-1 bg-slate-100 rounded-2xl">
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode('login');
+                  setAuthError(null);
+                  setAuthSuccessMsg(null);
+                }}
+                className={`py-2 text-xs font-bold rounded-xl transition cursor-pointer ${
+                  authMode === 'login'
+                    ? 'bg-white text-indigo-600 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                로그인
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthMode('signup');
+                  setAuthError(null);
+                  setAuthSuccessMsg(null);
+                }}
+                className={`py-2 text-xs font-bold rounded-xl transition cursor-pointer ${
+                  authMode === 'signup'
+                    ? 'bg-white text-indigo-600 shadow-xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                회원가입
+              </button>
+            </div>
+
+            {/* Error / Success Messages */}
+            {authError && (
+              <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl text-xs flex items-start gap-2">
+                <AlertCircle className="w-4 h-4 shrink-0 mt-0.5 text-rose-600" />
+                <span className="leading-relaxed">{authError}</span>
+              </div>
+            )}
+            {authSuccessMsg && (
+              <div className="p-3 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-2xl text-xs flex items-start gap-2">
+                <CheckCircle2 className="w-4 h-4 shrink-0 mt-0.5 text-emerald-600" />
+                <span className="leading-relaxed">{authSuccessMsg}</span>
+              </div>
+            )}
+
+            {/* Form */}
+            <form onSubmit={handleEmailAuthSubmit} className="space-y-3.5">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">이메일 주소</label>
+                <div className="relative">
+                  <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="email"
+                    required
+                    value={authEmail}
+                    onChange={(e) => setAuthEmail(e.target.value)}
+                    placeholder="name@example.com"
+                    className="w-full pl-10 pr-4 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition"
+                  />
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1">비밀번호</label>
+                <div className="relative">
+                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                  <input
+                    type="password"
+                    required
+                    value={authPassword}
+                    onChange={(e) => setAuthPassword(e.target.value)}
+                    placeholder={authMode === 'signup' ? '비밀번호 (6자 이상)' : '비밀번호 입력'}
+                    className="w-full pl-10 pr-4 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition"
+                  />
+                </div>
+              </div>
+
+              {authMode === 'signup' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">비밀번호 확인</label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="password"
+                      required
+                      value={authPasswordConfirm}
+                      onChange={(e) => setAuthPasswordConfirm(e.target.value)}
+                      placeholder="비밀번호 다시 입력"
+                      className="w-full pl-10 pr-4 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <button
+                type="submit"
+                disabled={isAuthSubmitting}
+                className="w-full mt-2 py-3 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md transition flex items-center justify-center gap-2 cursor-pointer"
+              >
+                {isAuthSubmitting ? (
+                  <>
+                    <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>처리 중...</span>
+                  </>
+                ) : (
+                  <span>{authMode === 'login' ? '로그인' : '회원가입 완료'}</span>
+                )}
+              </button>
+            </form>
+
+            {/* Divider */}
+            <div className="relative my-2 flex items-center justify-center">
+              <div className="border-t border-slate-200 w-full" />
+              <span className="bg-white px-3 text-[11px] text-slate-400 font-medium absolute">또는</span>
+            </div>
+
+            {/* Google OAuth Option (ready for later) */}
+            <button
+              type="button"
+              onClick={() => {
+                setIsAuthModalOpen(false);
+                handleGoogleLoginClick();
+              }}
+              disabled={isLoggingIn}
+              className="w-full py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition cursor-pointer"
+            >
+              <GoogleIcon className="w-4 h-4 shrink-0" />
+              <span>Google 계정으로 계속하기</span>
+            </button>
+
+            <p className="text-[11px] text-center text-slate-400">
+              로그인 없이도 단어는 이 브라우저에 안전하게 보관됩니다.
+            </p>
           </div>
         </div>
       )}

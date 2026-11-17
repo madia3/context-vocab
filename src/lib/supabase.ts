@@ -110,6 +110,42 @@ export const supabase: SupabaseClient | null = new Proxy({} as SupabaseClient, {
 }) as SupabaseClient;
 
 /**
+ * 이메일 / 비밀번호로 로그인
+ */
+export async function signInWithEmail(
+  email: string,
+  password: string
+): Promise<{ data: any; error: Error | null }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { data: null, error: new Error('Supabase 클라이언트가 초기화되지 않았습니다.') };
+  }
+  const { data, error } = await client.auth.signInWithPassword({
+    email: email.trim(),
+    password,
+  });
+  return { data, error: error ? new Error(error.message) : null };
+}
+
+/**
+ * 이메일 / 비밀번호로 회원가입
+ */
+export async function signUpWithEmail(
+  email: string,
+  password: string
+): Promise<{ data: any; error: Error | null }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { data: null, error: new Error('Supabase 클라이언트가 초기화되지 않았습니다.') };
+  }
+  const { data, error } = await client.auth.signUp({
+    email: email.trim(),
+    password,
+  });
+  return { data, error: error ? new Error(error.message) : null };
+}
+
+/**
  * Google 소셜 로그인 실행
  */
 export async function signInWithGoogle(): Promise<{ error: Error | null; url?: string | null }> {
