@@ -99,24 +99,49 @@ function GoogleIcon({ className = 'w-4 h-4' }: { className?: string }) {
   );
 }
 
+interface WordEntryItem {
+  id: string;
+  word: string;
+  context: string;
+  sourceMemo: string;
+  dictResult: DictSearchResult | null;
+  selectedMeaning: string;
+  selectedPos: string;
+  customMeaning: string;
+  isSearchingDict: boolean;
+  liveCandidates: SuggestionItem[];
+  candidateSentences: string[];
+  ocrDetectedNotice: string | null;
+}
+
+function createWordEntryItem(init?: Partial<WordEntryItem>): WordEntryItem {
+  return {
+    id: `entry_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+    word: '',
+    context: '',
+    sourceMemo: '',
+    dictResult: null,
+    selectedMeaning: '',
+    selectedPos: '',
+    customMeaning: '',
+    isSearchingDict: false,
+    liveCandidates: [],
+    candidateSentences: [],
+    ocrDetectedNotice: null,
+    ...init,
+  };
+}
+
 export default function Home() {
   const [activeTab, setActiveTab] = useState<'add' | 'list' | 'quiz'>('add');
   const [vocabulary, setVocabulary] = useState<VocabItem[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
 
-  // Add Word Form State
-  const [inputWord, setInputWord] = useState('');
-  const [inputContext, setInputContext] = useState('');
-  const [inputSource, setInputSource] = useState('');
+  // Multi-Word Form State: 한 번에 여러 단어를 추가/등록할 수 있는 단어 등록칸 목록
+  const [wordEntries, setWordEntries] = useState<WordEntryItem[]>([createWordEntryItem()]);
   const [inputBookTitle, setInputBookTitle] = useState('햄릿 (Hamlet)');
   const [isCustomBook, setIsCustomBook] = useState(false);
   const [customBookInput, setCustomBookInput] = useState('');
-  const [isSearchingDict, setIsSearchingDict] = useState(false);
-  const [dictResult, setDictResult] = useState<DictSearchResult | null>(null);
-  const [selectedMeaning, setSelectedMeaning] = useState('');
-  const [selectedPos, setSelectedPos] = useState('');
-  const [customMeaning, setCustomMeaning] = useState('');
-  const inputWordRef = useRef<HTMLInputElement>(null);
 
   // OCR & Web Source State (현재 로드된 페이지/웹문서 텍스트 & 캐시)
   const [pageOcrText, setPageOcrText] = useState<string>('');
@@ -417,27 +442,31 @@ export default function Home() {
           setInputBookTitle(result.title);
         }
         if (result.sourceUrl) {
-          setInputSource(result.sourceUrl);
+          // 기본 소스 URL 기억
         }
         if (typeof window !== 'undefined') {
           localStorage.setItem('context_vocab_cached_page_ocr', result.text);
         }
 
-        // 백그라운드 분석이 끝났을 때 사용자가 이미 입력해 둔 단어가 있거나 사전 결과가 있다면 즉시 문장 자동 매칭!
-        const currentWord = (inputWord || dictResult?.word || '').trim();
-        if (currentWord) {
-          const matchRes = await findSentenceWithAI(result.text, currentWord, geminiApiKey);
-          if (matchRes.found && matchRes.sentence) {
-            const sentences = matchRes.allMatches.map((m) => m.sentence);
-            setDetectedCandidateSentences(sentences);
-            setInputContext(matchRes.sentence);
-            if (sentences.length > 1) {
-              setOcrDetectedNotice(`✨ 분석 완료! 본문 내에서 '${currentWord}'가 ${sentences.length}번 쓰였습니다.`);
-            } else {
-              setOcrDetectedNotice(`✨ 백그라운드 분석 완료! 원문 속 문장을 자동으로 연결했습니다.`);
-            }
+        // 백그라운드 분석이 끝났을 때 작성 중인 단어칸들이 있다면 문맥 자동 매칭!
+        wordEntries.forEach((entry) => {
+          const w = (entry.word || entry.dictResult?.word || '').trim();
+          if (w && !entry.context) {
+            findSentenceWithAI(result.text, w, geminiApiKey).then((matchRes) => {
+              if (matchRes.found && matchRes.sentence) {
+                const sentences = matchRes.allMatches.map((m) => m.sentence);
+                updateWordEntry(entry.id, {
+                  context: matchRes.sentence,
+                  candidateSentences: sentences,
+                  ocrDetectedNotice:
+                    sentences.length > 1
+                      ? `✨ 본문 내에서 '${w}'가 ${sentences.length}번 쓰였습니다!`
+                      : `✨ 백그라운드 분석 완료! 원문 속 문장을 자동으로 연결했습니다.`,
+                });
+              }
+            });
           }
-        }
+        });
 
         triggerToast(
           `${taskName} 완료! ✅`,
@@ -491,7 +520,7 @@ export default function Home() {
     }
 
     setUrlScrapeError(null);
-    setIsUrlModalOpen(false); // 모달 즉시 닫고 사용자가 바로 다른 작업 하도록 허용!
+    setIsUrlModalOpen(false);
     setInputWebUrl('');
 
     triggerToast('웹페이지 분석 시작! 🌐', '백그라운드에서 기사를 읽어오는 동안 단어를 먼저 입력하고 뜻을 고르세요.');
@@ -521,152 +550,138 @@ export default function Home() {
     });
   }
 
-  // Handle Dictionary Search with target word
-  async function executeSearch(targetWord?: string) {
-    const wordToSearch = (targetWord || inputWord).trim();
+  // Multi-Word Form Helpers
+  function handleAddWordEntry() {
+    setWordEntries((prev) => [...prev, createWordEntryItem()]);
+    triggerToast('단어 등록칸 추가됨 ➕', '새 단어와 뜻을 입력하세요.');
+  }
+
+  function handleRemoveWordEntry(id: string) {
+    if (wordEntries.length <= 1) {
+      setWordEntries([createWordEntryItem()]);
+      return;
+    }
+    setWordEntries((prev) => prev.filter((item) => item.id !== id));
+  }
+
+  function updateWordEntry(id: string, updates: Partial<WordEntryItem>) {
+    setWordEntries((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, ...updates } : item))
+    );
+  }
+
+  async function executeSearchForEntry(entryId: string, targetWord?: string) {
+    const entry = wordEntries.find((e) => e.id === entryId);
+    if (!entry) return;
+    const wordToSearch = (targetWord || entry.word).trim();
     if (!wordToSearch) {
       alert('조회할 영어 단어를 입력해 주세요!');
       return;
     }
 
-    // 만약 현재 촬영해둔 페이지 텍스트가 있다면, AI를 통해 복수/단수/시제 변화형을 문맥에서 스마트 탐색!
+    // 만약 현재 촬영해둔 페이지 텍스트가 있다면 문맥 스마트 탐색
     if (pageOcrText) {
       findSentenceWithAI(pageOcrText, wordToSearch, geminiApiKey).then((matchRes) => {
         if (matchRes.found && matchRes.sentence) {
           const sentences = matchRes.allMatches.map((m) => m.sentence);
-          setDetectedCandidateSentences(sentences);
-          setInputContext(matchRes.sentence);
-          if (sentences.length > 1) {
-            setOcrDetectedNotice(`✨ 페이지 내에서 이 단어가 ${sentences.length}번 쓰였습니다! 아래에서 대표 문맥을 선택하세요.`);
-          } else {
-            const notice = matchRes.matchedWord && matchRes.matchedWord.toLowerCase() !== wordToSearch.toLowerCase()
-              ? `🤖 AI가 형태소 변화형("${matchRes.matchedWord}")을 감지하여 원문 문장을 자동 선택했습니다!`
-              : `📸 촬영한 페이지에서 원문 문장을 자동으로 찾았습니다!`;
-            setOcrDetectedNotice(notice);
-          }
-        } else {
-          setDetectedCandidateSentences([]);
+          updateWordEntry(entryId, {
+            candidateSentences: sentences,
+            context: matchRes.sentence,
+            ocrDetectedNotice:
+              sentences.length > 1
+                ? `✨ 본문 내에서 '${wordToSearch}'가 ${sentences.length}번 쓰였습니다!`
+                : `📸 본문에서 원문 문장을 자동으로 찾았습니다!`,
+          });
         }
       });
     }
 
-    setIsSearchingDict(true);
+    updateWordEntry(entryId, { isSearchingDict: true });
     try {
       const res = await lookupDictionary(wordToSearch);
-      setDictResult(res);
-      if (res.meanings.length > 0) {
-        setSelectedMeaning(res.meanings[0].def);
-        setSelectedPos(res.meanings[0].pos);
-      }
+      updateWordEntry(entryId, {
+        dictResult: res,
+        selectedMeaning: res.meanings.length > 0 ? res.meanings[0].def : '',
+        selectedPos: res.meanings.length > 0 ? res.meanings[0].pos : '',
+        isSearchingDict: false,
+      });
     } catch (e) {
       console.error(e);
-    } finally {
-      setIsSearchingDict(false);
+      updateWordEntry(entryId, { isSearchingDict: false });
     }
   }
 
-  function handleInputKeyDown(e: React.KeyboardEvent<HTMLInputElement>) {
-    if (e.key === 'Enter') {
-      executeSearch();
-    }
+  function handleSelectCandidateForEntry(entryId: string, word: string) {
+    updateWordEntry(entryId, { word });
+    executeSearchForEntry(entryId, word);
   }
 
-  function handleSelectCandidate(word: string) {
-    setInputWord(word);
-    executeSearch(word);
-  }
+  // Save All Words to Vocabulary
+  async function handleSaveAllWords() {
+    const validEntries = wordEntries.filter(
+      (e) => (e.dictResult?.word || e.word.trim()) && e.selectedMeaning
+    );
 
-  // Save to Vocabulary
-  async function handleSaveWord() {
-    if (!dictResult || !selectedMeaning) return;
-
-    // 만약 사용자가 저장을 눌렀는데 원문 분석이 아직 백그라운드에서 진행 중이고 문장이 비어있다면:
-    // 백그라운드 분석이 완료될 때까지 잠시 대기했다가 자동으로 문맥 문장을 찾아 함께 저장!
-    let matchedContext = inputContext.trim();
-    let candidatesList = detectedCandidateSentences;
-
-    if (!matchedContext && isSourceProcessing && sourceTaskPromiseRef.current) {
-      setIsSavingAwaitingSource(true);
-      try {
-        const sourceText = await Promise.race([
-          sourceTaskPromiseRef.current,
-          new Promise<null>((res) => setTimeout(() => res(null), 6000)),
-        ]);
-
-        if (sourceText) {
-          const matchRes = await findSentenceWithAI(sourceText, dictResult.word, geminiApiKey);
-          if (matchRes.found && matchRes.sentence) {
-            matchedContext = matchRes.sentence;
-            candidatesList = matchRes.allMatches.map((m) => m.sentence);
-          }
-        }
-      } catch (err) {
-        console.warn('Awaiting source analysis error:', err);
-      } finally {
-        setIsSavingAwaitingSource(false);
-      }
+    if (validEntries.length === 0) {
+      alert('저장할 단어의 뜻을 먼저 선택해 주세요!');
+      return;
     }
 
     const bookToSave = inputBookTitle.trim() || '기본 단어장';
-    const finalContext =
-      matchedContext || `This sentence illustrates the word ${dictResult.word}.`;
-    const finalCandidates =
-      candidatesList.length > 0
-        ? Array.from(new Set([finalContext, ...candidatesList]))
-        : [finalContext];
 
-    const newItem: VocabItem = {
-      id: `${currentUser?.id ? currentUser.id + '_' : ''}vocab_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      word: dictResult.word,
-      phonetic: dictResult.phonetic,
-      partOfSpeech: selectedPos || '단어',
-      selectedMeaning: selectedMeaning,
-      allMeanings: dictResult.meanings.map((m) => m.def),
-      contextSentence: finalContext,
-      candidateSentences: finalCandidates,
-      sourceMemo: inputSource.trim() || '원서 메모',
-      bookTitle: bookToSave,
-      quizCount: 0,
-      correctCount: 0,
-      wrongCount: 0,
-      consecutiveCorrect: 0,
-      date: new Date().toISOString().slice(0, 10),
-      user_id: currentUser?.id,
-    };
+    for (const entry of validEntries) {
+      const finalWord = entry.dictResult?.word || entry.word.trim();
+      const matchedContext =
+        entry.context.trim() || `This sentence illustrates the word ${finalWord}.`;
+      const finalCandidates =
+        entry.candidateSentences.length > 0
+          ? Array.from(new Set([matchedContext, ...entry.candidateSentences]))
+          : [matchedContext];
 
-    await addVocabularyItem(newItem, currentUser?.id);
+      const newItem: VocabItem = {
+        id: `${currentUser?.id ? currentUser.id + '_' : ''}vocab_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        word: finalWord,
+        phonetic: entry.dictResult?.phonetic || '',
+        partOfSpeech: entry.selectedPos || '단어',
+        selectedMeaning: entry.selectedMeaning,
+        allMeanings: entry.dictResult ? entry.dictResult.meanings.map((m) => m.def) : [entry.selectedMeaning],
+        contextSentence: matchedContext,
+        candidateSentences: finalCandidates,
+        sourceMemo: entry.sourceMemo.trim() || (loadedWebTitle ? loadedWebTitle : '원서 메모'),
+        bookTitle: bookToSave,
+        quizCount: 0,
+        correctCount: 0,
+        wrongCount: 0,
+        consecutiveCorrect: 0,
+        date: new Date().toISOString().slice(0, 10),
+        user_id: currentUser?.id,
+      };
+
+      await addVocabularyItem(newItem, currentUser?.id);
+    }
+
     await loadData(currentUser);
 
-    // 바로 다음 단어 등록 시 이전 단어장(책이름) 기억!
     if (typeof window !== 'undefined') {
       localStorage.setItem('context_vocab_last_book_title', bookToSave);
     }
 
-    // Reset Form for next word entry (단어장은 그대로 유지!)
-    setInputWord('');
-    setInputContext('');
-    setInputSource('');
-    setDictResult(null);
-    setSelectedMeaning('');
-    setSelectedPos('');
-    setCustomMeaning('');
+    // Reset Form to 1 empty entry, but keep pageOcrText and loaded sources!
+    setWordEntries([createWordEntryItem()]);
     setIsCustomBook(false);
     setCustomBookInput('');
-    setDetectedCandidateSentences([]);
-    setOcrDetectedNotice(null);
 
-    // 팡! 터지는 화려한 폭죽 효과
-    fireConfetti({ particleCount: 80, spread: 70, origin: { x: 0.35, y: 0.55 } });
+    fireConfetti({ particleCount: 90, spread: 75, origin: { x: 0.35, y: 0.55 } });
     setTimeout(() => {
-      fireConfetti({ particleCount: 80, spread: 70, origin: { x: 0.65, y: 0.55 } });
+      fireConfetti({ particleCount: 90, spread: 75, origin: { x: 0.65, y: 0.55 } });
     }, 200);
 
-    triggerToast(`'${newItem.word}' 저장 완료! 🎉`, `[${bookToSave}] 단어장에 추가되었습니다. 다음 단어를 바로 등록해 보세요!`);
-    
-    // 다음 단어를 바로 입력할 수 있도록 입력창에 포커스
-    setTimeout(() => {
-      inputWordRef.current?.focus();
-    }, 100);
+    triggerToast(
+      validEntries.length > 1
+        ? `${validEntries.length}개 단어 일괄 저장 완료! 🎉`
+        : `'${validEntries[0].word}' 저장 완료! 🎉`,
+      `[${bookToSave}] 단어장에 추가되었습니다. 같은 페이지/기사에서 다음 단어를 계속 등록할 수 있습니다.`
+    );
   }
 
   // Delete Item
@@ -884,11 +899,21 @@ export default function Home() {
 
   // Fill sample inputs
   function fillSample(w: string, c: string, s: string, b: string = '샘플 단어장') {
-    setInputWord(w);
-    setInputContext(c);
-    setInputSource(s);
     setInputBookTitle(b);
-    executeSearch(w);
+    const targetId = wordEntries[0]?.id || 'first';
+    setWordEntries((prev) => {
+      const first = prev[0] || createWordEntryItem({ id: targetId });
+      return [
+        {
+          ...first,
+          word: w,
+          context: c,
+          sourceMemo: s,
+        },
+        ...prev.slice(1),
+      ];
+    });
+    executeSearchForEntry(targetId, w);
   }
 
   // Available unique book titles
@@ -1283,414 +1308,404 @@ export default function Home() {
                 </div>
 
 
-                {/* Word Input */}
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="block text-xs font-bold text-slate-700">
-                      영어 단어 <span className="text-rose-500">*</span>
-                    </label>
-                    <span className="text-[10px] text-slate-400 font-medium">
-                      타이핑 시 우측에 실시간 뜻 리스트 표시
-                    </span>
-                  </div>
-
-                  <div className="flex gap-2">
-                    <input
-                      ref={inputWordRef}
-                      type="text"
-                      value={inputWord}
-                      onChange={(e) => {
-                        const val = e.target.value;
-                        setInputWord(val);
-                        setDictResult(null); // 타이핑 시 이전 상세 결과 닫고 실시간 리스트 표시
-
-                        // 타이핑 도중에도 현재 페이지 텍스트에서 단어 문장 자동 탐색 (복수형, 시제 변화형 스마트 매칭)
-                        if (pageOcrText && val.trim().length >= 3) {
-                          const matches = findAllSentencesWithWordSmart(pageOcrText, val.trim());
-                          if (matches.length > 0 && !inputContext) {
-                            const sentences = matches.map((m) => m.sentence);
-                            setDetectedCandidateSentences(sentences);
-                            setInputContext(matches[0].sentence);
-                            if (sentences.length > 1) {
-                              setOcrDetectedNotice(`✨ 페이지 내에서 이 단어가 ${sentences.length}번 쓰였습니다! 아래에서 대표 문맥을 선택하세요.`);
-                            } else {
-                              const notice = matches[0].matchedWord.toLowerCase() !== val.trim().toLowerCase()
-                                ? `💡 변화형("${matches[0].matchedWord}")이 포함된 원문 문장을 자동으로 찾았습니다!`
-                                : '📸 촬영한 페이지에서 원문 문장을 자동으로 찾았습니다!';
-                              setOcrDetectedNotice(notice);
-                            }
-                          }
-                        }
-                      }}
-                      onKeyDown={handleInputKeyDown}
-                      placeholder="단어를 입력하세요 (예: tra, prev, miti)"
-                      className="flex-1 px-3.5 py-2.5 text-sm bg-white text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
-                    />
-                    <button
-                      onClick={() => executeSearch()}
-                      disabled={isSearchingDict}
-                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2.5 text-xs rounded-xl shadow-sm transition flex items-center gap-1.5 shrink-0 disabled:opacity-50"
+                {/* Multi-Word Form Cards List */}
+                <div className="space-y-4">
+                  {wordEntries.map((entry, index) => (
+                    <div
+                      key={entry.id}
+                      className="bg-slate-50/70 p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4"
                     >
-                      <Search className="w-3.5 h-3.5" />
-                      <span>{isSearchingDict ? '조회중...' : '영한 사전 조회'}</span>
-                    </button>
-                  </div>
-                </div>
-
-
-              {/* 2. 사전단어뜻 (영한 사전 검색 결과 & 한국어 뜻 선택) */}
-              <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4 space-y-3">
-                  <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-200">
-                    <h3 className="text-xs font-bold text-slate-700">
-                      영한 사전 검색 결과 <span className="font-normal text-slate-500">(한국어 뜻 선택)</span>
-                    </h3>
-                    <span className="text-[10px] text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded font-semibold">
-                      {dictResult
-                        ? dictResult.sourceName
-                        : liveCandidates.length > 0
-                        ? `연관 추천 (${liveCandidates.length})`
-                        : '대기중'}
-                    </span>
-                  </div>
-
-                  {!dictResult && !isSearchingDict && (
-                    <>
-                      {liveCandidates.length > 0 ? (
-                        <div className="space-y-2 w-full">
-                          <div className="flex items-center justify-between pb-1 text-[11px] font-bold text-indigo-700">
-                            <span className="flex items-center gap-1">
-                              <Sparkles className="w-3.5 h-3.5" />
-                              <span>타이핑 연관 단어 & 한국어 뜻</span>
-                            </span>
-                            <span className="text-[10px] text-slate-400">클릭하여 선택</span>
-                          </div>
-                          <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
-                            {liveCandidates.map((c) => (
-                              <button
-                                key={c.word}
-                                type="button"
-                                onClick={() => handleSelectCandidate(c.word)}
-                                className="w-full text-left p-3 rounded-xl border border-slate-200 bg-white hover:border-indigo-500 hover:bg-indigo-50/50 transition flex items-center justify-between shadow-xs group cursor-pointer"
-                              >
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <span className="font-black text-slate-900 group-hover:text-indigo-600 text-xs">
-                                    {c.word}
-                                  </span>
-                                  {c.pos && (
-                                    <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded font-semibold shrink-0">
-                                      {c.pos}
-                                    </span>
-                                  )}
-                                  <span className="text-xs text-slate-600 font-medium truncate">
-                                    {c.quickMeaning}
-                                  </span>
-                                </div>
-                                <span className="text-[10px] bg-indigo-50 text-indigo-700 font-bold px-2 py-0.5 rounded shrink-0 group-hover:bg-indigo-600 group-hover:text-white transition">
-                                  선택 ↵
-                                </span>
-                              </button>
-                            ))}
-                          </div>
-                        </div>
-                      ) : (
-                        <div className="py-10 text-center text-slate-400">
-                          <p className="text-3xl mb-2">🇰🇷 📚</p>
-                          <p className="text-xs font-medium text-slate-500">
-                            단어를 입력하면 연관 한국어 뜻 리스트가 여기에 바로 뜹니다.
-                          </p>
-                          <div className="mt-4 flex flex-wrap justify-center gap-1.5">
-                            <span className="text-[10px] text-slate-400">테스트용 추천:</span>
-                            <button
-                              onClick={() =>
-                                fillSample(
-                                  'tragedy',
-                                  'It was a terrible tragedy that affected many innocent lives.',
-                                  '3막 2장',
-                                  '셰익스피어 햄릿'
-                                )
-                              }
-                              className="text-[10px] bg-white border border-slate-300 hover:border-indigo-400 px-2 py-0.5 rounded text-indigo-600 font-medium"
-                            >
-                              tragedy
-                            </button>
-                            <button
-                              onClick={() =>
-                                fillSample(
-                                  'prevalent',
-                                  'The disease is significantly more prevalent in warm climates.',
-                                  '12페이지',
-                                  '의학 저널'
-                                )
-                              }
-                              className="text-[10px] bg-white border border-slate-300 hover:border-indigo-400 px-2 py-0.5 rounded text-indigo-600 font-medium"
-                            >
-                              prevalent
-                            </button>
-                            <button
-                              onClick={() =>
-                                fillSample(
-                                  'mitigate',
-                                  'New technologies will help mitigate environmental degradation.',
-                                  '결론부',
-                                  '기후변화 보고서'
-                                )
-                              }
-                              className="text-[10px] bg-white border border-slate-300 hover:border-indigo-400 px-2 py-0.5 rounded text-indigo-600 font-medium"
-                            >
-                              mitigate
-                            </button>
-                          </div>
-                        </div>
-                      )}
-                    </>
-                  )}
-
-                  {isSearchingDict && (
-                    <div className="py-10 text-center text-indigo-600">
-                      <div className="inline-block animate-spin rounded-full h-7 w-7 border-4 border-indigo-600 border-t-transparent mb-2"></div>
-                      <p className="text-xs font-semibold">영한 사전 데이터를 가져오는 중입니다...</p>
-                    </div>
-                  )}
-
-                  {dictResult && !isSearchingDict && (
-                    <div className="space-y-3">
+                      {/* Entry Card Header */}
                       <div className="flex items-center justify-between pb-2 border-b border-slate-200">
                         <div className="flex items-center gap-2">
-                          <span className="font-black text-lg text-slate-900">{dictResult.word}</span>
-                          <span className="text-xs text-indigo-600 font-mono">{dictResult.phonetic}</span>
+                          <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[11px] font-black flex items-center justify-center">
+                            {index + 1}
+                          </span>
+                          <span className="text-xs font-bold text-slate-800">
+                            단어 등록칸 #{index + 1}
+                          </span>
+                          {entry.selectedMeaning && (
+                            <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full truncate max-w-[180px]">
+                              ✓ {entry.word} ({entry.selectedMeaning})
+                            </span>
+                          )}
                         </div>
-                        <button
-                          onClick={() => speakWordTTS(dictResult.word, ttsVoice)}
-                          className="text-xs bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-2.5 py-1 rounded-lg flex items-center gap-1 font-bold transition"
-                        >
-                          <Volume2 className="w-3.5 h-3.5" />
-                          <span>발음 듣기</span>
-                        </button>
-                      </div>
-
-                      <div className="text-[11px] text-slate-500 font-medium">
-                        💡 원문 문맥에 가장 어울리는 한국어 뜻을 골라주세요:
-                      </div>
-
-                      <div className="space-y-2 max-h-56 overflow-y-auto pr-1">
-                        {dictResult.meanings.map((m, idx) => (
-                          <label
-                            key={idx}
-                            onClick={() => {
-                              setSelectedMeaning(m.def);
-                              setSelectedPos(m.pos);
-                            }}
-                            className={`flex items-start gap-3 p-2.5 rounded-xl border cursor-pointer transition text-xs shadow-sm ${
-                              selectedMeaning === m.def
-                                ? 'border-indigo-600 bg-indigo-50/60 font-bold'
-                                : 'border-slate-200 bg-white hover:border-indigo-300'
-                            }`}
+                        {wordEntries.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => handleRemoveWordEntry(entry.id)}
+                            className="text-[11px] text-rose-500 hover:text-rose-700 font-semibold flex items-center gap-1 px-2 py-0.5 rounded hover:bg-rose-50 transition"
                           >
-                            <input
-                              type="radio"
-                              name="meaningRadio"
-                              checked={selectedMeaning === m.def}
-                              onChange={() => {
-                                setSelectedMeaning(m.def);
-                                setSelectedPos(m.pos);
-                              }}
-                              className="mt-0.5 accent-indigo-600"
-                            />
-                            <div className="flex-1">
-                              <span className="inline-block px-1.5 py-0.5 bg-indigo-50 text-indigo-700 font-bold rounded text-[10px] mr-1.5">
-                                {m.pos}
-                              </span>
-                              <span className="text-slate-900">{m.def}</span>
-                            </div>
+                            <Trash2 className="w-3.5 h-3.5" />
+                            <span>삭제</span>
+                          </button>
+                        )}
+                      </div>
+
+                      {/* 1. Word Input */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="block text-xs font-bold text-slate-700">
+                            영어 단어 <span className="text-rose-500">*</span>
                           </label>
-                        ))}
+                          <span className="text-[10px] text-slate-400 font-medium">
+                            타이핑 시 실시간 뜻 리스트 표시
+                          </span>
+                        </div>
+
+                        <div className="flex gap-2">
+                          <input
+                            type="text"
+                            value={entry.word}
+                            onChange={(e) => {
+                              const val = e.target.value;
+                              updateWordEntry(entry.id, {
+                                word: val,
+                                dictResult: null,
+                                selectedMeaning: '',
+                                selectedPos: '',
+                              });
+
+                              // 실시간 자동완성 추천
+                              const localMatches = getLiveDictCandidates(val);
+                              updateWordEntry(entry.id, { liveCandidates: localMatches });
+                              fetchLiveDictSuggestions(val).then((apiMatches) => {
+                                if (apiMatches && apiMatches.length > 0) {
+                                  updateWordEntry(entry.id, { liveCandidates: apiMatches });
+                                }
+                              });
+
+                              // 사진 또는 URL 텍스트에서 단어 문장 자동 탐색
+                              if (pageOcrText && val.trim().length >= 3) {
+                                const matches = findAllSentencesWithWordSmart(pageOcrText, val.trim());
+                                if (matches.length > 0 && !entry.context) {
+                                  const sentences = matches.map((m) => m.sentence);
+                                  updateWordEntry(entry.id, {
+                                    candidateSentences: sentences,
+                                    context: matches[0].sentence,
+                                    ocrDetectedNotice:
+                                      sentences.length > 1
+                                        ? `✨ 본문 내에서 이 단어가 ${sentences.length}번 쓰였습니다!`
+                                        : '📸 본문에서 원문 문장을 자동으로 찾았습니다!',
+                                  });
+                                }
+                              }
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                executeSearchForEntry(entry.id);
+                              }
+                            }}
+                            placeholder="단어를 입력하세요 (예: tra, prev, miti)"
+                            className="flex-1 px-3 py-2 text-xs bg-white text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => executeSearchForEntry(entry.id)}
+                            disabled={entry.isSearchingDict}
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3.5 py-2 text-xs rounded-xl shadow-xs transition flex items-center gap-1 shrink-0 disabled:opacity-50"
+                          >
+                            <Search className="w-3.5 h-3.5" />
+                            <span>{entry.isSearchingDict ? '조회중...' : '사전 조회'}</span>
+                          </button>
+                        </div>
                       </div>
 
-                      {/* Custom Direct Meaning Input */}
-                      <div className="pt-2">
-                        <details className="text-xs text-slate-600 cursor-pointer">
-                          <summary className="font-semibold text-indigo-600 hover:underline">
-                            원하는 뜻이 목록에 없나요? 직접 입력하기
-                          </summary>
-                          <div className="mt-2 flex gap-1.5">
-                            <input
-                              type="text"
-                              value={customMeaning}
-                              onChange={(e) => setCustomMeaning(e.target.value)}
-                              placeholder="직접 한국어 뜻 입력"
-                              className="flex-1 px-2.5 py-1.5 text-xs bg-white text-slate-900 border border-slate-300 rounded-lg"
-                            />
-                            <button
-                              onClick={() => {
-                                if (!customMeaning.trim()) return;
-                                setSelectedMeaning(customMeaning.trim());
-                                setSelectedPos('직접입력');
-                              }}
-                              className="px-3 py-1.5 bg-slate-800 text-white text-xs font-bold rounded-lg shrink-0"
-                            >
-                              적용
-                            </button>
-                          </div>
-                        </details>
-                      </div>
+                      {/* 2. 사전단어뜻 (영한 사전 검색 결과 & 한국어 뜻 선택) */}
+                      <div className="bg-white rounded-xl border border-slate-200 p-3.5 space-y-2.5">
+                        <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
+                          <h4 className="text-xs font-bold text-slate-700">
+                            영한 사전 검색 결과 <span className="font-normal text-slate-500">(한국어 뜻 선택)</span>
+                          </h4>
+                          <span className="text-[10px] text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded font-semibold">
+                            {entry.dictResult
+                              ? entry.dictResult.sourceName
+                              : entry.liveCandidates.length > 0
+                              ? `연관 추천 (${entry.liveCandidates.length})`
+                              : '대기중'}
+                          </span>
+                        </div>
 
-                      {/* 혹시 이 단어를 찾으셨나요? (연관 완성 단어 추천 섹션) */}
-                      {(() => {
-                        const related = liveCandidates.filter((c) => c.word.toLowerCase() !== dictResult.word.toLowerCase());
-                        if (related.length === 0) return null;
-                        return (
-                          <div className="pt-3 mt-3 border-t border-slate-200 space-y-2">
-                            <div className="flex items-center justify-between text-[11px] font-bold text-indigo-700">
-                              <span className="flex items-center gap-1">
-                                <Sparkles className="w-3.5 h-3.5" />
-                                <span>혹시 이 단어를 찾으셨나요? (연관 추천)</span>
-                              </span>
-                              <span className="text-[10px] text-slate-400">클릭하여 단어 변경</span>
-                            </div>
-                            <div className="space-y-1.5 max-h-40 overflow-y-auto pr-1">
-                              {related.map((c) => (
-                                <button
-                                  key={c.word}
-                                  type="button"
-                                  onClick={() => handleSelectCandidate(c.word)}
-                                  className="w-full text-left p-2.5 rounded-xl border border-slate-200 bg-white hover:border-indigo-500 hover:bg-indigo-50/50 transition flex items-center justify-between shadow-xs group cursor-pointer"
-                                >
-                                  <div className="flex items-center gap-2 min-w-0">
-                                    <span className="font-black text-slate-900 group-hover:text-indigo-600 text-xs">
-                                      {c.word}
-                                    </span>
-                                    {c.pos && (
-                                      <span className="text-[10px] bg-slate-100 text-slate-600 px-1.5 py-0.2 rounded font-semibold shrink-0">
-                                        {c.pos}
-                                      </span>
-                                    )}
-                                    <span className="text-xs text-slate-600 font-medium truncate">
-                                      {c.quickMeaning}
-                                    </span>
-                                  </div>
-                                  <span className="text-[10px] bg-indigo-50 text-indigo-700 font-bold px-2 py-0.5 rounded shrink-0 group-hover:bg-indigo-600 group-hover:text-white transition">
-                                    단어 변경 ↵
+                        {!entry.dictResult && !entry.isSearchingDict && (
+                          <>
+                            {entry.liveCandidates.length > 0 ? (
+                              <div className="space-y-1.5 w-full">
+                                <div className="flex items-center justify-between text-[11px] font-bold text-indigo-700">
+                                  <span className="flex items-center gap-1">
+                                    <Sparkles className="w-3 h-3" />
+                                    <span>타이핑 연관 단어 & 한국어 뜻</span>
                                   </span>
-                                </button>
+                                  <span className="text-[10px] text-slate-400">클릭하여 선택</span>
+                                </div>
+                                <div className="space-y-1 max-h-48 overflow-y-auto pr-1">
+                                  {entry.liveCandidates.map((c) => (
+                                    <button
+                                      key={c.word}
+                                      type="button"
+                                      onClick={() => handleSelectCandidateForEntry(entry.id, c.word)}
+                                      className="w-full text-left p-2 rounded-lg border border-slate-200 bg-white hover:border-indigo-500 hover:bg-indigo-50/50 transition flex items-center justify-between shadow-xs group cursor-pointer"
+                                    >
+                                      <div className="flex items-center gap-2 min-w-0">
+                                        <span className="font-black text-slate-900 group-hover:text-indigo-600 text-xs">
+                                          {c.word}
+                                        </span>
+                                        {c.pos && (
+                                          <span className="text-[10px] bg-slate-100 text-slate-600 px-1 py-0.2 rounded font-semibold shrink-0">
+                                            {c.pos}
+                                          </span>
+                                        )}
+                                        <span className="text-xs text-slate-600 font-medium truncate">
+                                          {c.quickMeaning}
+                                        </span>
+                                      </div>
+                                      <span className="text-[10px] bg-indigo-50 text-indigo-700 font-bold px-1.5 py-0.5 rounded shrink-0 group-hover:bg-indigo-600 group-hover:text-white transition">
+                                        선택 ↵
+                                      </span>
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="py-6 text-center text-slate-400">
+                                <p className="text-2xl mb-1">🇰🇷 📚</p>
+                                <p className="text-xs font-medium text-slate-500">
+                                  단어를 입력하면 연관 한국어 뜻 리스트가 여기에 바로 뜹니다.
+                                </p>
+                              </div>
+                            )}
+                          </>
+                        )}
+
+                        {entry.isSearchingDict && (
+                          <div className="py-6 text-center text-indigo-600">
+                            <div className="inline-block animate-spin rounded-full h-6 w-6 border-3 border-indigo-600 border-t-transparent mb-1.5"></div>
+                            <p className="text-xs font-semibold">영한 사전 데이터를 가져오는 중입니다...</p>
+                          </div>
+                        )}
+
+                        {entry.dictResult && !entry.isSearchingDict && (
+                          <div className="space-y-2.5">
+                            <div className="flex items-center justify-between pb-1.5 border-b border-slate-100">
+                              <div className="flex items-center gap-2">
+                                <span className="font-black text-base text-slate-900">{entry.dictResult.word}</span>
+                                <span className="text-xs text-indigo-600 font-mono">{entry.dictResult.phonetic}</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => speakWordTTS(entry.dictResult!.word, ttsVoice)}
+                                className="text-xs bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-2 py-1 rounded-lg flex items-center gap-1 font-bold transition"
+                              >
+                                <Volume2 className="w-3.5 h-3.5" />
+                                <span>발음</span>
+                              </button>
+                            </div>
+
+                            <div className="text-[11px] text-slate-500 font-medium">
+                              💡 원문 문맥에 가장 어울리는 한국어 뜻을 골라주세요:
+                            </div>
+
+                            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                              {entry.dictResult.meanings.map((m, idx) => (
+                                <label
+                                  key={idx}
+                                  onClick={() => {
+                                    updateWordEntry(entry.id, {
+                                      selectedMeaning: m.def,
+                                      selectedPos: m.pos,
+                                    });
+                                  }}
+                                  className={`flex items-start gap-2.5 p-2 rounded-lg border cursor-pointer transition text-xs shadow-2xs ${
+                                    entry.selectedMeaning === m.def
+                                      ? 'border-indigo-600 bg-indigo-50/60 font-bold'
+                                      : 'border-slate-200 bg-white hover:border-indigo-300'
+                                  }`}
+                                >
+                                  <input
+                                    type="radio"
+                                    name={`meaningRadio_${entry.id}`}
+                                    checked={entry.selectedMeaning === m.def}
+                                    onChange={() => {
+                                      updateWordEntry(entry.id, {
+                                        selectedMeaning: m.def,
+                                        selectedPos: m.pos,
+                                      });
+                                    }}
+                                    className="mt-0.5 accent-indigo-600"
+                                  />
+                                  <div className="flex-1">
+                                    <span className="inline-block px-1.5 py-0.2 bg-indigo-50 text-indigo-700 font-bold rounded text-[10px] mr-1.5">
+                                      {m.pos}
+                                    </span>
+                                    <span className="text-slate-900">{m.def}</span>
+                                  </div>
+                                </label>
                               ))}
                             </div>
+
+                            {/* 직접 입력 */}
+                            <details className="text-xs text-slate-600 cursor-pointer pt-1">
+                              <summary className="font-semibold text-indigo-600 hover:underline text-[11px]">
+                                원하는 뜻이 없나요? 직접 입력하기
+                              </summary>
+                              <div className="mt-1.5 flex gap-1.5">
+                                <input
+                                  type="text"
+                                  value={entry.customMeaning}
+                                  onChange={(e) => updateWordEntry(entry.id, { customMeaning: e.target.value })}
+                                  placeholder="직접 한국어 뜻 입력"
+                                  className="flex-1 px-2 py-1 text-xs bg-white text-slate-900 border border-slate-300 rounded-lg"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    if (!entry.customMeaning.trim()) return;
+                                    updateWordEntry(entry.id, {
+                                      selectedMeaning: entry.customMeaning.trim(),
+                                      selectedPos: '직접입력',
+                                    });
+                                  }}
+                                  className="px-2.5 py-1 bg-slate-800 text-white text-xs font-bold rounded-lg shrink-0"
+                                >
+                                  적용
+                                </button>
+                              </div>
+                            </details>
                           </div>
-                        );
-                      })()}
-                    </div>
-                  )}
-
-              </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="block text-xs font-bold text-slate-700">
-                      원서 / 레포트 원문 문장 <span className="text-slate-400 font-normal">(권장)</span>
-                    </label>
-                    {ocrDetectedNotice && (
-                      <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded animate-fade-in">
-                        {ocrDetectedNotice}
-                      </span>
-                    )}
-                  </div>
-
-                  {/* 페이지 내 복수 문장 발견 시 대표 문맥 선택 리스트 */}
-                  {detectedCandidateSentences.length > 1 && (
-                    <div className="bg-gradient-to-r from-indigo-50/90 to-purple-50/90 p-3 rounded-xl border border-indigo-200 space-y-2 mb-2.5">
-                      <div className="flex items-center justify-between text-xs font-bold text-indigo-950">
-                        <span className="flex items-center gap-1.5">
-                          <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-                          <span>페이지 내 {detectedCandidateSentences.length}개 문장 발견 (대표 문맥 선택)</span>
-                        </span>
-                        <span className="text-[10px] text-slate-500 font-normal">선택 안 된 문장도 함께 자동 보관</span>
+                        )}
                       </div>
-                      <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                        {detectedCandidateSentences.map((sent, sIdx) => {
-                          const isChosen = inputContext.trim() === sent.trim();
-                          return (
-                            <button
-                              key={sIdx}
-                              type="button"
-                              onClick={() => setInputContext(sent)}
-                              className={`w-full text-left p-2.5 rounded-lg border text-xs transition flex items-start gap-2.5 cursor-pointer ${
-                                isChosen
-                                  ? 'bg-white border-indigo-600 ring-2 ring-indigo-200 font-bold text-slate-900 shadow-xs'
-                                  : 'bg-white/80 border-slate-200 text-slate-600 hover:border-indigo-300 hover:bg-white'
-                              }`}
-                            >
-                              <span
-                                className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 mt-0.5 ${
-                                  isChosen ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-600'
-                                }`}
-                              >
-                                {sIdx + 1}
-                              </span>
-                              <span className="flex-1 font-serif leading-relaxed line-clamp-3">
-                                &quot;{sent}&quot;
-                              </span>
-                              {isChosen && (
-                                <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-bold shrink-0">
-                                  선택됨 ✓
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })}
+
+                      {/* 3. 원서 / 레포트 원문 문장 */}
+                      <div>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <label className="block text-xs font-bold text-slate-700">
+                            원서 / 레포트 원문 문장 <span className="text-slate-400 font-normal">(권장)</span>
+                          </label>
+                          {entry.ocrDetectedNotice && (
+                            <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded animate-fade-in">
+                              {entry.ocrDetectedNotice}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* 복수 문장 발견 시 선택 리스트 */}
+                        {entry.candidateSentences.length > 1 && (
+                          <div className="bg-indigo-50/80 p-2.5 rounded-xl border border-indigo-200 space-y-1.5 mb-2">
+                            <div className="text-[11px] font-bold text-indigo-950 flex items-center gap-1">
+                              <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                              <span>본문 내 {entry.candidateSentences.length}개 문장 중 대표 문맥 선택:</span>
+                            </div>
+                            <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
+                              {entry.candidateSentences.map((sent, sIdx) => {
+                                const isChosen = entry.context.trim() === sent.trim();
+                                return (
+                                  <button
+                                    key={sIdx}
+                                    type="button"
+                                    onClick={() => updateWordEntry(entry.id, { context: sent })}
+                                    className={`w-full text-left p-2 rounded-lg border text-xs transition flex items-start gap-2 cursor-pointer ${
+                                      isChosen
+                                        ? 'bg-white border-indigo-600 ring-2 ring-indigo-200 font-bold text-slate-900 shadow-xs'
+                                        : 'bg-white/80 border-slate-200 text-slate-600 hover:border-indigo-300 hover:bg-white'
+                                    }`}
+                                  >
+                                    <span
+                                      className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 mt-0.5 ${
+                                        isChosen ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-600'
+                                      }`}
+                                    >
+                                      {sIdx + 1}
+                                    </span>
+                                    <span className="flex-1 font-serif leading-relaxed line-clamp-2">
+                                      &quot;{sent}&quot;
+                                    </span>
+                                    {isChosen && (
+                                      <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.2 rounded font-bold shrink-0">
+                                        선택됨 ✓
+                                      </span>
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        <textarea
+                          rows={2}
+                          value={entry.context}
+                          onChange={(e) => {
+                            updateWordEntry(entry.id, {
+                              context: e.target.value,
+                              ocrDetectedNotice: null,
+                            });
+                          }}
+                          placeholder="예: It was an unspeakable tragedy that shook the entire nation. (사진이나 웹 URL을 넣으면 자동 입력됩니다)"
+                          className="w-full px-3 py-2 text-xs bg-white text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 leading-relaxed"
+                        />
+                      </div>
+
+                      {/* 4. 메모 */}
+                      <div>
+                        <label className="block text-xs font-bold text-slate-700 mb-1">
+                          상세 메모 / 페이지 <span className="text-slate-400 font-normal">(선택)</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={entry.sourceMemo}
+                          onChange={(e) => updateWordEntry(entry.id, { sourceMemo: e.target.value })}
+                          placeholder="예: 3막 1장 45페이지, 서론 2문단"
+                          className="w-full px-3 py-1.5 text-xs bg-white text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
                       </div>
                     </div>
-                  )}
+                  ))}
 
-                  <textarea
-                    rows={3}
-                    value={inputContext}
-                    onChange={(e) => {
-                      setInputContext(e.target.value);
-                      setOcrDetectedNotice(null);
-                    }}
-                    placeholder="예: It was an unspeakable tragedy that shook the entire nation. (페이지 사진을 찍으면 자동 입력됩니다)"
-                    className="w-full px-3.5 py-2.5 text-xs bg-white text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 leading-relaxed"
-                  />
-                  <p className="text-[11px] text-slate-400 mt-1">
-                    ※ 퀴즈 정답 시 이 문맥 속 단어가 형광펜으로 강조되며, 원어민 음성(TTS)으로 읽어줍니다.
-                  </p>
-                </div>
-
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                    상세 메모 / 페이지 <span className="text-slate-400 font-normal">(선택)</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={inputSource}
-                    onChange={(e) => setInputSource(e.target.value)}
-                    placeholder="예: 3막 1장 45페이지, 서론 2문단"
-                    className="w-full px-3 py-2 text-xs bg-white text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
-
-                <div className="pt-3 mt-3 border-t border-slate-200 flex justify-end">
+                  {/* Add Word Entry Button */}
                   <button
-                    onClick={handleSaveWord}
-                    disabled={!dictResult || !selectedMeaning || isSavingAwaitingSource}
-                    className={`w-full sm:w-auto font-bold px-6 py-2.5 text-xs rounded-xl shadow-md transition flex items-center justify-center gap-1.5 ${
-                      isSavingAwaitingSource
-                        ? 'bg-amber-600 text-white cursor-wait animate-pulse'
-                        : dictResult && selectedMeaning
-                        ? 'bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer'
-                        : 'bg-slate-300 text-slate-500 cursor-not-allowed'
-                    }`}
+                    type="button"
+                    onClick={handleAddWordEntry}
+                    className="w-full py-3.5 border-2 border-dashed border-indigo-300 hover:border-indigo-500 hover:bg-indigo-50/60 rounded-2xl text-indigo-700 font-bold text-xs flex items-center justify-center gap-2 transition shadow-xs group cursor-pointer"
                   >
-                    {isSavingAwaitingSource ? (
-                      <>
-                        <RotateCw className="w-3.5 h-3.5 animate-spin" />
-                        <span>원문 문장 분석 완료 대기 중...</span>
-                      </>
-                    ) : (
-                      <span>⭐ [{inputBookTitle || '기본 단어장'}]에 저장하기</span>
-                    )}
+                    <Plus className="w-4 h-4 text-indigo-600 group-hover:scale-110 transition-transform" />
+                    <span>+ 단어 등록칸 추가하기 ({wordEntries.length}개 작성 중)</span>
                   </button>
                 </div>
+
+                {/* Bulk Save Section */}
+                {(() => {
+                  const validCount = wordEntries.filter(
+                    (e) => (e.dictResult?.word || e.word.trim()) && e.selectedMeaning
+                  ).length;
+                  return (
+                    <div className="pt-3 mt-4 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
+                      <div className="text-xs text-slate-500 text-center sm:text-left">
+                        작성 중인 <span className="font-bold text-indigo-600">{wordEntries.length}개</span> 등록칸 중{' '}
+                        <span className="font-bold text-emerald-600">{validCount}개</span> 단어 저장 준비 완료
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleSaveAllWords}
+                        disabled={validCount === 0 || isSavingAwaitingSource}
+                        className={`w-full sm:w-auto font-bold px-6 py-2.5 text-xs rounded-xl shadow-md transition flex items-center justify-center gap-1.5 ${
+                          validCount > 0
+                            ? 'bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer'
+                            : 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                        }`}
+                      >
+                        {isSavingAwaitingSource ? (
+                          <>
+                            <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                            <span>원문 문장 분석 대기 중...</span>
+                          </>
+                        ) : (
+                          <span>
+                            ⭐ [{inputBookTitle || '기본 단어장'}]에 {validCount > 1 ? `${validCount}개 단어 일괄 ` : '단어 '}저장하기
+                          </span>
+                        )}
+                      </button>
+                    </div>
+                  );
+                })()}
             </div>
           </section>
         )}
