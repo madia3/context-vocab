@@ -133,6 +133,38 @@ Return strictly valid JSON:
           console.warn(`AI Hallucination blocked: "${word}" matched unrelated sentence: "${parsed.sentence}"`);
           return NextResponse.json({ found: false, sentence: '', matchedWord: '', allMatches: [] });
         }
+
+        // 중복 문장 완전 제거 (공백/따옴표/특수문자 정규화 기준)
+        const seenNorm = new Set<string>();
+        const dedupedMatches: { sentence: string; matchedWord?: string }[] = [];
+
+        const primarySent = String(parsed.sentence || '').trim();
+        const normPrimary = primarySent.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+        if (primarySent && normPrimary.length > 5) {
+          seenNorm.add(normPrimary);
+          dedupedMatches.push({
+            sentence: primarySent,
+            matchedWord: parsed.matchedWord,
+          });
+        }
+
+        if (Array.isArray(parsed.allMatches)) {
+          for (const m of parsed.allMatches) {
+            const s = String(m?.sentence || '').trim();
+            const norm = s.toLowerCase().replace(/[^a-z0-9]/g, '');
+            if (s && norm.length > 5 && !seenNorm.has(norm)) {
+              seenNorm.add(norm);
+              dedupedMatches.push({
+                sentence: s,
+                matchedWord: m.matchedWord || parsed.matchedWord,
+              });
+            }
+          }
+        }
+
+        parsed.sentence = primarySent;
+        parsed.allMatches = dedupedMatches;
       }
       return NextResponse.json(parsed);
     } catch {

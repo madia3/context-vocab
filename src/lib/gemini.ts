@@ -167,13 +167,22 @@ export async function findSentenceWithAI(
     if (res.ok) {
       const data = await res.json();
       if (data.found && data.sentence) {
-        const matches: MatchedSentenceItem[] =
+        const rawList =
           Array.isArray(data.allMatches) && data.allMatches.length > 0
-            ? data.allMatches.map((m: any) => ({
-                sentence: (m.sentence || '').trim(),
-                matchedWord: m.matchedWord,
-              })).filter((m: MatchedSentenceItem) => m.sentence.length > 0)
+            ? data.allMatches
             : [{ sentence: data.sentence.trim(), matchedWord: data.matchedWord }];
+
+        const seenNorm = new Set<string>();
+        const matches: MatchedSentenceItem[] = [];
+
+        rawList.forEach((m: any) => {
+          const sent = (m.sentence || '').trim();
+          const norm = sent.toLowerCase().replace(/[^a-z0-9]/g, '');
+          if (sent && norm.length > 5 && !seenNorm.has(norm)) {
+            seenNorm.add(norm);
+            matches.push({ sentence: sent, matchedWord: m.matchedWord });
+          }
+        });
 
         return {
           found: true,

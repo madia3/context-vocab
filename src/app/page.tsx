@@ -27,6 +27,7 @@ import {
   findSentenceWithWordSmart,
   findAllSentencesWithWordSmart,
   extractLemmaCandidate,
+  generateWordVariants,
 } from '@/lib/ocr';
 import {
   extractTextWithAI,
@@ -124,6 +125,7 @@ interface WordEntryItem {
   customMeaning: string;
   isSearchingDict: boolean;
   liveCandidates: SuggestionItem[];
+  foundCandidateSentences?: string[];
   candidateSentences: string[];
   ocrDetectedNotice: string | null;
 }
@@ -140,6 +142,7 @@ function createWordEntryItem(init?: Partial<WordEntryItem>): WordEntryItem {
     customMeaning: '',
     isSearchingDict: false,
     liveCandidates: [],
+    foundCandidateSentences: [],
     candidateSentences: [],
     ocrDetectedNotice: null,
     ...init,
@@ -527,7 +530,13 @@ export default function Home() {
               currentSourceImageRef.current || currentSourceImage
             ).then((matchRes) => {
               if (matchRes.found && matchRes.sentence) {
-                const sentences = matchRes.allMatches.map((m) => m.sentence);
+                const uniqueSentences = Array.from(
+                  new Set(
+                    matchRes.allMatches
+                      .map((m) => m.sentence.trim())
+                      .filter((s) => s.length > 5)
+                  )
+                );
                 let bestDef = entry.selectedMeaning;
                 let bestPos = entry.selectedPos;
                 if (
@@ -540,12 +549,13 @@ export default function Home() {
                 }
                 updateWordEntry(entry.id, {
                   context: matchRes.sentence,
-                  candidateSentences: sentences,
+                  foundCandidateSentences: uniqueSentences,
+                  candidateSentences: uniqueSentences,
                   selectedMeaning: bestDef || entry.selectedMeaning,
                   selectedPos: bestPos || entry.selectedPos,
                   ocrDetectedNotice:
-                    sentences.length > 1
-                      ? `✨ 본문 분석 완료! '${w}'가 쓰인 문장(${sentences.length}개)과 최적 뜻이 자동 연결되었습니다.`
+                    uniqueSentences.length > 1
+                      ? `✨ 본문 분석 완료! '${w}'가 쓰인 문장(${uniqueSentences.length}개)과 최적 뜻이 자동 연결되었습니다.`
                       : `✨ 본문 분석 완료! 원문 속 실제 문장이 자동으로 연결되었습니다.`,
                 });
               }
@@ -855,7 +865,13 @@ export default function Home() {
             activeImage
           );
           if (matchRes.found && matchRes.sentence) {
-            const sentences = matchRes.allMatches.map((m) => m.sentence);
+            const uniqueSentences = Array.from(
+              new Set(
+                matchRes.allMatches
+                  .map((m) => m.sentence.trim())
+                  .filter((s) => s.length > 5)
+              )
+            );
 
             // AI가 확정한 원형(Lemma)이 있으면 최종 표제어로 확정
             const finalLemma = (matchRes.lemma || lemmaCandidate).trim().toLowerCase();
@@ -893,8 +909,9 @@ export default function Home() {
               word: finalLemma,
               selectedMeaning: selectedDef,
               selectedPos: selectedPos,
-              candidateSentences: sentences,
-              context: matchRes.sentence,
+              foundCandidateSentences: uniqueSentences,
+              candidateSentences: uniqueSentences,
+              context: matchRes.sentence || uniqueSentences[0] || '',
               ocrDetectedNotice: noticeText,
             });
           } else {
@@ -1380,13 +1397,34 @@ export default function Home() {
     setupQuestion(nextIdx, quizList);
   }
 
-  // Highlight word helper
+  // Highlight word helper (불규칙 변화형, 복수형(-ies, -es, -s), 시제 변화, 대소문자 완벽 대응)
   function renderHighlightedContext(text: string, word: string) {
     if (!text || !word) return text;
-    const regex = new RegExp(`(${word}[a-z]*)`, 'gi');
-    const parts = text.split(regex);
+    const base = word.trim().toLowerCase();
+    if (!base) return text;
+
+    const lemma = extractLemmaCandidate(base);
+    const allVariantsSet = new Set<string>([
+      base,
+      lemma,
+      ...generateWordVariants(base),
+      ...(lemma ? generateWordVariants(lemma) : []),
+    ]);
+
+    const escapedVariants = Array.from(allVariantsSet)
+      .filter((v) => v && v.length > 0)
+      .map((v) => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+      .sort((a, b) => b.length - a.length);
+
+    if (escapedVariants.length === 0) return text;
+
+    const pattern = `\\b(?:${escapedVariants.join('|')})[a-zA-Z]*\\b`;
+    const splitRegex = new RegExp(`(${pattern})`, 'gi');
+    const matchRegex = new RegExp(`^${pattern}$`, 'i');
+
+    const parts = text.split(splitRegex);
     return parts.map((part, i) =>
-      regex.test(part) ? (
+      matchRegex.test(part) ? (
         <span key={i} className="highlight-word">
           {part}
         </span>
@@ -2307,48 +2345,147 @@ export default function Home() {
                               )}
                             </div>
 
-                            {/* 복수 문장 발견 시 선택 리스트 */}
-                            {entry.candidateSentences.length > 1 && (
-                              <div className="bg-indigo-50/80 p-2.5 rounded-xl border border-indigo-200 space-y-1.5 mb-2">
-                                <div className="text-[11px] font-bold text-indigo-950 flex items-center gap-1">
-                                  <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-                                  <span>본문 내 {entry.candidateSentences.length}개 문장 중 대표 문맥 선택:</span>
-                                </div>
-                                <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
-                                  {entry.candidateSentences.map((sent, sIdx) => {
-                                    const isChosen = entry.context.trim() === sent.trim();
-                                    return (
+                            {/* 복수 문장 발견 시 다중 선택 체크박스 & 대표 문맥 지정 리스트 */}
+                            {(() => {
+                              const allFound = Array.from(
+                                new Set(
+                                  [
+                                    ...(entry.foundCandidateSentences || []),
+                                    ...(entry.candidateSentences || []),
+                                    ...(entry.context ? [entry.context] : []),
+                                  ]
+                                    .map((s) => s.trim())
+                                    .filter((s) => s.length > 5)
+                                )
+                              );
+
+                              if (allFound.length <= 1) return null;
+
+                              return (
+                                <div className="bg-sky-50/70 p-2.5 rounded-xl border border-[#5090B3]/30 space-y-2 mb-2">
+                                  <div className="flex items-center justify-between flex-wrap gap-1">
+                                    <div className="text-[11px] font-bold text-[#3d7a9c] flex items-center gap-1">
+                                      <Sparkles className="w-3.5 h-3.5 text-[#5090B3]" />
+                                      <span>본문 내 서로 다른 {allFound.length}개 문장 발견 (등록할 문장 선택):</span>
+                                    </div>
+                                    <div className="flex items-center gap-1.5 text-[10px]">
                                       <button
-                                        key={sIdx}
                                         type="button"
-                                        onClick={() => updateWordEntry(entry.id, { context: sent })}
-                                        className={`w-full text-left p-2 rounded-lg border text-xs transition flex items-start gap-2 cursor-pointer ${
-                                          isChosen
-                                            ? 'bg-white border-indigo-600 ring-2 ring-indigo-200 font-bold text-slate-900 shadow-xs'
-                                            : 'bg-white/80 border-slate-200 text-slate-600 hover:border-indigo-300 hover:bg-white'
-                                        }`}
+                                        onClick={() => {
+                                          updateWordEntry(entry.id, {
+                                            candidateSentences: [...allFound],
+                                          });
+                                        }}
+                                        className="text-[#5090B3] hover:underline font-bold cursor-pointer"
                                       >
-                                        <span
-                                          className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 mt-0.5 ${
-                                            isChosen ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-600'
+                                        전체 선택
+                                      </button>
+                                      <span className="text-slate-300">|</span>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          updateWordEntry(entry.id, {
+                                            candidateSentences: [entry.context || allFound[0]],
+                                          });
+                                        }}
+                                        className="text-slate-500 hover:underline font-medium cursor-pointer"
+                                      >
+                                        대표만 선택
+                                      </button>
+                                    </div>
+                                  </div>
+
+                                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                                    {allFound.map((sent, sIdx) => {
+                                      const isPrimary = entry.context.trim() === sent.trim();
+                                      const isIncluded = (entry.candidateSentences || []).includes(sent) || isPrimary;
+
+                                      return (
+                                        <div
+                                          key={sIdx}
+                                          className={`w-full p-2.5 rounded-xl border text-xs transition flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
+                                            isPrimary
+                                              ? 'bg-sky-50/90 border-[#5090B3] ring-1 ring-[#5090B3]/40 shadow-xs'
+                                              : isIncluded
+                                              ? 'bg-white border-slate-300 text-slate-800'
+                                              : 'bg-slate-50/60 border-slate-200 text-slate-400'
                                           }`}
                                         >
-                                          {sIdx + 1}
-                                        </span>
-                                        <span className="flex-1 font-serif leading-relaxed line-clamp-2">
-                                          &quot;{sent}&quot;
-                                        </span>
-                                        {isChosen && (
-                                          <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.2 rounded font-bold shrink-0">
-                                            선택됨 ✓
-                                          </span>
-                                        )}
-                                      </button>
-                                    );
-                                  })}
+                                          <div className="flex items-start gap-2 flex-1">
+                                            {/* 체크박스: 이 문장을 단어장에 함께 저장할지 여부 */}
+                                            <label className="flex items-center gap-1.5 cursor-pointer shrink-0 mt-0.5" title="단어장에 함께 저장">
+                                              <input
+                                                type="checkbox"
+                                                checked={isIncluded}
+                                                onChange={(e) => {
+                                                  const checked = e.target.checked;
+                                                  let nextList = checked
+                                                    ? Array.from(new Set([...(entry.candidateSentences || []), sent]))
+                                                    : (entry.candidateSentences || []).filter((s) => s.trim() !== sent.trim());
+
+                                                  // 만약 대표 문장을 체크 해제하려 할 때
+                                                  let nextContext = entry.context;
+                                                  if (!checked && isPrimary) {
+                                                    nextContext = nextList[0] || sent;
+                                                    if (!nextList.includes(nextContext)) {
+                                                      nextList.push(nextContext);
+                                                    }
+                                                  }
+                                                  updateWordEntry(entry.id, {
+                                                    candidateSentences: nextList,
+                                                    context: nextContext,
+                                                  });
+                                                }}
+                                                className="w-3.5 h-3.5 text-[#5090B3] rounded border-slate-300 focus:ring-[#5090B3] cursor-pointer"
+                                              />
+                                              <span className="text-[10px] font-bold text-slate-500">
+                                                {sIdx + 1}
+                                              </span>
+                                            </label>
+
+                                            <p
+                                              onClick={() => {
+                                                updateWordEntry(entry.id, {
+                                                  context: sent,
+                                                  candidateSentences: Array.from(new Set([...(entry.candidateSentences || []), sent])),
+                                                });
+                                              }}
+                                              className={`font-serif leading-relaxed line-clamp-2 cursor-pointer flex-1 ${
+                                                isPrimary ? 'font-bold text-slate-900' : 'text-slate-700 hover:text-[#5090B3]'
+                                              }`}
+                                              title="클릭하여 대표 문장으로 지정"
+                                            >
+                                              &quot;{renderHighlightedContext(sent, entry.word)}&quot;
+                                            </p>
+                                          </div>
+
+                                          <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-auto">
+                                            {isPrimary ? (
+                                              <span className="text-[10px] bg-[#5090B3] text-white px-2 py-0.5 rounded-full font-bold flex items-center gap-0.5 shadow-2xs">
+                                                <span>대표 원문 📌</span>
+                                              </span>
+                                            ) : (
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  updateWordEntry(entry.id, {
+                                                    context: sent,
+                                                    candidateSentences: Array.from(new Set([...(entry.candidateSentences || []), sent])),
+                                                  });
+                                                }}
+                                                className="text-[10px] bg-white border border-[#5090B3]/40 text-[#5090B3] hover:bg-[#5090B3] hover:text-white px-2 py-0.5 rounded font-bold transition cursor-pointer"
+                                              >
+                                                대표로 지정
+                                              </button>
+                                            )}
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
                                 </div>
-                              </div>
-                            )}
+                              );
+                            })()}
 
                             {/* 잘린 문장 감지 및 AI 자연스러운 완성 버튼 */}
                             {entry.context && (
