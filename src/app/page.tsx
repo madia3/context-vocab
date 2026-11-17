@@ -2854,7 +2854,7 @@ export default function Home() {
 
             {/* Scrollable Text Body */}
             <div className="flex-1 overflow-y-auto pr-1 py-1 min-h-[160px]">
-              <div className="p-3.5 sm:p-4 bg-slate-50/80 rounded-2xl border border-slate-200/80 text-[13px] sm:text-[14px] leading-relaxed text-slate-700 font-serif whitespace-pre-wrap select-none">
+              <div className="p-3.5 sm:p-4 bg-slate-50/80 rounded-2xl border border-slate-200/80 text-[13px] sm:text-[14px] leading-relaxed text-slate-800 font-serif whitespace-pre-wrap select-none">
                 {textTokens.length > 0 ? (
                   textTokens.map((token, idx) => {
                     if (!token.isWord || !token.cleanWord) {
@@ -2872,12 +2872,12 @@ export default function Home() {
                         key={idx}
                         type="button"
                         onClick={() => handleToggleWordFromText(clean)}
-                        className={`inline-block font-sans rounded px-1.5 py-0.5 mx-0.5 my-0.5 text-xs transition duration-150 cursor-pointer ${
+                        className={`inline font-sans rounded px-0.5 py-0 text-xs sm:text-[13px] transition cursor-pointer ${
                           isSelected
-                            ? 'bg-indigo-600 text-white font-bold shadow-xs scale-105 ring-2 ring-indigo-300'
+                            ? 'bg-indigo-600 text-white font-bold px-1 py-0.5 shadow-xs'
                             : isAlreadyAdded
-                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 font-medium'
-                            : 'hover:bg-indigo-100 hover:text-indigo-900 active:scale-95 text-slate-800 underline decoration-indigo-200 decoration-1 underline-offset-2'
+                            ? 'bg-emerald-100 text-emerald-800 font-medium px-1 py-0.5'
+                            : 'text-slate-900 underline decoration-indigo-300 decoration-1 underline-offset-2 hover:bg-indigo-50 hover:text-indigo-700'
                         }`}
                         title={isAlreadyAdded ? '이미 단어칸에 등록됨' : '클릭하여 선택'}
                       >
