@@ -99,6 +99,16 @@ function GoogleIcon({ className = 'w-4 h-4' }: { className?: string }) {
   );
 }
 
+function getPosBadgeColor(pos?: string): string {
+  const p = (pos || '').trim();
+  if (p === '명사' || p.includes('명사')) return 'bg-blue-100 text-blue-800 border-blue-200';
+  if (p === '동사' || p.includes('동사')) return 'bg-emerald-100 text-emerald-800 border-emerald-200';
+  if (p === '형용사' || p.includes('형용사')) return 'bg-purple-100 text-purple-800 border-purple-200';
+  if (p === '부사' || p.includes('부사')) return 'bg-amber-100 text-amber-800 border-amber-200';
+  if (p === '전치사' || p === '접속사') return 'bg-cyan-100 text-cyan-800 border-cyan-200';
+  return 'bg-indigo-50 text-indigo-700 border-indigo-200';
+}
+
 interface WordEntryItem {
   id: string;
   word: string;
@@ -1510,7 +1520,7 @@ export default function Home() {
                                           {c.word}
                                         </span>
                                         {c.pos && (
-                                          <span className="text-[10px] bg-slate-100 text-slate-600 px-1 py-0.2 rounded font-semibold shrink-0">
+                                          <span className={`text-[10px] px-1.5 py-0.2 rounded font-semibold shrink-0 border ${getPosBadgeColor(c.pos)}`}>
                                             {c.pos}
                                           </span>
                                         )}
@@ -1593,7 +1603,7 @@ export default function Home() {
                                     className="mt-0.5 accent-indigo-600"
                                   />
                                   <div className="flex-1">
-                                    <span className="inline-block px-1.5 py-0.2 bg-indigo-50 text-indigo-700 font-bold rounded text-[10px] mr-1.5">
+                                    <span className={`inline-block px-2 py-0.5 font-bold rounded-md text-[10px] mr-1.5 border ${getPosBadgeColor(m.pos)}`}>
                                       {m.pos}
                                     </span>
                                     <span className="text-slate-900">{m.def}</span>
@@ -2118,7 +2128,7 @@ export default function Home() {
                               <span className="text-xs text-slate-400 font-mono">{item.phonetic}</span>
                             </div>
                             <div className="flex items-center gap-1.5 mt-1">
-                              <span className="text-[10px] bg-indigo-50 text-indigo-700 font-bold px-1.5 py-0.5 rounded">
+                              <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded border ${getPosBadgeColor(item.partOfSpeech)}`}>
                                 {item.partOfSpeech || '단어'}
                               </span>
                               <span className="text-xs text-slate-900 font-bold">{item.selectedMeaning}</span>

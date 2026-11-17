@@ -136,7 +136,7 @@ export async function lookupDictionary(rawWord: string): Promise<DictSearchResul
     console.warn("Phonetic lookup warning:", e);
   }
 
-  // Step 2: Check Built-in DB
+  // Step 1: Check Built-in DB
   if (BUILTIN_KOREAN_DICT[word]) {
     return {
       word,
@@ -146,7 +146,20 @@ export async function lookupDictionary(rawWord: string): Promise<DictSearchResul
     };
   }
 
-  // Step 3: Google Translate Official API
+  // Step 2: Call internal server API route (Server-side fetch prevents CORS issues and extracts full POS)
+  try {
+    const apiRes = await fetch(`/api/dictionary?word=${encodeURIComponent(word)}`);
+    if (apiRes.ok) {
+      const data: DictSearchResult = await apiRes.json();
+      if (data && data.meanings && data.meanings.length > 0) {
+        return data;
+      }
+    }
+  } catch (apiErr) {
+    console.warn("Internal dictionary API fallback:", apiErr);
+  }
+
+  // Step 3: Google Translate API Direct Attempt
   try {
     const gRes = await fetch(
       `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=ko&dt=t&dt=bd&q=${encodeURIComponent(word)}`
@@ -161,7 +174,7 @@ export async function lookupDictionary(rawWord: string): Promise<DictSearchResul
           const posKo = POS_MAP[posEn] || posEn;
           const defs = entry[1] || [];
 
-          defs.slice(0, 3).forEach((d: string) => {
+          defs.slice(0, 4).forEach((d: string) => {
             meanings.push({
               pos: posKo,
               def: d,
@@ -172,7 +185,7 @@ export async function lookupDictionary(rawWord: string): Promise<DictSearchResul
 
       if (meanings.length === 0 && gData[0]?.[0]?.[0]) {
         meanings.push({
-          pos: "주요 뜻",
+          pos: "단어",
           def: gData[0][0][0],
         });
       }
@@ -182,7 +195,7 @@ export async function lookupDictionary(rawWord: string): Promise<DictSearchResul
           word,
           phonetic,
           meanings,
-          sourceName: "실시간 영한 사전",
+          sourceName: "표준 영한 사전",
         };
       }
     }
@@ -190,7 +203,7 @@ export async function lookupDictionary(rawWord: string): Promise<DictSearchResul
     console.warn("Google translate lookup fallback:", err);
   }
 
-  // Step 4: MyMemory API Fallback
+  // Step 4: MyMemory API Fallback (품사 보완)
   try {
     const mRes = await fetch(
       `https://api.mymemory.translated.net/get?q=${encodeURIComponent(word)}&langpair=en|ko`
@@ -199,12 +212,12 @@ export async function lookupDictionary(rawWord: string): Promise<DictSearchResul
       const mData = await mRes.json();
       const meanings: MeaningOption[] = [];
       if (mData.responseData?.translatedText) {
-        meanings.push({ pos: "대표 뜻", def: mData.responseData.translatedText });
+        meanings.push({ pos: "단어", def: mData.responseData.translatedText });
       }
       if (mData.matches) {
         mData.matches.slice(0, 3).forEach((m: any) => {
           if (m.translation && !meanings.some((x) => x.def === m.translation)) {
-            meanings.push({ pos: "뜻", def: m.translation });
+            meanings.push({ pos: "단어", def: m.translation });
           }
         });
       }
