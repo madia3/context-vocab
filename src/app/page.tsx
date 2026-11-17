@@ -2062,15 +2062,15 @@ export default function Home() {
                           </span>
                         )}
                       </div>
-                      {/* 깔끔한 4개 핵심 버튼: 카메라, URL, 단어선택, 지우기 */}
-                      <div className="flex items-center justify-end gap-1.5 pt-0.5">
+                      {/* 깔끔한 4개 핵심 버튼 한 줄 정렬: 카메라, URL, 단어선택, 지우기 */}
+                      <div className="flex items-center gap-1.5 pt-1 overflow-x-auto no-scrollbar">
                         <button
                           type="button"
                           onClick={() => setIsPhotoChooserOpen(true)}
-                          className="text-xs font-bold bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 px-3 py-1.5 rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer transition active:scale-95"
+                          className="flex-1 min-w-[70px] h-9 text-xs font-bold bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 rounded-xl shadow-xs flex items-center justify-center gap-1 cursor-pointer transition active:scale-95 whitespace-nowrap shrink-0"
                           title="카메라 촬영 또는 사진첩 선택"
                         >
-                          <Camera className="w-3.5 h-3.5 text-brand-600" />
+                          <Camera className="w-3.5 h-3.5 text-brand-600 shrink-0" />
                           <span>카메라</span>
                         </button>
                         <button
@@ -2079,10 +2079,10 @@ export default function Home() {
                             setUrlModalTab('url');
                             setIsUrlModalOpen(true);
                           }}
-                          className="text-xs font-bold bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 px-3 py-1.5 rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer transition active:scale-95"
+                          className="flex-1 min-w-[65px] h-9 text-xs font-bold bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 rounded-xl shadow-xs flex items-center justify-center gap-1 cursor-pointer transition active:scale-95 whitespace-nowrap shrink-0"
                           title="웹페이지 URL 입력 및 본문 글 붙여넣기"
                         >
-                          <Globe className="w-3.5 h-3.5 text-brand-600" />
+                          <Globe className="w-3.5 h-3.5 text-brand-600 shrink-0" />
                           <span>URL</span>
                         </button>
                         <button
@@ -2091,10 +2091,10 @@ export default function Home() {
                             setSelectedWordsFromText([]);
                             setIsWordSelectModalOpen(true);
                           }}
-                          className="text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-xl shadow-xs flex items-center gap-1.5 transition cursor-pointer active:scale-95"
+                          className="flex-[1.3] min-w-[85px] h-9 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-xs flex items-center justify-center gap-1 transition cursor-pointer active:scale-95 whitespace-nowrap shrink-0"
                           title="원문 본문 속 모르는 단어 직접 선택"
                         >
-                          <ScanLine className="w-3.5 h-3.5 text-white" />
+                          <ScanLine className="w-3.5 h-3.5 text-white shrink-0" />
                           <span>단어 선택</span>
                         </button>
                         <button
@@ -2114,7 +2114,7 @@ export default function Home() {
                             }
                             triggerToast('원문 지움', '등록된 본문과 사진이 초기화되었습니다.');
                           }}
-                          className="text-xs text-slate-400 hover:text-rose-600 font-semibold px-2.5 py-1.5 rounded-xl hover:bg-rose-50 transition cursor-pointer"
+                          className="h-9 px-2.5 text-xs text-slate-500 hover:text-rose-600 font-bold bg-white hover:bg-rose-50 border border-slate-200 hover:border-rose-200 rounded-xl transition cursor-pointer whitespace-nowrap shrink-0 flex items-center justify-center"
                           title="불러온 원문 지우기"
                         >
                           지우기
