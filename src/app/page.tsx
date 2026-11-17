@@ -551,7 +551,6 @@ export default function Home() {
         setLoadedSourceType(sourceType);
         if (result.title) {
           setLoadedWebTitle(result.title);
-          setInputBookTitle(result.title);
         }
         if (result.sourceUrl) {
           // 기본 소스 URL 기억
