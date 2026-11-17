@@ -5,6 +5,7 @@ import { VocabItem, DictSearchResult } from '@/types/vocab';
 import {
   fetchVocabulary,
   addVocabularyItem,
+  saveOrMergeVocabularyItem,
   deleteVocabularyItem,
   updateVocabularyContext,
   updateQuizStat,
@@ -219,6 +220,11 @@ export default function Home() {
     isCorrect: boolean;
   }>({ answered: false, chosen: '', isCorrect: false });
   const [isQuizFinished, setIsQuizFinished] = useState(false);
+  // 단어 목록 카드별 문장 번갈아 보기 인덱스 (단어 ID -> 현재 보고 있는 문장 인덱스)
+  const [listCardSentenceIdx, setListCardSentenceIdx] = useState<Record<string, number>>({});
+  // 퀴즈 복습 시 번갈아 가며 출제되는 현재 문맥 문장
+  const [quizSentenceIdx, setQuizSentenceIdx] = useState<number>(0);
+  const [quizActiveSentence, setQuizActiveSentence] = useState<string>('');
 
   // User Authentication & Supabase Cloud State
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -966,7 +972,7 @@ export default function Home() {
         user_id: currentUser?.id,
       };
 
-      await addVocabularyItem(newItem, currentUser?.id);
+      await saveOrMergeVocabularyItem(newItem, currentUser?.id);
     }
 
     await loadData(currentUser);
@@ -985,13 +991,13 @@ export default function Home() {
 
     triggerToast(
       validEntries.length > 1
-        ? `${validEntries.length}개 단어 일괄 저장 완료! 🎉`
-        : `'${validEntries[0].word}' 저장 완료! 🎉`,
-      `[${bookToSave}] 단어장에 추가되었습니다. 같은 페이지/기사에서 다음 단어를 계속 등록할 수 있습니다.`
+        ? `${validEntries.length}개 단어 저장/문맥 추가 완료! 🎉`
+        : `'${validEntries[0].word}' 저장/문맥 추가 완료! 🎉`,
+      `[${bookToSave}] 단어장에 반영되었습니다. 이미 등록된 단어는 새로운 원문 문장이 차곡차곡 누적됩니다.`
     );
   }
 
-  // Save Single Word Entry to Vocabulary
+  // Save Single Word Entry to Vocabulary (신규 등록 및 기존 단어 문맥 누적 병합 지원)
   async function handleSaveSingleWordEntry(entryId: string) {
     const entry = wordEntries.find((e) => e.id === entryId);
     if (!entry) return;
@@ -1042,7 +1048,7 @@ export default function Home() {
       user_id: currentUser?.id,
     };
 
-    await addVocabularyItem(newItem, currentUser?.id);
+    const saveResult = await saveOrMergeVocabularyItem(newItem, currentUser?.id);
     await loadData(currentUser);
     touchBookUsage(bookToSave);
 
@@ -1056,10 +1062,17 @@ export default function Home() {
     }
 
     fireConfetti({ particleCount: 75, spread: 65, origin: { x: 0.5, y: 0.55 } });
-    triggerToast(
-      `'${finalWord}' 저장 완료! 🎉`,
-      `[${bookToSave}] 단어장에 성공적으로 추가되었습니다.`
-    );
+    if (saveResult.isMerged) {
+      triggerToast(
+        `'${finalWord}' 새 문맥 추가 완료! 📚`,
+        `기존 단어장에 새로운 원문 문장이 누적되었습니다. (총 ${saveResult.totalSentences}개 문장 수집됨)`
+      );
+    } else {
+      triggerToast(
+        `'${finalWord}' 단어 저장 완료! 🎉`,
+        `[${bookToSave}] 단어장에 성공적으로 추가되었습니다.`
+      );
+    }
   }
 
   // Delete Item
@@ -1185,6 +1198,17 @@ export default function Home() {
     const current = list[index];
     setQuizAnswerState({ answered: false, chosen: '', isCorrect: false });
 
+    // 단어에 수집된 문장들 중 무작위/번갈아 가며 출제 문맥으로 선정
+    const allSentences = (
+      current.candidateSentences && current.candidateSentences.length > 0
+        ? current.candidateSentences
+        : [current.contextSentence]
+    ).filter(Boolean);
+    const pickedIdx = Math.floor(Math.random() * allSentences.length);
+    setQuizSentenceIdx(pickedIdx);
+    const chosenSentence = allSentences[pickedIdx] || current.contextSentence;
+    setQuizActiveSentence(chosenSentence);
+
     // Options: 1 correct + 4 distractors (다른 단어장 뜻을 우선 교차 배치하여 헷갈리게 구성)
     const correct = current.selectedMeaning;
     const opts = [correct];
@@ -1248,7 +1272,7 @@ export default function Home() {
       fireConfetti({ particleCount: 50, spread: 60, origin: { x: 0.5, y: 0.6 } });
 
       // 정답 선택 즉시 지연 없이 원문 문장 원어민 고음질 낭독 시작
-      const textToRead = current.contextSentence?.trim() || current.word;
+      const textToRead = quizActiveSentence?.trim() || current.contextSentence?.trim() || current.word;
       speakSentenceTTS(textToRead, ttsVoice);
     }
   }
@@ -2594,71 +2618,149 @@ export default function Home() {
                           </div>
                         </div>
 
-                        {/* Context Sentence */}
-                        <div className="mt-3 p-3 bg-slate-50 border border-slate-100 rounded-xl space-y-2">
-                          <div className="flex items-center justify-between mb-1">
-                            <span className="text-[10px] font-bold text-slate-400">대표 원문:</span>
-                            <button
-                              onClick={() => speakSentenceTTS(item.contextSentence, ttsVoice)}
-                              className="text-[10px] text-indigo-600 hover:underline flex items-center gap-0.5 font-bold"
-                            >
-                              <Volume2 className="w-3 h-3" />
-                              <span>문장 전체 듣기</span>
-                            </button>
-                          </div>
-                          <p className="text-xs text-slate-700 leading-relaxed font-serif">
-                            {renderHighlightedContext(item.contextSentence, item.word)}
-                          </p>
+                        {/* Context Sentence (대표 문장 및 누적된 문장 번갈아 보기) */}
+                        {(() => {
+                          const allSentences = Array.from(
+                            new Set(
+                              [item.contextSentence, ...(item.candidateSentences || [])]
+                                .map((s) => s.trim())
+                                .filter(Boolean)
+                            )
+                          );
+                          const currentIdx =
+                            listCardSentenceIdx[item.id] !== undefined
+                              ? (listCardSentenceIdx[item.id] % allSentences.length)
+                              : 0;
+                          const viewingSentence = allSentences[currentIdx] || item.contextSentence;
+                          const isViewingPrimary = viewingSentence.trim() === item.contextSentence.trim();
 
-                          {/* 해당 페이지의 다른 원문 문장 목록 (나중에 변경 가능) */}
-                          {item.candidateSentences && item.candidateSentences.length > 1 && (
-                            <details className="pt-2 border-t border-slate-200/80 text-xs text-slate-600 group">
-                              <summary className="cursor-pointer font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 text-[11px]">
-                                <Sparkles className="w-3 h-3 text-indigo-600" />
-                                <span>이 페이지의 다른 문맥 ({item.candidateSentences.length}개 보관됨)</span>
-                              </summary>
-                              <div className="mt-2 space-y-1.5 pl-1.5 border-l-2 border-indigo-200">
-                                {item.candidateSentences.map((sent, sIdx) => {
-                                  const isCurrent = item.contextSentence.trim() === sent.trim();
-                                  return (
-                                    <div
-                                      key={sIdx}
-                                      className={`p-2 rounded-lg border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
-                                        isCurrent
-                                          ? 'bg-indigo-50/90 border-indigo-300 font-bold text-slate-900 shadow-xs'
-                                          : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
-                                      }`}
+                          return (
+                            <div className="mt-3 p-3 bg-slate-50 border border-slate-100 rounded-xl space-y-2">
+                              <div className="flex flex-wrap items-center justify-between gap-1 mb-1">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-[10px] font-bold text-slate-500">
+                                    {isViewingPrimary ? '대표 원문:' : '수집 원문:'}
+                                  </span>
+                                  {allSentences.length > 1 && (
+                                    <span className="text-[10px] bg-sky-100 text-[#3d7a9c] px-1.5 py-0.5 rounded-full font-bold">
+                                      {currentIdx + 1} / {allSentences.length}
+                                    </span>
+                                  )}
+                                  {allSentences.length > 1 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setListCardSentenceIdx((prev) => ({
+                                          ...prev,
+                                          [item.id]: (currentIdx + 1) % allSentences.length,
+                                        }));
+                                      }}
+                                      className="text-[10px] bg-white border border-[#5090B3]/40 text-[#3d7a9c] hover:bg-[#5090B3] hover:text-white px-2 py-0.5 rounded font-bold flex items-center gap-1 transition shadow-2xs cursor-pointer"
+                                      title="이 단어가 쓰인 다른 문장으로 번갈아 보기"
                                     >
-                                      <p className="flex-1 font-serif text-[11px] leading-relaxed">
-                                        &quot;{sent}&quot;
-                                      </p>
-                                      {isCurrent ? (
-                                        <span className="text-[10px] bg-indigo-600 text-white px-2 py-0.5 rounded font-bold shrink-0 self-start sm:self-auto">
-                                          현재 대표 ✓
-                                        </span>
-                                      ) : (
-                                        <button
-                                          type="button"
-                                          onClick={async () => {
-                                            await updateVocabularyContext(item.id, sent, currentUser?.id);
-                                            await loadData(currentUser);
-                                            triggerToast(
-                                              '대표 원문 문장 변경 완료! 📖',
-                                              `앞으로 퀴즈 복습 시 변경된 문장이 출제됩니다.`
-                                            );
-                                          }}
-                                          className="text-[10px] bg-white border border-indigo-300 text-indigo-700 hover:bg-indigo-600 hover:text-white px-2 py-0.5 rounded font-bold transition shrink-0 self-start sm:self-auto cursor-pointer"
-                                        >
-                                          이 문장으로 변경 ➔
-                                        </button>
-                                      )}
-                                    </div>
-                                  );
-                                })}
+                                      <RotateCw className="w-2.5 h-2.5" />
+                                      <span>번갈아 보기</span>
+                                    </button>
+                                  )}
+                                  {!isViewingPrimary && (
+                                    <button
+                                      type="button"
+                                      onClick={async () => {
+                                        await updateVocabularyContext(item.id, viewingSentence, currentUser?.id);
+                                        await loadData(currentUser);
+                                        triggerToast(
+                                          '대표 원문 문장 지정 완료! 📌',
+                                          '앞으로 이 문장이 대표 문장으로 설정됩니다.'
+                                        );
+                                      }}
+                                      className="text-[10px] bg-amber-50 border border-amber-300 text-amber-700 hover:bg-amber-500 hover:text-white px-1.5 py-0.5 rounded font-bold transition cursor-pointer"
+                                      title="현재 보고 있는 문장을 대표 문장으로 설정"
+                                    >
+                                      대표로 지정 ✓
+                                    </button>
+                                  )}
+                                </div>
+                                <button
+                                  onClick={() => speakSentenceTTS(viewingSentence, ttsVoice)}
+                                  className="text-[10px] text-[#5090B3] hover:underline flex items-center gap-0.5 font-bold cursor-pointer ml-auto"
+                                >
+                                  <Volume2 className="w-3 h-3" />
+                                  <span>문장 듣기</span>
+                                </button>
                               </div>
-                            </details>
-                          )}
-                        </div>
+                              <p className="text-xs text-slate-700 leading-relaxed font-serif">
+                                {renderHighlightedContext(viewingSentence, item.word)}
+                              </p>
+
+                              {/* 전체 수집된 문맥 목록 (접이식) */}
+                              {allSentences.length > 1 && (
+                                <details className="pt-2 border-t border-slate-200/80 text-xs text-slate-600 group">
+                                  <summary className="cursor-pointer font-bold text-[#5090B3] hover:text-[#3d7a9c] flex items-center gap-1 text-[11px]">
+                                    <Sparkles className="w-3 h-3 text-[#5090B3]" />
+                                    <span>수집된 전체 문맥 ({allSentences.length}개 보관됨)</span>
+                                  </summary>
+                                  <div className="mt-2 space-y-1.5 pl-1.5 border-l-2 border-[#5090B3]/30">
+                                    {allSentences.map((sent, sIdx) => {
+                                      const isCurrentViewing = viewingSentence.trim() === sent.trim();
+                                      const isSentPrimary = item.contextSentence.trim() === sent.trim();
+                                      return (
+                                        <div
+                                          key={sIdx}
+                                          className={`p-2 rounded-lg border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
+                                            isCurrentViewing
+                                              ? 'bg-[#5090B3]/10 border-[#5090B3]/50 font-bold text-slate-900 shadow-2xs'
+                                              : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
+                                          }`}
+                                        >
+                                          <p className="flex-1 font-serif text-[11px] leading-relaxed">
+                                            &quot;{sent}&quot;
+                                          </p>
+                                          <div className="flex items-center gap-1 shrink-0 self-start sm:self-auto">
+                                            {isSentPrimary && (
+                                              <span className="text-[10px] bg-[#5090B3] text-white px-2 py-0.5 rounded font-bold">
+                                                대표 원문
+                                              </span>
+                                            )}
+                                            {!isCurrentViewing && (
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  setListCardSentenceIdx((prev) => ({
+                                                    ...prev,
+                                                    [item.id]: sIdx,
+                                                  }));
+                                                }}
+                                                className="text-[10px] bg-white border border-slate-300 text-slate-600 hover:border-[#5090B3] hover:text-[#5090B3] px-2 py-0.5 rounded font-medium transition cursor-pointer"
+                                              >
+                                                보기
+                                              </button>
+                                            )}
+                                            {!isSentPrimary && (
+                                              <button
+                                                type="button"
+                                                onClick={async () => {
+                                                  await updateVocabularyContext(item.id, sent, currentUser?.id);
+                                                  await loadData(currentUser);
+                                                  triggerToast(
+                                                    '대표 원문 문장 변경 완료! 📖',
+                                                    '앞으로 퀴즈 복습 시 변경된 문장이 우선 출제됩니다.'
+                                                  );
+                                                }}
+                                                className="text-[10px] bg-white border border-[#5090B3]/40 text-[#5090B3] hover:bg-[#5090B3] hover:text-white px-2 py-0.5 rounded font-bold transition cursor-pointer"
+                                              >
+                                                대표로 변경
+                                              </button>
+                                            )}
+                                          </div>
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                </details>
+                              )}
+                            </div>
+                          );
+                        })()}
                       </div>
 
                       <div className="mt-3 pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-400">
@@ -2848,33 +2950,70 @@ export default function Home() {
                         </div>
 
                         {/* Context Sentence Card */}
-                        <div className="bg-amber-50/95 border border-amber-200 rounded-2xl p-5 shadow-sm space-y-3">
-                          <div className="flex items-center justify-between">
-                            <span className="text-xs font-black text-amber-900 flex items-center gap-1.5">
-                              📖 원서 / 레포트 속 실제 원문 문맥
-                            </span>
-                            <button
-                              onClick={() => speakSentenceTTS(currentQuizItem.contextSentence, ttsVoice)}
-                              className="text-xs bg-amber-200/90 hover:bg-amber-300 text-amber-900 font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-sm transition active:scale-95"
-                            >
-                              <Volume2 className="w-3.5 h-3.5" />
-                              <span>원문 다시 듣기 (TTS)</span>
-                            </button>
-                          </div>
-                          <p className="text-base text-slate-800 leading-relaxed font-serif pt-1">
-                            {renderHighlightedContext(currentQuizItem.contextSentence, currentQuizItem.word)}
-                          </p>
-                          <div className="flex items-center justify-between pt-2 border-t border-amber-200/60 text-xs text-slate-500">
-                            <span>출처: {currentQuizItem.sourceMemo || '원서'}</span>
-                            <button
-                              onClick={() => speakWordTTS(currentQuizItem.word, ttsVoice)}
-                              className="text-indigo-600 hover:underline flex items-center gap-1 font-semibold"
-                            >
-                              <Volume2 className="w-3 h-3" />
-                              <span>단어만 다시 듣기</span>
-                            </button>
-                          </div>
-                        </div>
+                        {(() => {
+                          const currentQuizAllSentences = (
+                            currentQuizItem.candidateSentences && currentQuizItem.candidateSentences.length > 0
+                              ? currentQuizItem.candidateSentences
+                              : [currentQuizItem.contextSentence]
+                          ).filter(Boolean);
+                          const activeSentence = quizActiveSentence || currentQuizItem.contextSentence;
+
+                          return (
+                            <div className="bg-amber-50/95 border border-amber-200 rounded-2xl p-5 shadow-sm space-y-3">
+                              <div className="flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-xs font-black text-amber-900 flex items-center gap-1.5">
+                                    📖 원서 / 레포트 속 실제 원문 문맥
+                                  </span>
+                                  {currentQuizAllSentences.length > 1 && (
+                                    <span className="text-[10px] bg-amber-200/90 text-amber-900 font-bold px-2 py-0.5 rounded-full">
+                                      문장 {quizSentenceIdx + 1}/{currentQuizAllSentences.length}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-1.5">
+                                  {currentQuizAllSentences.length > 1 && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        const nextIdx = (quizSentenceIdx + 1) % currentQuizAllSentences.length;
+                                        setQuizSentenceIdx(nextIdx);
+                                        const nextSentence = currentQuizAllSentences[nextIdx];
+                                        setQuizActiveSentence(nextSentence);
+                                        speakSentenceTTS(nextSentence, ttsVoice);
+                                      }}
+                                      className="text-xs bg-amber-200/90 hover:bg-amber-300 text-amber-900 font-bold px-2.5 py-1.5 rounded-xl flex items-center gap-1 transition shadow-2xs cursor-pointer active:scale-95"
+                                      title="이 단어가 쓰인 다른 원문 문맥으로 번갈아가며 봅니다"
+                                    >
+                                      <RotateCw className="w-3 h-3" />
+                                      <span>번갈아 보기</span>
+                                    </button>
+                                  )}
+                                  <button
+                                    onClick={() => speakSentenceTTS(activeSentence, ttsVoice)}
+                                    className="text-xs bg-amber-200/90 hover:bg-amber-300 text-amber-900 font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-sm transition active:scale-95 cursor-pointer"
+                                  >
+                                    <Volume2 className="w-3.5 h-3.5" />
+                                    <span>듣기</span>
+                                  </button>
+                                </div>
+                              </div>
+                              <p className="text-base text-slate-800 leading-relaxed font-serif pt-1">
+                                {renderHighlightedContext(activeSentence, currentQuizItem.word)}
+                              </p>
+                              <div className="flex items-center justify-between pt-2 border-t border-amber-200/60 text-xs text-slate-500">
+                                <span>출처: {currentQuizItem.sourceMemo || '원서'}</span>
+                                <button
+                                  onClick={() => speakWordTTS(currentQuizItem.word, ttsVoice)}
+                                  className="text-indigo-600 hover:underline flex items-center gap-1 font-semibold cursor-pointer"
+                                >
+                                  <Volume2 className="w-3 h-3" />
+                                  <span>단어만 다시 듣기</span>
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })()}
 
                         {/* Big Next Button */}
                         <div className="pt-2 flex justify-end">

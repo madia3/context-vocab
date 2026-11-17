@@ -245,6 +245,121 @@ export async function addVocabularyItem(item: VocabItem, userId?: string): Promi
 }
 
 /**
+ * 단어를 추가하거나, 이미 등록된 단어인 경우 관련 원문 문장(candidateSentences)을 누적 병합합니다.
+ */
+export async function saveOrMergeVocabularyItem(
+  item: VocabItem,
+  userId?: string
+): Promise<{ isMerged: boolean; item: VocabItem; totalSentences: number }> {
+  const targetWord = item.word.trim().toLowerCase();
+  const storageKey = getUserStorageKey(userId);
+
+  let existingItem: VocabItem | null = null;
+  let currentList: VocabItem[] = [];
+
+  if (typeof window !== 'undefined') {
+    const local = localStorage.getItem(storageKey);
+    if (local) {
+      try {
+        currentList = JSON.parse(local);
+        // 동일 단어(대소문자 무관) 탐색
+        existingItem = currentList.find(
+          (v) => v.word.trim().toLowerCase() === targetWord
+        ) || null;
+      } catch {}
+    }
+  }
+
+  // 1. 이미 등록되어 있는 단어인 경우 -> 관련 문장 누적 병합!
+  if (existingItem) {
+    const newContext = item.contextSentence?.trim() || '';
+    const existingSentences = existingItem.candidateSentences || [];
+    if (existingItem.contextSentence && !existingSentences.includes(existingItem.contextSentence)) {
+      existingSentences.push(existingItem.contextSentence);
+    }
+    const incomingSentences = item.candidateSentences || [];
+    if (newContext && !incomingSentences.includes(newContext)) {
+      incomingSentences.push(newContext);
+    }
+
+    // 중복 없이 모든 원문 문장 병합 (새로 들어온 문장을 가장 앞쪽에 배치)
+    const mergedSentences = Array.from(
+      new Set(
+        [newContext, ...incomingSentences, ...existingSentences].filter(
+          (s) => s && s.trim().length > 0
+        )
+      )
+    );
+
+    // 출처 메모 병합
+    const newMemo = item.sourceMemo?.trim() || '';
+    let mergedMemo = existingItem.sourceMemo || '';
+    if (newMemo && !mergedMemo.includes(newMemo)) {
+      mergedMemo = mergedMemo ? `${mergedMemo} / ${newMemo}` : newMemo;
+    }
+
+    // 뜻 목록 병합
+    const mergedMeanings = Array.from(
+      new Set([
+        ...(existingItem.allMeanings || [existingItem.selectedMeaning]),
+        ...(item.allMeanings || [item.selectedMeaning]),
+        item.selectedMeaning,
+      ].filter(Boolean))
+    );
+
+    const mergedItem: VocabItem = {
+      ...existingItem,
+      contextSentence: newContext || existingItem.contextSentence, // 최신 등록 문장을 대표 문장으로
+      candidateSentences: mergedSentences,
+      sourceMemo: mergedMemo,
+      allMeanings: mergedMeanings,
+      selectedMeaning: item.selectedMeaning || existingItem.selectedMeaning,
+      partOfSpeech: item.partOfSpeech || existingItem.partOfSpeech,
+      bookTitle: item.bookTitle || existingItem.bookTitle,
+    };
+
+    // 로컬 스토리지 업데이트
+    if (typeof window !== 'undefined') {
+      const updatedList = currentList.map((v) => (v.id === existingItem!.id ? mergedItem : v));
+      localStorage.setItem(storageKey, JSON.stringify(updatedList));
+    }
+
+    // Supabase 업데이트
+    if (checkIsSupabaseConfigured() && supabase) {
+      try {
+        await supabase
+          .from('vocab_words')
+          .update({
+            context_sentence: mergedItem.contextSentence,
+            candidate_sentences: mergedItem.candidateSentences,
+            source_memo: mergedItem.sourceMemo,
+            all_meanings: mergedItem.allMeanings,
+            selected_meaning: mergedItem.selectedMeaning,
+            part_of_speech: mergedItem.partOfSpeech,
+          })
+          .eq('id', mergedItem.id);
+      } catch (err) {
+        console.warn('Supabase merge exception:', err);
+      }
+    }
+
+    return {
+      isMerged: true,
+      item: mergedItem,
+      totalSentences: mergedSentences.length,
+    };
+  }
+
+  // 2. 신규 단어인 경우 -> 일반 추가
+  await addVocabularyItem(item, userId);
+  return {
+    isMerged: false,
+    item,
+    totalSentences: (item.candidateSentences?.length || 1),
+  };
+}
+
+/**
  * 퀴즈 풀이 결과를 갱신합니다.
  */
 export async function updateQuizStat(id: string, isCorrect: boolean, userId?: string): Promise<void> {
