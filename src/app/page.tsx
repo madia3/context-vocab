@@ -962,6 +962,77 @@ export default function Home() {
     );
   }
 
+  // Save Single Word Entry to Vocabulary
+  async function handleSaveSingleWordEntry(entryId: string) {
+    const entry = wordEntries.find((e) => e.id === entryId);
+    if (!entry) return;
+
+    const finalWord = (entry.dictResult?.word || entry.word || '').trim();
+    if (!finalWord) {
+      alert('저장할 단어를 먼저 입력하거나 선택해 주세요!');
+      return;
+    }
+
+    // 한국어 뜻 확인: 선택된 뜻이 없으면 첫 번째 사전 뜻 자동 채택
+    let selectedDef = entry.selectedMeaning;
+    let selectedPos = entry.selectedPos;
+    if (!selectedDef) {
+      if (entry.dictResult && entry.dictResult.meanings.length > 0) {
+        selectedDef = entry.dictResult.meanings[0].def;
+        selectedPos = entry.dictResult.meanings[0].pos;
+      } else {
+        alert(`'${finalWord}'의 한국어 뜻을 먼저 선택해 주세요!`);
+        return;
+      }
+    }
+
+    const bookToSave = inputBookTitle.trim() || '기본 단어장';
+    const matchedContext =
+      entry.context.trim() || `This sentence illustrates the word ${finalWord}.`;
+    const finalCandidates =
+      entry.candidateSentences.length > 0
+        ? Array.from(new Set([matchedContext, ...entry.candidateSentences]))
+        : [matchedContext];
+
+    const newItem: VocabItem = {
+      id: `${currentUser?.id ? currentUser.id + '_' : ''}vocab_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+      word: finalWord,
+      phonetic: entry.dictResult?.phonetic || '',
+      partOfSpeech: selectedPos || '단어',
+      selectedMeaning: selectedDef,
+      allMeanings: entry.dictResult ? entry.dictResult.meanings.map((m) => m.def) : [selectedDef],
+      contextSentence: matchedContext,
+      candidateSentences: finalCandidates,
+      sourceMemo: entry.sourceMemo.trim() || (loadedWebTitle ? loadedWebTitle : '원서 메모'),
+      bookTitle: bookToSave,
+      quizCount: 0,
+      correctCount: 0,
+      wrongCount: 0,
+      consecutiveCorrect: 0,
+      date: new Date().toISOString().slice(0, 10),
+      user_id: currentUser?.id,
+    };
+
+    await addVocabularyItem(newItem, currentUser?.id);
+    await loadData(currentUser);
+    touchBookUsage(bookToSave);
+
+    // 단어 저장 후 해당 카드 정리:
+    // 여러 카드 작성 중인 경우 -> 저장된 카드는 제거
+    // 1개만 있던 경우 -> 해당 카드를 빈 칸으로 리셋
+    if (wordEntries.length > 1) {
+      setWordEntries((prev) => prev.filter((e) => e.id !== entryId));
+    } else {
+      setWordEntries([createWordEntryItem()]);
+    }
+
+    fireConfetti({ particleCount: 75, spread: 65, origin: { x: 0.5, y: 0.55 } });
+    triggerToast(
+      `'${finalWord}' 저장 완료! 🎉`,
+      `[${bookToSave}] 단어장에 성공적으로 추가되었습니다.`
+    );
+  }
+
   // Delete Item
   async function handleDeleteWord(id: string) {
     if (!confirm('이 단어를 단어장에서 삭제할까요?')) return;
@@ -1659,16 +1730,33 @@ export default function Home() {
                             </span>
                           )}
                         </div>
-                        {wordEntries.length > 1 && (
+                        <div className="flex items-center gap-1.5">
+                          {/* 단어별 빠른 저장 버튼 */}
                           <button
                             type="button"
-                            onClick={() => handleRemoveWordEntry(entry.id)}
-                            className="text-[11px] text-rose-500 hover:text-rose-700 font-semibold flex items-center gap-1 px-2 py-0.5 rounded hover:bg-rose-50 transition"
+                            onClick={() => handleSaveSingleWordEntry(entry.id)}
+                            disabled={!((entry.dictResult?.word || entry.word.trim()) && (entry.selectedMeaning || (entry.dictResult?.meanings && entry.dictResult.meanings.length > 0)))}
+                            className={`text-xs font-bold px-2.5 sm:px-3 py-1 rounded-xl shadow-2xs transition flex items-center gap-1 cursor-pointer ${
+                              (entry.dictResult?.word || entry.word.trim()) && (entry.selectedMeaning || (entry.dictResult?.meanings && entry.dictResult.meanings.length > 0))
+                                ? 'bg-[#5090B3] hover:bg-[#417897] text-white active:scale-95'
+                                : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                            }`}
+                            title="이 단어를 단어장에 바로 저장합니다"
                           >
-                            <Trash2 className="w-3.5 h-3.5" />
-                            <span>삭제</span>
+                            <Check className="w-3.5 h-3.5" />
+                            <span>저장</span>
                           </button>
-                        )}
+                          {wordEntries.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveWordEntry(entry.id)}
+                              className="text-[11px] text-rose-500 hover:text-rose-700 font-semibold flex items-center gap-1 px-2 py-1 rounded-xl hover:bg-rose-50 transition"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span className="hidden sm:inline">삭제</span>
+                            </button>
+                          )}
+                        </div>
                       </div>
 
                       {/* 1. Word Input */}
@@ -2063,6 +2151,33 @@ export default function Home() {
                           </div>
                         </div>
                       </details>
+
+                      {/* 단어 카드 하단 개별 저장 액션 바 */}
+                      <div className="pt-3 border-t border-slate-200/90 flex flex-col sm:flex-row items-center justify-between gap-2.5">
+                        <div className="text-[11px] text-slate-500 w-full sm:w-auto truncate">
+                          {entry.selectedMeaning ? (
+                            <span className="text-emerald-700 font-bold flex items-center gap-1.5">
+                              <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                              <span>선택된 뜻: <strong>{entry.selectedMeaning}</strong> ({entry.selectedPos || '단어'})</span>
+                            </span>
+                          ) : (
+                            <span className="text-slate-400">💡 한국어 뜻을 선택하면 단어장에 즉시 저장할 수 있습니다.</span>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handleSaveSingleWordEntry(entry.id)}
+                          disabled={!((entry.dictResult?.word || entry.word.trim()) && (entry.selectedMeaning || (entry.dictResult?.meanings && entry.dictResult.meanings.length > 0)))}
+                          className={`w-full sm:w-auto font-bold px-4 py-2 text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 shrink-0 ${
+                            (entry.dictResult?.word || entry.word.trim()) && (entry.selectedMeaning || (entry.dictResult?.meanings && entry.dictResult.meanings.length > 0))
+                              ? 'bg-[#5090B3] hover:bg-[#417897] text-white cursor-pointer active:scale-95'
+                              : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                          }`}
+                        >
+                          <Check className="w-3.5 h-3.5" />
+                          <span>&apos;{entry.word || entry.dictResult?.word || `단어 #${index + 1}`}&apos; 저장하기</span>
+                        </button>
+                      </div>
                     </div>
                   ))}
 
