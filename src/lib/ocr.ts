@@ -1,4 +1,5 @@
 import Tesseract from 'tesseract.js';
+import lemmatizer from 'wink-lemmatizer';
 
 // 영어 원서 페이지 이미지에서 텍스트를 고정밀 추출
 export async function extractTextFromPageImage(
@@ -385,12 +386,47 @@ export function extractLemmaCandidate(rawWord: string): string {
   if (WORDS_NATURALLY_ENDING_IN_IER.has(w)) return w;
   if (WORDS_NATURALLY_ENDING_IN_EST.has(w)) return w;
 
-  // 2. 불규칙 사전 매핑 확인
+  // 2. 불규칙 사전 매핑 확인 (고유 명사/특수 단어)
   if (IRREGULAR_TO_BASE[w]) return IRREGULAR_TO_BASE[w];
   if (VES_IRREGULAR_MAP[w]) return VES_IRREGULAR_MAP[w];
   if (IE_NOUNS_MAP[w]) return IE_NOUNS_MAP[w];
 
-  // 3. 복수형 / 3인칭 단수 -ies -> -y (cities -> city, parties -> party, stories -> story)
+  // 3. 전문 NLP Lemmatizer (wink-lemmatizer) 활용
+  try {
+    // 3-1. -ing, -ed 접미사: 동사 원형 복원 최우선 (studied -> study, running -> run, declined -> decline)
+    if (w.endsWith('ing') || w.endsWith('ed')) {
+      const verb = lemmatizer.lemmatizeVerb(w);
+      if (verb && verb !== w) return verb;
+      const adj = lemmatizer.lemmatizeAdjective(w);
+      if (adj && adj !== w) return adj;
+      return w;
+    }
+
+    // 3-2. -s 접미사: 명사 복수형 우선 복원 (classes -> class, cookies -> cookie, knives -> knife),
+    // 이후 3인칭 단수 동사 복원 (realizes -> realize, freezes -> freeze)
+    if (w.endsWith('s')) {
+      const noun = lemmatizer.lemmatizeNoun(w);
+      if (noun && noun !== w) return noun;
+      const verb = lemmatizer.lemmatizeVerb(w);
+      if (verb && verb !== w) return verb;
+    }
+
+    // 3-3. 일반 불규칙 동사 (went -> go, saw -> see, taken -> take, written -> write, bought -> buy)
+    const verb = lemmatizer.lemmatizeVerb(w);
+    if (verb && verb !== w) return verb;
+
+    // 3-4. 일반 불규칙 명사 (children -> child, men -> man, mice -> mouse, feet -> foot)
+    const noun = lemmatizer.lemmatizeNoun(w);
+    if (noun && noun !== w) return noun;
+
+    // 3-5. 비교급 / 최상급 형용사 (better -> good, happier -> happy, easiest -> easy)
+    const adj = lemmatizer.lemmatizeAdjective(w);
+    if (adj && adj !== w) return adj;
+  } catch (err) {
+    console.error('Lemmatizer failed, falling back to rule engine:', err);
+  }
+
+  // 4. 복수형 / 3인칭 단수 -ies -> -y (cities -> city, parties -> party, stories -> story)
   if (w.endsWith('ies') && w.length > 4) {
     return w.slice(0, -3) + 'y';
   }
