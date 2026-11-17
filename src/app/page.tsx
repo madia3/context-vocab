@@ -209,6 +209,10 @@ export default function Home() {
   const [loadedWebTitle, setLoadedWebTitle] = useState<string>('');
   const [currentSourceImage, setCurrentSourceImage] = useState<{ base64: string; mimeType: string } | null>(null);
   const currentSourceImageRef = useRef<{ base64: string; mimeType: string } | null>(null);
+  // 이전 사진까지 최대 2장을 보관하여 페이지 넘김/문장 잘림 자동 연결
+  const [sourceImages, setSourceImages] = useState<{ base64: string; mimeType: string }[]>([]);
+  const sourceImagesRef = useRef<{ base64: string; mimeType: string }[]>([]);
+  const [isPhotoChooserOpen, setIsPhotoChooserOpen] = useState(false);
 
   // Word Selection from Loaded Text State (원문에서 단어 직접 클릭 선택 및 원본 사진 대조)
   const [isWordSelectModalOpen, setIsWordSelectModalOpen] = useState(false);
@@ -398,12 +402,26 @@ export default function Home() {
       }
 
       try {
-        const savedImg = sessionStorage.getItem('context_vocab_source_image');
-        if (savedImg) {
-          const parsedImg = JSON.parse(savedImg);
-          if (parsedImg && parsedImg.base64) {
-            currentSourceImageRef.current = parsedImg;
-            setCurrentSourceImage(parsedImg);
+        const savedImgList = sessionStorage.getItem('context_vocab_source_images');
+        if (savedImgList) {
+          const parsedList = JSON.parse(savedImgList);
+          if (Array.isArray(parsedList) && parsedList.length > 0) {
+            sourceImagesRef.current = parsedList;
+            setSourceImages(parsedList);
+            const latest = parsedList[parsedList.length - 1];
+            currentSourceImageRef.current = latest;
+            setCurrentSourceImage(latest);
+          }
+        } else {
+          const savedImg = sessionStorage.getItem('context_vocab_source_image');
+          if (savedImg) {
+            const parsedImg = JSON.parse(savedImg);
+            if (parsedImg && parsedImg.base64) {
+              sourceImagesRef.current = [parsedImg];
+              setSourceImages([parsedImg]);
+              currentSourceImageRef.current = parsedImg;
+              setCurrentSourceImage(parsedImg);
+            }
           }
         }
       } catch {
@@ -666,38 +684,51 @@ export default function Home() {
     setIsOcrProcessing(true);
     setOcrProgress(30);
 
+    const hasPrevImage = sourceImagesRef.current.length > 0;
     triggerToast(
-      isAppend ? '다음 페이지 분석 시작! 📄' : '사진 분석 시작! 📸',
-      isAppend
-        ? '이전 페이지 문장 끝에 이어붙여 잘린 문맥을 하나로 연결합니다.'
+      isAppend || hasPrevImage ? '연속 페이지 분석 시작! 📄' : '사진 분석 시작! 📸',
+      isAppend || hasPrevImage
+        ? '이전 사진과 이번 사진의 전후 관계를 AI가 파악해 잘린 문장을 하나로 연결합니다.'
         : '표/그래프를 제외한 본문 글자와 밑줄/동그라미 친 단어를 감지합니다.'
     );
 
     startBackgroundSourceAnalysis(
-      isAppend ? '다음 페이지 이어붙이기' : '책 사진 분석',
+      isAppend || hasPrevImage ? '연속 페이지(2장) 분석' : '책 사진 분석',
       'camera',
       async () => {
         setOcrProgress(45);
         const imgData = await fileToBase64(file);
+        let updatedImages: { base64: string; mimeType: string }[] = [];
+
         if (imgData.base64) {
+          // 이전 사진까지 최대 2장만 보관 (최신 사진을 추가하고 2장 초과 시 오래된 것 제거)
+          const prev = sourceImagesRef.current || [];
+          updatedImages = [...prev, imgData].slice(-2);
+          sourceImagesRef.current = updatedImages;
+          setSourceImages(updatedImages);
+
           currentSourceImageRef.current = imgData;
           setCurrentSourceImage(imgData);
+
           try {
+            sessionStorage.setItem('context_vocab_source_images', JSON.stringify(updatedImages));
             sessionStorage.setItem('context_vocab_source_image', JSON.stringify(imgData));
           } catch {
             // ignore quota limit
           }
         }
+
         setOcrProgress(70);
-        const { text: extractedText, markedWords } = await extractTextWithAI(file, geminiApiKey, imgData);
+        // AI가 2장의 사진을 직접 보고 전후 관계를 스스로 판단해 잘린 문장을 완벽하게 이어붙임
+        const { text: extractedText, markedWords } = await extractTextWithAI(
+          file,
+          geminiApiKey,
+          imgData,
+          updatedImages
+        );
         setOcrProgress(100);
 
-        // 이어붙이기 모드인 경우 기존 텍스트와 자연스럽게 연결
-        const combinedText = isAppend && pageOcrText
-          ? `${pageOcrText.trim()}\n\n${extractedText.trim()}`
-          : extractedText;
-
-        return { text: combinedText, markedWords };
+        return { text: extractedText, markedWords };
       }
     );
   }
@@ -1097,6 +1128,12 @@ export default function Home() {
 
       // 1차: Vision OCR + 서버 측 자동 텍스트 복원 폴백 통합 호출
       try {
+        const imgs = sourceImagesRef.current && sourceImagesRef.current.length > 0
+          ? sourceImagesRef.current
+          : activeImg?.base64
+          ? [activeImg]
+          : [];
+
         const res = await fetch('/api/ai/ocr', {
           method: 'POST',
           headers: {
@@ -1106,6 +1143,7 @@ export default function Home() {
           body: JSON.stringify({
             base64: activeImg?.base64 || '',
             mimeType: activeImg?.mimeType || 'image/jpeg',
+            images: imgs,
             fallbackRawText: pageOcrText,
           }),
         });
@@ -2014,61 +2052,26 @@ export default function Home() {
                     </div>
                   ) : pageOcrText ? (
                     <div className="space-y-2 pt-0.5">
-                      <p className="text-[11px] text-slate-700 line-clamp-2 italic bg-white/90 p-2.5 rounded-lg border border-indigo-100 leading-relaxed font-serif">
-                        &quot;{pageOcrText.slice(0, 140)}...&quot;
-                      </p>
-                      <div className="flex items-center justify-end gap-1.5 pt-0.5">
-                        {loadedSourceType === 'camera' && (
-                          <>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                isAppendModeRef.current = true;
-                                cameraInputRef.current?.click();
-                              }}
-                              className="text-[11px] font-bold bg-[#5090B3] text-white hover:bg-[#3d7a9c] px-2 py-1 rounded-md shadow-xs flex items-center gap-1 transition cursor-pointer"
-                              title="다음 페이지를 촬영하여 문맥을 이어붙입니다"
-                            >
-                              <Plus className="w-3 h-3" />
-                              <span>+ 촬영 추가</span>
-                            </button>
-                            <button
-                              type="button"
-                              onClick={() => {
-                                isAppendModeRef.current = true;
-                                galleryInputRef.current?.click();
-                              }}
-                              className="text-[11px] font-bold bg-white border border-[#5090B3]/50 text-[#5090B3] hover:bg-[#5090B3]/10 px-2 py-1 rounded-md shadow-xs flex items-center gap-1 transition cursor-pointer"
-                              title="사진첩에서 다음 페이지 사진을 골라 이어붙입니다"
-                            >
-                              <ImageIcon className="w-3 h-3" />
-                              <span>+ 사진첩 추가</span>
-                            </button>
-                          </>
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[11px] text-slate-700 line-clamp-2 italic bg-white/90 p-2.5 rounded-lg border border-indigo-100 leading-relaxed font-serif flex-1">
+                          &quot;{pageOcrText.slice(0, 140)}...&quot;
+                        </p>
+                        {sourceImages.length > 1 && (
+                          <span className="text-[10px] bg-indigo-100 text-indigo-800 font-bold px-2 py-1 rounded-lg shrink-0 flex items-center gap-1">
+                            <span>연속 2장 연결됨 📄</span>
+                          </span>
                         )}
+                      </div>
+                      {/* 깔끔한 4개 핵심 버튼: 카메라, URL, 단어선택, 지우기 */}
+                      <div className="flex items-center justify-end gap-1.5 pt-0.5">
                         <button
                           type="button"
-                          onClick={() => {
-                            isAppendModeRef.current = false;
-                            galleryInputRef.current?.click();
-                          }}
-                          className="text-[11px] font-bold bg-white border border-slate-200 hover:border-[#5090B3] text-slate-700 px-2 py-1 rounded-md shadow-xs flex items-center gap-1 cursor-pointer"
-                          title="사진첩에서 사진을 선택합니다"
+                          onClick={() => setIsPhotoChooserOpen(true)}
+                          className="text-xs font-bold bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 px-3 py-1.5 rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer transition active:scale-95"
+                          title="카메라 촬영 또는 사진첩 선택"
                         >
-                          <ImageIcon className="w-3 h-3 text-[#5090B3]" />
-                          <span>사진첩</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            isAppendModeRef.current = false;
-                            cameraInputRef.current?.click();
-                          }}
-                          className="text-[11px] font-bold bg-white border border-slate-200 hover:border-[#5090B3] text-slate-700 px-2 py-1 rounded-md shadow-xs flex items-center gap-1 cursor-pointer"
-                          title="카메라로 새로 촬영합니다"
-                        >
-                          <Camera className="w-3 h-3 text-[#5090B3]" />
-                          <span>촬영</span>
+                          <Camera className="w-3.5 h-3.5 text-brand-600" />
+                          <span>카메라</span>
                         </button>
                         <button
                           type="button"
@@ -2076,21 +2079,11 @@ export default function Home() {
                             setUrlModalTab('url');
                             setIsUrlModalOpen(true);
                           }}
-                          className="text-[11px] font-bold bg-white border border-slate-200 hover:border-indigo-400 text-indigo-600 px-2 py-1 rounded-md shadow-xs flex items-center gap-1"
+                          className="text-xs font-bold bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 px-3 py-1.5 rounded-xl shadow-xs flex items-center gap-1.5 cursor-pointer transition active:scale-95"
+                          title="웹페이지 URL 입력 및 본문 글 붙여넣기"
                         >
-                          <Globe className="w-3 h-3" />
-                          <span>새 URL</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setUrlModalTab('paste');
-                            setIsUrlModalOpen(true);
-                          }}
-                          className="text-[11px] font-bold bg-white border border-slate-200 hover:border-indigo-400 text-indigo-600 px-2 py-1 rounded-md shadow-xs flex items-center gap-1"
-                        >
-                          <Copy className="w-3 h-3" />
-                          <span>글 붙여넣기</span>
+                          <Globe className="w-3.5 h-3.5 text-brand-600" />
+                          <span>URL</span>
                         </button>
                         <button
                           type="button"
@@ -2098,9 +2091,10 @@ export default function Home() {
                             setSelectedWordsFromText([]);
                             setIsWordSelectModalOpen(true);
                           }}
-                          className="text-[11px] font-bold bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-700 px-2 py-1 rounded-md shadow-xs flex items-center gap-1 transition"
+                          className="text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white px-3 py-1.5 rounded-xl shadow-xs flex items-center gap-1.5 transition cursor-pointer active:scale-95"
+                          title="원문 본문 속 모르는 단어 직접 선택"
                         >
-                          <ScanLine className="w-3 h-3 text-indigo-600" />
+                          <ScanLine className="w-3.5 h-3.5 text-white" />
                           <span>단어 선택</span>
                         </button>
                         <button
@@ -2111,41 +2105,36 @@ export default function Home() {
                             setLoadedWebTitle('');
                             setCurrentSourceImage(null);
                             currentSourceImageRef.current = null;
-                            if (typeof window !== 'undefined') localStorage.removeItem('context_vocab_cached_page_ocr');
+                            setSourceImages([]);
+                            sourceImagesRef.current = [];
+                            if (typeof window !== 'undefined') {
+                              localStorage.removeItem('context_vocab_cached_page_ocr');
+                              sessionStorage.removeItem('context_vocab_source_image');
+                              sessionStorage.removeItem('context_vocab_source_images');
+                            }
+                            triggerToast('원문 지움', '등록된 본문과 사진이 초기화되었습니다.');
                           }}
-                          className="text-[11px] text-slate-400 hover:text-rose-500 px-1 py-1"
+                          className="text-xs text-slate-400 hover:text-rose-600 font-semibold px-2.5 py-1.5 rounded-xl hover:bg-rose-50 transition cursor-pointer"
+                          title="불러온 원문 지우기"
                         >
                           지우기
                         </button>
                       </div>
-                      </div>
-                    ) : (
-                    <div className="pt-0.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    </div>
+                  ) : (
+                    <div className="pt-0.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
                       <p className="text-[11px] text-slate-500">
-                        사진, 웹페이지 URL, 또는 복사한 기사를 넣으면 문장들이 자동으로 채워집니다.
+                        책 사진이나 웹페이지를 불러오면 원문 문맥이 자동으로 연동됩니다.
                       </p>
-                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 shrink-0 w-full sm:w-auto">
+                      {/* 깔끔한 4개 핵심 버튼: 카메라, URL, 단어선택, 지우기 */}
+                      <div className="flex items-center gap-2 shrink-0">
                         <button
                           type="button"
-                          onClick={() => {
-                            isAppendModeRef.current = false;
-                            cameraInputRef.current?.click();
-                          }}
-                          className="bg-white hover:bg-[#5090B3]/10 border border-[#5090B3]/40 text-[#5090B3] text-xs font-bold px-2.5 py-2 rounded-xl shadow-xs transition flex items-center justify-center gap-1 cursor-pointer"
+                          onClick={() => setIsPhotoChooserOpen(true)}
+                          className="flex-1 sm:flex-none bg-white hover:bg-brand-50 border border-brand-200 text-brand-700 text-xs font-bold px-3.5 py-2 rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
                         >
-                          <Camera className="w-3.5 h-3.5 text-[#5090B3]" />
-                          <span>사진 촬영</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            isAppendModeRef.current = false;
-                            galleryInputRef.current?.click();
-                          }}
-                          className="bg-white hover:bg-[#5090B3]/10 border border-[#5090B3]/40 text-[#5090B3] text-xs font-bold px-2.5 py-2 rounded-xl shadow-xs transition flex items-center justify-center gap-1 cursor-pointer"
-                        >
-                          <ImageIcon className="w-3.5 h-3.5 text-[#5090B3]" />
-                          <span>사진첩 선택</span>
+                          <Camera className="w-4 h-4 text-brand-600" />
+                          <span>카메라</span>
                         </button>
                         <button
                           type="button"
@@ -2153,21 +2142,10 @@ export default function Home() {
                             setUrlModalTab('url');
                             setIsUrlModalOpen(true);
                           }}
-                          className="bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold px-2.5 py-2 rounded-xl shadow-xs transition flex items-center justify-center gap-1 cursor-pointer"
+                          className="flex-1 sm:flex-none bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold px-3.5 py-2 rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
                         >
-                          <Globe className="w-3.5 h-3.5 text-slate-600" />
-                          <span>웹 URL</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setUrlModalTab('paste');
-                            setIsUrlModalOpen(true);
-                          }}
-                          className="bg-[#5090B3] hover:bg-[#3d7a9c] text-white text-xs font-bold px-3 py-2 rounded-xl shadow-xs transition flex items-center justify-center gap-1 cursor-pointer"
-                        >
-                          <Copy className="w-3.5 h-3.5 text-white" />
-                          <span>글 붙여넣기</span>
+                          <Globe className="w-4 h-4 text-slate-600" />
+                          <span>URL</span>
                         </button>
                       </div>
                     </div>
@@ -3956,19 +3934,30 @@ export default function Home() {
             {/* Modal Body: Independent Split-Scroll between Pinned Photo and Text Tokens */}
             <div className="flex-1 flex flex-col overflow-hidden pr-0.5 py-1 min-h-[180px] gap-2">
               {/* 원본 사진 영역 (함께보기 시 상단 고정 + 독립 스크롤 / 사진 확대 시 전체 스크롤) */}
-              {(pickerTab === 'image' || pickerTab === 'split') && (currentSourceImageRef.current || currentSourceImage) && (
+              {(pickerTab === 'image' || pickerTab === 'split') && (sourceImages.length > 0 || currentSourceImageRef.current || currentSourceImage) && (
                 <div className={pickerTab === 'image' ? 'flex-1 flex flex-col min-h-0 space-y-1.5' : 'shrink-0 space-y-1'}>
                   <div
-                    className={`p-1.5 bg-slate-900/5 rounded-2xl border border-slate-200/80 overflow-y-auto overflow-x-auto ${
-                      pickerTab === 'image' ? 'flex-1 max-h-[52vh]' : 'max-h-[24vh]'
+                    className={`p-1.5 bg-slate-900/5 rounded-2xl border border-slate-200/80 overflow-y-auto overflow-x-auto space-y-2 ${
+                      pickerTab === 'image' ? 'flex-1 max-h-[52vh]' : 'max-h-[26vh]'
                     }`}
                   >
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={`data:${(currentSourceImageRef.current || currentSourceImage)?.mimeType || 'image/jpeg'};base64,${(currentSourceImageRef.current || currentSourceImage)?.base64}`}
-                      alt="원본 도서 페이지 사진"
-                      className="w-full h-auto block rounded-xl shadow-xs"
-                    />
+                    {(sourceImages.length > 0 ? sourceImages : [currentSourceImageRef.current || currentSourceImage]).map((img, iIdx) => (
+                      img?.base64 && (
+                        <div key={iIdx} className="space-y-1">
+                          {sourceImages.length > 1 && (
+                            <span className="text-[10px] bg-slate-200 text-slate-700 font-bold px-1.5 py-0.5 rounded">
+                              페이지 {iIdx + 1}
+                            </span>
+                          )}
+                          {/* eslint-disable-next-line @next/next/no-img-element */}
+                          <img
+                            src={`data:${img.mimeType || 'image/jpeg'};base64,${img.base64}`}
+                            alt={`도서 페이지 사진 ${iIdx + 1}`}
+                            className="w-full h-auto block rounded-xl shadow-xs"
+                          />
+                        </div>
+                      )
+                    ))}
                   </div>
                   {pickerTab === 'image' && (
                     <p className="text-[11px] text-slate-500 text-center leading-normal shrink-0">
@@ -4688,6 +4677,66 @@ export default function Home() {
                 닫기
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Camera / Gallery Picker Modal */}
+      {isPhotoChooserOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-9 h-9 rounded-xl bg-brand-50 text-brand-600 flex items-center justify-center">
+                  <Camera className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-bold text-sm text-slate-900 leading-tight">책 사진 불러오기</h3>
+                  <p className="text-[11px] text-slate-500">
+                    {sourceImages.length > 0 ? '이전 사진과 함께 최대 2장 연결' : '촬영 또는 사진첩 선택'}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsPhotoChooserOpen(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg w-7 h-7 flex items-center justify-center rounded-full hover:bg-slate-100 cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="space-y-2.5">
+              <button
+                type="button"
+                onClick={() => {
+                  setIsPhotoChooserOpen(false);
+                  cameraInputRef.current?.click();
+                }}
+                className="w-full p-3.5 bg-gradient-to-r from-brand-600 to-brand-500 hover:opacity-95 text-white font-bold text-xs rounded-2xl shadow-sm transition flex items-center justify-center gap-2.5 cursor-pointer active:scale-98"
+              >
+                <Camera className="w-4 h-4 text-[#F3D372]" />
+                <span className="text-sm">카메라로 바로 촬영</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setIsPhotoChooserOpen(false);
+                  galleryInputRef.current?.click();
+                }}
+                className="w-full p-3.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-2xl transition flex items-center justify-center gap-2.5 cursor-pointer active:scale-98"
+              >
+                <ImageIcon className="w-4 h-4 text-brand-600" />
+                <span className="text-sm">사진첩 / 앨범에서 선택</span>
+              </button>
+            </div>
+
+            {sourceImages.length > 0 && (
+              <div className="p-2.5 bg-indigo-50/80 rounded-xl border border-indigo-100 text-[11px] text-indigo-900 leading-relaxed">
+                💡 <strong>연속 페이지 자동 감지:</strong> 새 사진을 찍거나 고르면 이전 사진과 함께 <strong>최대 2장</strong>을 AI가 비교하여 페이지 경계에서 잘린 문장을 자연스럽게 하나로 연결합니다.
+              </div>
+            )}
           </div>
         </div>
       )}

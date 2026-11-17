@@ -6,17 +6,31 @@ export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   try {
-    const { base64, mimeType, fallbackRawText } = await req.json();
+    const { base64, mimeType, images, fallbackRawText } = await req.json();
 
-    const hasImage = Boolean(base64 && typeof base64 === 'string' && base64.length > 50);
-    const hasFallbackText = Boolean(fallbackRawText && typeof fallbackRawText === 'string' && fallbackRawText.trim().length > 5);
-
-    if (!hasImage && !hasFallbackText) {
-      return NextResponse.json({ error: 'Image base64 data or fallbackRawText is required' }, { status: 400 });
+    // 1장 또는 최대 2장(전후 페이지) 이미지 지원
+    const imageList: { base64: string; mimeType?: string }[] = [];
+    if (Array.isArray(images) && images.length > 0) {
+      images.slice(0, 2).forEach((img: any) => {
+        if (img?.base64 && typeof img.base64 === 'string' && img.base64.length > 50) {
+          imageList.push({
+            base64: img.base64.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, ''),
+            mimeType: img.mimeType || 'image/jpeg',
+          });
+        }
+      });
+    } else if (base64 && typeof base64 === 'string' && base64.length > 50) {
+      imageList.push({
+        base64: base64.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, ''),
+        mimeType: mimeType || 'image/jpeg',
+      });
     }
 
-    if (hasImage && base64.length > 12_000_000) {
-      return NextResponse.json({ error: 'Image payload too large' }, { status: 413 });
+    const hasImages = imageList.length > 0;
+    const hasFallbackText = Boolean(fallbackRawText && typeof fallbackRawText === 'string' && fallbackRawText.trim().length > 5);
+
+    if (!hasImages && !hasFallbackText) {
+      return NextResponse.json({ error: 'Image base64 data or fallbackRawText is required' }, { status: 400 });
     }
 
     const apiKey =
@@ -32,10 +46,32 @@ export async function POST(req: NextRequest) {
     }
 
     // 1. 원본 이미지가 있는 경우: 초고속 Vision OCR (thinkingLevel: LOW / thinkingBudget: 0 적용)
-    if (hasImage) {
-      const cleanBase64 = base64.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, '');
+    if (hasImages) {
+      const isMultiPage = imageList.length > 1;
 
-      const visionPrompt = `You are a high-precision OCR and document analysis AI specializing in English books, news articles, and research reports.
+      const visionPrompt = isMultiPage
+        ? `You are a high-precision OCR and document analysis AI for English books and articles.
+You are given two consecutive photographed pages (or images) from a book.
+
+Strict Rules:
+1. DETERMINE PAGE READING ORDER:
+   - Carefully inspect both images and determine their natural chronological reading order (which page comes first and which comes second).
+   - Seamlessly connect any sentence or clause that is cut off across the page boundary (e.g. word hyphenations across pages, incomplete trailing sentences).
+
+2. EXCLUDE CHARTS, GRAPHS, PLOTS & TABLES:
+   - Completely IGNORE and DO NOT transcribe charts, bar graphs, plots, diagrams, axes numbers, and footnote citations.
+   - Transcribe ONLY the readable reading prose sentences, paragraphs, and headings in proper sequential order.
+
+3. DETECT CIRCLED OR UNDERLINED WORDS:
+   - Identify any English words marked with handwritten underlines or circles in either image.
+   - Accurately restore the clean original English word without pen marks into the "markedWords" array (e.g. ["categories", "grow"]).
+
+Output strictly valid JSON:
+{
+  "text": "Clean combined transcribed article/prose text across both pages in chronological reading order...",
+  "markedWords": ["word1", "word2"]
+}`
+        : `You are a high-precision OCR and document analysis AI specializing in English books, news articles, and research reports.
 Carefully inspect the provided image.
 
 Strict Rules:
@@ -56,23 +92,25 @@ Output strictly valid JSON in this exact structure without markdown backticks:
   "markedWords": ["word1", "word2"]
 }`;
 
+      const contentParts: any[] = [{ text: visionPrompt }];
+      imageList.forEach((img) => {
+        contentParts.push({
+          inline_data: {
+            mime_type: img.mimeType || 'image/jpeg',
+            data: img.base64,
+          },
+        });
+      });
+
       const visionRes = await callGeminiWithFallback({
         apiKey,
-        parts: [
-          { text: visionPrompt },
-          {
-            inline_data: {
-              mime_type: mimeType || 'image/jpeg',
-              data: cleanBase64,
-            },
-          },
-        ],
+        parts: contentParts,
         temperature: 0.0,
         responseMimeType: 'application/json',
         candidates: [
-          { model: 'gemini-3.5-flash-lite', thinkingConfig: { thinkingLevel: 'LOW' }, timeoutMs: 4800 },
-          { model: 'gemini-3.1-flash-lite', thinkingConfig: { thinkingBudget: 0 }, timeoutMs: 4000 },
-          { model: 'gemini-flash-lite-latest', thinkingConfig: { thinkingLevel: 'LOW' }, timeoutMs: 4000 },
+          { model: 'gemini-3.5-flash-lite', thinkingConfig: { thinkingLevel: 'LOW' }, timeoutMs: 5000 },
+          { model: 'gemini-3.1-flash-lite', thinkingConfig: { thinkingBudget: 0 }, timeoutMs: 4200 },
+          { model: 'gemini-flash-lite-latest', thinkingConfig: { thinkingLevel: 'LOW' }, timeoutMs: 4200 },
         ],
       });
 

@@ -112,20 +112,28 @@ export async function repairOcrTextWithAI(
   return null;
 }
 
-// AI Vision으로 책 페이지 문장 고정밀 인식 & 밑줄/동그라미 친 단어 시각적 감지
+// AI Vision으로 책 페이지 문장 고정밀 인식 & 밑줄/동그라미 친 단어 시각적 감지 (1장 또는 2장 연속 페이지 지원)
 export async function extractTextWithAI(
   file: File | Blob,
   customApiKey?: string,
-  precompressedData?: { base64: string; mimeType: string } | null
+  precompressedData?: { base64: string; mimeType: string } | null,
+  allImages?: { base64: string; mimeType: string }[]
 ): Promise<{ text: string; method: 'gemini' | 'tesseract'; markedWords: string[] }> {
   const apiKey = customApiKey || getStoredGeminiKey();
 
-  const { base64, mimeType } =
+  const primary =
     precompressedData && precompressedData.base64
       ? precompressedData
       : await fileToBase64(file);
 
-  // 1. Gemini Vision OCR 우선 시도
+  const imagesToSend =
+    Array.isArray(allImages) && allImages.length > 0
+      ? allImages
+      : primary.base64
+      ? [primary]
+      : [];
+
+  // 1. Gemini Vision OCR 우선 시도 (2장일 경우 전후 관계 자동 파악 및 잘린 문장 완벽 결합)
   try {
     const res = await fetch('/api/ai/ocr', {
       method: 'POST',
@@ -133,7 +141,11 @@ export async function extractTextWithAI(
         'Content-Type': 'application/json',
         ...(apiKey ? { 'x-gemini-key': apiKey } : {}),
       },
-      body: JSON.stringify({ base64, mimeType }),
+      body: JSON.stringify({
+        base64: primary.base64,
+        mimeType: primary.mimeType,
+        images: imagesToSend,
+      }),
     });
 
     if (res.ok) {
