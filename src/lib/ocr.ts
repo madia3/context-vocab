@@ -252,8 +252,8 @@ export const IRREGULAR_TO_BASE: Record<string, string> = {
   sat: 'sit', sits: 'sit', sitting: 'sit',
   stood: 'stand', stands: 'stand', standing: 'stand',
   slept: 'sleep', sleeps: 'sleep', sleeping: 'sleep',
-  understood: 'understand', understands: 'understand', understanding: 'understand',
-  meant: 'mean', means: 'mean', meaning: 'mean',
+  understood: 'understand', understands: 'understand',
+  meant: 'mean',
   led: 'lead', leads: 'lead', leading: 'lead',
   met: 'meet', meets: 'meet', meeting: 'meet',
   paid: 'pay', pays: 'pay', paying: 'pay',
@@ -263,13 +263,13 @@ export const IRREGULAR_TO_BASE: Record<string, string> = {
   spent: 'spend', spends: 'spend', spending: 'spend',
   won: 'win', wins: 'win', winning: 'win',
   taught: 'teach', teaches: 'teach', teaching: 'teach',
-  sang: 'sing', sung: 'sing', sings: 'sing', singing: 'sing',
-  drank: 'drink', drunk: 'drink', drinks: 'drink', drinking: 'drink',
-  ate: 'eat', eaten: 'eat', eats: 'eat', eating: 'eat',
-  cut: 'cut', cuts: 'cut', cutting: 'cut',
-  put: 'put', puts: 'put', putting: 'put',
-  hit: 'hit', hits: 'hit', hitting: 'hit',
-  set: 'set', sets: 'set', setting: 'set',
+  sang: 'sing', sung: 'sing', sings: 'sing',
+  drank: 'drink', drunk: 'drink', drinks: 'drink',
+  ate: 'eat', eaten: 'eat', eats: 'eat',
+  cut: 'cut', cuts: 'cut',
+  put: 'put', puts: 'put',
+  hit: 'hit', hits: 'hit',
+  set: 'set', sets: 'set',
 
   // 불규칙 명사 복수형
   children: 'child',
@@ -306,12 +306,37 @@ export const IRREGULAR_TO_BASE: Record<string, string> = {
   furthest: 'far',
 };
 
-// 원래 s로 끝나는 단어(단수 명사/부사/전치사) 보호 목록
+// 원래 s로 끝나는 단어(단수 명사/부사/전치사/학문) 보호 목록
 const WORDS_NATURALLY_ENDING_IN_S = new Set([
   'always', 'sometimes', 'perhaps', 'towards', 'besides', 'nowadays', 'whereas', 'downstairs', 'upstairs', 'outdoors', 'indoors', 'overseas', 'nonetheless', 'nevertheless',
-  'series', 'species', 'news', 'means', 'goods', 'economics', 'politics', 'physics', 'mathematics', 'statistics', 'ethics', 'genetics', 'linguistics', 'logistics', 'athletics',
+  'series', 'species', 'news', 'means', 'goods', 'clothes', 'economics', 'politics', 'physics', 'mathematics', 'statistics', 'ethics', 'genetics', 'linguistics', 'logistics', 'athletics', 'mechanics', 'electronics', 'optics', 'robotics', 'aerobics', 'acoustics', 'tactics',
   'focus', 'status', 'consensus', 'census', 'campus', 'virus', 'bonus', 'genius', 'corpus', 'surplus', 'apparatus', 'stimulus', 'syllabus',
   'lens', 'chaos', 'bias', 'canvas', 'atlas', 'alias', 'gas', 'bus', 'plus', 'thus', 'this',
+  'basis', 'crisis', 'analysis', 'thesis', 'hypothesis', 'diagnosis', 'emphasis', 'oasis', 'synthesis', 'debris', 'chassis', 'cosmos', 'ethos', 'pathos',
+]);
+
+// 원래 ing로 끝나는 단수 명사/전치사/고유 단어 보호 목록
+const WORDS_NATURALLY_ENDING_IN_ING = new Set([
+  'thing', 'something', 'anything', 'nothing', 'everything',
+  'spring', 'string', 'bring', 'during', 'ceiling', 'morning', 'evening', 'sibling', 'lightning', 'darling',
+  'king', 'ring', 'sing', 'wing', 'cling', 'fling', 'sting', 'swing',
+  'meaning', 'building', 'feeling', 'training', 'learning', 'meeting', 'drawing', 'painting', 'hearing', 'warning', 'clothing', 'living', 'shipping', 'gathering', 'offering', 'setting', 'outing', 'willing',
+]);
+
+// 원래 ed로 끝나는 기본 단어(단수 명사/형용사/동사 원형) 보호 목록
+const WORDS_NATURALLY_ENDING_IN_ED = new Set([
+  'speed', 'succeed', 'proceed', 'exceed', 'indeed', 'greed', 'bleed', 'breed', 'steed', 'creed',
+  'naked', 'sacred', 'hatred', 'hundred', 'kindred', 'wicked', 'wretched', 'crooked', 'ragged', 'rugged', 'beloved',
+]);
+
+// 원래 ier로 끝나는 명사 보호 목록 (비교급 오변환 방지: barrier -> barry 등 방지)
+const WORDS_NATURALLY_ENDING_IN_IER = new Set([
+  'barrier', 'soldier', 'glacier', 'frontier', 'courier', 'cashier', 'premier', 'tier', 'pier',
+]);
+
+// 원래 est로 끝나는 명사/형용사 보호 목록 (최상급 오변환 방지: priest -> pry 등 방지)
+const WORDS_NATURALLY_ENDING_IN_EST = new Set([
+  'priest', 'chest', 'guest', 'nest', 'rest', 'test', 'west', 'best', 'forest', 'interest', 'honest', 'modest', 'request', 'suggest', 'protest', 'invest', 'arrest', 'contest', 'harvest',
 ]);
 
 // 불규칙 -ves -> -f / -fe 명확한 폐쇄 집합
@@ -336,67 +361,99 @@ const VES_IRREGULAR_MAP: Record<string, string> = {
   elves: 'elf',
 };
 
+// -ie로 끝나는 명사의 복수형 (-ies -> -ie 복원: movies -> movie, cookies -> cookie 등)
+const IE_NOUNS_MAP: Record<string, string> = {
+  movies: 'movie',
+  cookies: 'cookie',
+  calories: 'calorie',
+  brownies: 'brownie',
+  zombies: 'zombie',
+  prairies: 'prairie',
+  rookies: 'rookie',
+  hippies: 'hippie',
+};
+
 // 복수형, 과거형, 진행형, 3인칭 단수 등을 단어장 등록용 '원형(Lemma)'으로 복원
 export function extractLemmaCandidate(rawWord: string): string {
   const w = rawWord.trim().toLowerCase();
   if (w.length <= 2) return w;
 
-  // 1. 본래 s로 끝나는 고유 단어는 원형 보존
-  if (WORDS_NATURALLY_ENDING_IN_S.has(w)) {
-    return w;
-  }
+  // 1. 고유 형태 보존 (본래 s, ing, ed, ier, est 등으로 끝나는 고유 기본 어휘)
+  if (WORDS_NATURALLY_ENDING_IN_S.has(w)) return w;
+  if (WORDS_NATURALLY_ENDING_IN_ING.has(w)) return w;
+  if (WORDS_NATURALLY_ENDING_IN_ED.has(w)) return w;
+  if (WORDS_NATURALLY_ENDING_IN_IER.has(w)) return w;
+  if (WORDS_NATURALLY_ENDING_IN_EST.has(w)) return w;
 
   // 2. 불규칙 사전 매핑 확인
-  if (IRREGULAR_TO_BASE[w]) {
-    return IRREGULAR_TO_BASE[w];
-  }
+  if (IRREGULAR_TO_BASE[w]) return IRREGULAR_TO_BASE[w];
+  if (VES_IRREGULAR_MAP[w]) return VES_IRREGULAR_MAP[w];
+  if (IE_NOUNS_MAP[w]) return IE_NOUNS_MAP[w];
 
-  // 3. 불규칙 -ves -> -f / -fe 확인 (예: knives -> knife, leaves -> leaf)
-  if (VES_IRREGULAR_MAP[w]) {
-    return VES_IRREGULAR_MAP[w];
-  }
-
-  // 4. 복수형 / 3인칭 단수 -ies -> -y (cities -> city, parties -> party, stories -> story)
+  // 3. 복수형 / 3인칭 단수 -ies -> -y (cities -> city, parties -> party, stories -> story)
   if (w.endsWith('ies') && w.length > 4) {
     return w.slice(0, -3) + 'y';
   }
 
-  // 5. 과거형 / 분사 -ied -> -y (studied -> study, carried -> carry, worried -> worry)
+  // 4. 과거형 / 분사 -ied -> -y (studied -> study, carried -> carry, worried -> worry)
   if (w.endsWith('ied') && w.length > 4) {
     return w.slice(0, -3) + 'y';
   }
 
-  // 6. -es 복수형/3인칭 단수 (-e로 끝나는 단어에 s가 붙은 경우 s만 제거: perspective, price, change, cause 등)
-  if (
-    w.endsWith('ces') ||
-    w.endsWith('ges') ||
-    w.endsWith('ses') ||
-    w.endsWith('tes') ||
-    w.endsWith('des') ||
-    w.endsWith('nes') ||
-    w.endsWith('les') ||
-    w.endsWith('ves') ||
-    w.endsWith('res') ||
-    w.endsWith('mes') ||
-    w.endsWith('pes')
-  ) {
-    return w.slice(0, -1);
+  // 5. -sses 복수형 (classes -> class, passes -> pass, processes -> process, addresses -> address)
+  // 반드시 -ses 전에 처리해야 classes -> classe 오변환 차단!
+  if (w.endsWith('sses') && w.length > 5) {
+    return w.slice(0, -2);
   }
-  // passes -> pass, wishes -> wish, watches -> watch, boxes -> box, quizzes -> quiz
+
+  // 6. -shes, -ches, -xes 복수형/3인칭단수 (wishes -> wish, watches -> watch, boxes -> box, taxes -> tax)
   if (
-    w.endsWith('sses') ||
-    w.endsWith('shes') ||
-    w.endsWith('ches') ||
-    w.endsWith('xes') ||
-    w.endsWith('zes')
+    (w.endsWith('shes') && w.length > 5) ||
+    (w.endsWith('ches') && w.length > 5) ||
+    (w.endsWith('xes') && w.length > 4)
   ) {
     return w.slice(0, -2);
   }
 
-  // 7. 진행형 / 동명사 -ing (growing -> grow, running -> run, declining -> decline, publishing -> publish)
+  // 7. -zzes (quizzes -> quiz, buzzes -> buzz)
+  if (w.endsWith('zzes') && w.length > 5) {
+    if (w === 'quizzes') return 'quiz';
+    return w.slice(0, -2);
+  }
+
+  // 8. -zes (sizes -> size, prizes -> prize, freezes -> freeze, realizes -> realize, analyzes -> analyze)
+  if (w.endsWith('zes') && w.length > 4) {
+    return w.slice(0, -1);
+  }
+
+  // 9. -e로 끝나는 단어에 s가 붙은 복수형/3인칭단수 (-s만 제거: perspective, price, change, cause 등)
+  if (
+    w.endsWith('ces') || // prices -> price, devices -> device
+    w.endsWith('ges') || // changes -> change, pages -> page
+    w.endsWith('ses') || // causes -> cause, houses -> house, phrases -> phrase, promises -> promise
+    w.endsWith('tes') || // plates -> plate, states -> state
+    w.endsWith('des') || // slides -> slide, guides -> guide
+    w.endsWith('nes') || // lines -> line, tones -> tone
+    w.endsWith('les') || // rules -> rule, files -> file
+    w.endsWith('ves') || // perspectives -> perspective, objectives -> objective
+    w.endsWith('res') || // stores -> store, figures -> figure
+    w.endsWith('mes') || // homes -> home, names -> name
+    w.endsWith('pes') || // types -> type, shapes -> shape
+    w.endsWith('kes') || // strikes -> strike, stakes -> stake
+    w.endsWith('bes')    // tubes -> tube, probes -> probe
+  ) {
+    return w.slice(0, -1);
+  }
+
+  // 10. 불규칙 -oes (heroes -> hero, potatoes -> potato, tomatoes -> tomato)
+  if (['heroes', 'potatoes', 'tomatoes', 'echoes', 'tornadoes', 'volcanoes'].includes(w)) {
+    return w.slice(0, -2);
+  }
+
+  // 11. 진행형 / 동명사 -ing (growing -> grow, running -> run, declining -> decline, publishing -> publish)
   if (w.endsWith('ing') && w.length > 4) {
     const stem = w.slice(0, -3);
-    // 자음 중복 (running -> run, stopping -> stop, swimming -> swim, getting -> get)
+    // 자음 중복 (running -> run, stopping -> stop, swimming -> swim, getting -> get, winning -> win)
     if (
       stem.length >= 3 &&
       stem[stem.length - 1] === stem[stem.length - 2] &&
@@ -405,6 +462,10 @@ export function extractLemmaCandidate(rawWord: string): string {
     ) {
       return stem.slice(0, -1);
     }
+    if (w === 'tying') return 'tie';
+    if (w === 'dying') return 'die';
+    if (w === 'lying') return 'lie';
+
     // v, c, g, z로 끝나거나 대표적 VCe(단모음+단자음+e) 어간인 경우에만 e 복원
     if (
       /[vcz]$/.test(stem) ||
@@ -415,7 +476,7 @@ export function extractLemmaCandidate(rawWord: string): string {
     return stem;
   }
 
-  // 8. 과거형 / 분사 -ed (declined -> decline, boosted -> boost, stopped -> stop, looked -> look)
+  // 12. 과거형 / 분사 -ed (declined -> decline, boosted -> boost, stopped -> stop, looked -> look)
   if (w.endsWith('ed') && w.length > 4) {
     const stem = w.slice(0, -2);
     // 자음 중복 (stopped -> stop, planned -> plan, begged -> beg)
@@ -428,7 +489,10 @@ export function extractLemmaCandidate(rawWord: string): string {
       return stem.slice(0, -1);
     }
     if (w.endsWith('eed')) {
-      return w.slice(0, -1); // agreed -> agree, freed -> free
+      if (['agreed', 'freed', 'guaranteed', 'decreed'].includes(w)) {
+        return w.slice(0, -1);
+      }
+      return w;
     }
     if (stem.endsWith('e')) {
       return stem;
@@ -443,7 +507,7 @@ export function extractLemmaCandidate(rawWord: string): string {
     return stem;
   }
 
-  // 9. 단순 복수형 / 3인칭 단수 -s (prices -> price, books -> book, cats -> cat, forecasts -> forecast)
+  // 13. 단순 복수형 / 3인칭 단수 -s (prices -> price, books -> book, cats -> cat, forecasts -> forecast)
   if (
     w.endsWith('s') &&
     !w.endsWith('ss') &&
@@ -452,10 +516,12 @@ export function extractLemmaCandidate(rawWord: string): string {
     !w.endsWith('os') &&
     w.length > 3
   ) {
-    return w.slice(0, -1);
+    const stripped = w.slice(0, -1);
+    if (WORDS_NATURALLY_ENDING_IN_ING.has(stripped)) return stripped;
+    return stripped;
   }
 
-  // 10. 비교급 -ier -> -y, -iest -> -y (easier -> easy, easiest -> easy)
+  // 14. 비교급 -ier -> -y, -iest -> -y (easier -> easy, happiest -> happy)
   if (w.endsWith('ier') && w.length > 4) {
     return w.slice(0, -3) + 'y';
   }
