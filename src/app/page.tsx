@@ -76,6 +76,7 @@ import {
   Copy,
   Cloud,
   ChevronDown,
+  Image as ImageIcon,
 } from 'lucide-react';
 
 function GoogleIcon({ className = 'w-4 h-4' }: { className?: string }) {
@@ -177,6 +178,8 @@ export default function Home() {
   const [ocrDetectedNotice, setOcrDetectedNotice] = useState<string | null>(null);
   const [detectedCandidateSentences, setDetectedCandidateSentences] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
+  const galleryInputRef = useRef<HTMLInputElement>(null);
   const isAppendModeRef = useRef<boolean>(false);
   const [completingSentenceId, setCompletingSentenceId] = useState<string | null>(null);
 
@@ -609,6 +612,8 @@ export default function Home() {
     if (!file) return;
 
     if (fileInputRef.current) fileInputRef.current.value = '';
+    if (cameraInputRef.current) cameraInputRef.current.value = '';
+    if (galleryInputRef.current) galleryInputRef.current.value = '';
 
     const isAppend = isAppendModeRef.current;
     isAppendModeRef.current = false; // Reset
@@ -1684,12 +1689,30 @@ export default function Home() {
                   )}
                 </div>
 
-                {/* Hidden File/Camera Input */}
+                {/* Hidden Camera Input (카메라 직접 촬영: capture="environment") */}
+                <input
+                  type="file"
+                  ref={cameraInputRef}
+                  accept="image/*"
+                  capture="environment"
+                  onChange={handlePagePhotoUpload}
+                  className="hidden"
+                />
+
+                {/* Hidden Gallery Input (사진첩/앨범 선택 전용: capture 속성 없이 갤러리 열기) */}
+                <input
+                  type="file"
+                  ref={galleryInputRef}
+                  accept="image/*"
+                  onChange={handlePagePhotoUpload}
+                  className="hidden"
+                />
+
+                {/* Legacy fileInputRef fallback */}
                 <input
                   type="file"
                   ref={fileInputRef}
                   accept="image/*"
-                  capture="environment"
                   onChange={handlePagePhotoUpload}
                   className="hidden"
                 />
@@ -1732,29 +1755,56 @@ export default function Home() {
                       </p>
                       <div className="flex items-center justify-end gap-1.5 pt-0.5">
                         {loadedSourceType === 'camera' && (
-                          <button
-                            type="button"
-                            onClick={() => {
-                              isAppendModeRef.current = true;
-                              fileInputRef.current?.click();
-                            }}
-                            className="text-[11px] font-bold bg-[#5090B3] text-white hover:bg-[#3d7a9c] px-2.5 py-1 rounded-md shadow-xs flex items-center gap-1 transition cursor-pointer"
-                            title="문장이 다음 페이지로 이어질 때 다음 장을 찍어 문맥을 하나로 연결합니다"
-                          >
-                            <Plus className="w-3 h-3" />
-                            <span>+ 다음 장 이어찍기</span>
-                          </button>
+                          <>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                isAppendModeRef.current = true;
+                                cameraInputRef.current?.click();
+                              }}
+                              className="text-[11px] font-bold bg-[#5090B3] text-white hover:bg-[#3d7a9c] px-2 py-1 rounded-md shadow-xs flex items-center gap-1 transition cursor-pointer"
+                              title="다음 페이지를 촬영하여 문맥을 이어붙입니다"
+                            >
+                              <Plus className="w-3 h-3" />
+                              <span>+ 촬영 추가</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                isAppendModeRef.current = true;
+                                galleryInputRef.current?.click();
+                              }}
+                              className="text-[11px] font-bold bg-white border border-[#5090B3]/50 text-[#5090B3] hover:bg-[#5090B3]/10 px-2 py-1 rounded-md shadow-xs flex items-center gap-1 transition cursor-pointer"
+                              title="사진첩에서 다음 페이지 사진을 골라 이어붙입니다"
+                            >
+                              <ImageIcon className="w-3 h-3" />
+                              <span>+ 사진첩 추가</span>
+                            </button>
+                          </>
                         )}
                         <button
                           type="button"
                           onClick={() => {
                             isAppendModeRef.current = false;
-                            fileInputRef.current?.click();
+                            galleryInputRef.current?.click();
                           }}
-                          className="text-[11px] font-bold bg-white border border-slate-200 hover:border-[#5090B3] text-[#5090B3] px-2 py-1 rounded-md shadow-xs flex items-center gap-1 cursor-pointer"
+                          className="text-[11px] font-bold bg-white border border-slate-200 hover:border-[#5090B3] text-slate-700 px-2 py-1 rounded-md shadow-xs flex items-center gap-1 cursor-pointer"
+                          title="사진첩에서 사진을 선택합니다"
                         >
-                          <Camera className="w-3 h-3" />
-                          <span>새 사진</span>
+                          <ImageIcon className="w-3 h-3 text-[#5090B3]" />
+                          <span>사진첩</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            isAppendModeRef.current = false;
+                            cameraInputRef.current?.click();
+                          }}
+                          className="text-[11px] font-bold bg-white border border-slate-200 hover:border-[#5090B3] text-slate-700 px-2 py-1 rounded-md shadow-xs flex items-center gap-1 cursor-pointer"
+                          title="카메라로 새로 촬영합니다"
+                        >
+                          <Camera className="w-3 h-3 text-[#5090B3]" />
+                          <span>촬영</span>
                         </button>
                         <button
                           type="button"
@@ -1808,14 +1858,28 @@ export default function Home() {
                       <p className="text-[11px] text-slate-500">
                         사진, 웹페이지 URL, 또는 복사한 기사를 넣으면 문장들이 자동으로 채워집니다.
                       </p>
-                      <div className="grid grid-cols-3 sm:flex items-center gap-1.5 shrink-0">
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-1.5 shrink-0 w-full sm:w-auto">
                         <button
                           type="button"
-                          onClick={() => fileInputRef.current?.click()}
-                          className="bg-white hover:bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-bold px-2.5 py-2 rounded-xl shadow-xs transition flex items-center justify-center gap-1"
+                          onClick={() => {
+                            isAppendModeRef.current = false;
+                            cameraInputRef.current?.click();
+                          }}
+                          className="bg-white hover:bg-[#5090B3]/10 border border-[#5090B3]/40 text-[#5090B3] text-xs font-bold px-2.5 py-2 rounded-xl shadow-xs transition flex items-center justify-center gap-1 cursor-pointer"
                         >
-                          <Camera className="w-3.5 h-3.5 text-indigo-600" />
-                          <span>책 사진</span>
+                          <Camera className="w-3.5 h-3.5 text-[#5090B3]" />
+                          <span>사진 촬영</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            isAppendModeRef.current = false;
+                            galleryInputRef.current?.click();
+                          }}
+                          className="bg-white hover:bg-[#5090B3]/10 border border-[#5090B3]/40 text-[#5090B3] text-xs font-bold px-2.5 py-2 rounded-xl shadow-xs transition flex items-center justify-center gap-1 cursor-pointer"
+                        >
+                          <ImageIcon className="w-3.5 h-3.5 text-[#5090B3]" />
+                          <span>사진첩 선택</span>
                         </button>
                         <button
                           type="button"
@@ -1823,9 +1887,9 @@ export default function Home() {
                             setUrlModalTab('url');
                             setIsUrlModalOpen(true);
                           }}
-                          className="bg-white hover:bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-bold px-2.5 py-2 rounded-xl shadow-xs transition flex items-center justify-center gap-1"
+                          className="bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold px-2.5 py-2 rounded-xl shadow-xs transition flex items-center justify-center gap-1 cursor-pointer"
                         >
-                          <Globe className="w-3.5 h-3.5 text-indigo-600" />
+                          <Globe className="w-3.5 h-3.5 text-slate-600" />
                           <span>웹 URL</span>
                         </button>
                         <button
@@ -1834,10 +1898,10 @@ export default function Home() {
                             setUrlModalTab('paste');
                             setIsUrlModalOpen(true);
                           }}
-                          className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold px-3 py-2 rounded-xl shadow-xs transition flex items-center justify-center gap-1"
+                          className="bg-[#5090B3] hover:bg-[#3d7a9c] text-white text-xs font-bold px-3 py-2 rounded-xl shadow-xs transition flex items-center justify-center gap-1 cursor-pointer"
                         >
                           <Copy className="w-3.5 h-3.5 text-white" />
-                          <span>기사 붙여넣기</span>
+                          <span>글 붙여넣기</span>
                         </button>
                       </div>
                     </div>
