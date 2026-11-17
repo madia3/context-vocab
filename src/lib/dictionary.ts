@@ -117,52 +117,61 @@ const POS_MAP: Record<string, string> = {
   conjunction: "접속사",
 };
 
+// Client-side in-memory dictionary cache (0ms instant response)
+const clientDictCache = new Map<string, DictSearchResult>();
+
 export async function lookupDictionary(rawWord: string): Promise<DictSearchResult> {
   const word = rawWord.trim().toLowerCase();
-  let phonetic = `/${word}/`;
-
-  // Step 1: Phonetics Lookup
-  try {
-    const pRes = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`);
-    if (pRes.ok) {
-      const pData = await pRes.json();
-      if (pData[0]?.phonetic) {
-        phonetic = pData[0].phonetic;
-      } else if (pData[0]?.phonetics?.[0]?.text) {
-        phonetic = pData[0].phonetics[0].text;
-      }
-    }
-  } catch (e) {
-    console.warn("Phonetic lookup warning:", e);
-  }
-
-  // Step 1: Check Built-in DB
-  if (BUILTIN_KOREAN_DICT[word]) {
+  if (!word) {
     return {
-      word,
-      phonetic: BUILTIN_KOREAN_DICT[word].phonetic || phonetic,
-      meanings: BUILTIN_KOREAN_DICT[word].meanings,
-      sourceName: "로컬 정밀 영한 사전",
+      word: '',
+      phonetic: '',
+      meanings: [],
+      sourceName: '단어 없음',
     };
   }
 
-  // Step 2: Call internal server API route (Server-side fetch prevents CORS issues and extracts full POS)
+  // 1. Instant Cache Hit (0ms)
+  const cached = clientDictCache.get(word);
+  if (cached) {
+    return cached;
+  }
+
+  // 2. Instant Built-in DB Check (0ms, no network required!)
+  if (BUILTIN_KOREAN_DICT[word]) {
+    const builtinResult: DictSearchResult = {
+      word,
+      phonetic: BUILTIN_KOREAN_DICT[word].phonetic || `/${word}/`,
+      meanings: BUILTIN_KOREAN_DICT[word].meanings,
+      sourceName: '로컬 정밀 영한 사전',
+    };
+    clientDictCache.set(word, builtinResult);
+    return builtinResult;
+  }
+
+  let phonetic = `/${word}/`;
+
+  // 3. Call internal server API route (Server fetches Google Translate & Phonetics in parallel with 1.2s timeout)
   try {
-    const apiRes = await fetch(`/api/dictionary?word=${encodeURIComponent(word)}`);
+    const apiRes = await fetch(`/api/dictionary?word=${encodeURIComponent(word)}`, {
+      signal: AbortSignal.timeout(3500),
+    });
     if (apiRes.ok) {
       const data: DictSearchResult = await apiRes.json();
       if (data && data.meanings && data.meanings.length > 0) {
+        clientDictCache.set(word, data);
         return data;
       }
     }
   } catch (apiErr) {
-    console.warn("Internal dictionary API fallback:", apiErr);
+    console.warn('Internal dictionary API fast fallback:', apiErr);
   }
 
-  // Step 3: Google Translate API Direct Attempt
+  // 4. Fast Google Translate Client Fallback (Direct attempt with 2s timeout)
   try {
     const gRes = await fetch(
-      `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=ko&dt=t&dt=bd&q=${encodeURIComponent(word)}`
+      `https://translate.googleapis.com/translate_a/single?client=gtx&sl=en&tl=ko&dt=t&dt=bd&q=${encodeURIComponent(word)}`,
+      { signal: AbortSignal.timeout(2000) }
     );
     if (gRes.ok) {
       const gData = await gRes.json();
@@ -185,62 +194,35 @@ export async function lookupDictionary(rawWord: string): Promise<DictSearchResul
 
       if (meanings.length === 0 && gData[0]?.[0]?.[0]) {
         meanings.push({
-          pos: "단어",
+          pos: '단어',
           def: gData[0][0][0],
         });
       }
 
       if (meanings.length > 0) {
-        return {
+        const gResult: DictSearchResult = {
           word,
           phonetic,
           meanings,
-          sourceName: "표준 영한 사전",
+          sourceName: '표준 영한 사전',
         };
+        clientDictCache.set(word, gResult);
+        return gResult;
       }
     }
   } catch (err) {
-    console.warn("Google translate lookup fallback:", err);
+    console.warn('Google translate lookup fallback:', err);
   }
 
-  // Step 4: MyMemory API Fallback (품사 보완)
-  try {
-    const mRes = await fetch(
-      `https://api.mymemory.translated.net/get?q=${encodeURIComponent(word)}&langpair=en|ko`
-    );
-    if (mRes.ok) {
-      const mData = await mRes.json();
-      const meanings: MeaningOption[] = [];
-      if (mData.responseData?.translatedText) {
-        meanings.push({ pos: "단어", def: mData.responseData.translatedText });
-      }
-      if (mData.matches) {
-        mData.matches.slice(0, 3).forEach((m: any) => {
-          if (m.translation && !meanings.some((x) => x.def === m.translation)) {
-            meanings.push({ pos: "단어", def: m.translation });
-          }
-        });
-      }
-      if (meanings.length > 0) {
-        return {
-          word,
-          phonetic,
-          meanings,
-          sourceName: "글로벌 번역 사전",
-        };
-      }
-    }
-  } catch (err) {
-    console.error("MyMemory error:", err);
-  }
-
-  // Final fallback
-  return {
+  // 5. Final fallback
+  const fallbackResult: DictSearchResult = {
     word,
     phonetic,
-    meanings: [{ pos: "직접 입력", def: "한국어 뜻을 직접 입력해 주세요." }],
-    sourceName: "수동 입력 모드",
+    meanings: [{ pos: '직접 입력', def: '한국어 뜻을 직접 입력해 주세요.' }],
+    sourceName: '수동 입력 모드',
   };
+  clientDictCache.set(word, fallbackResult);
+  return fallbackResult;
 }
 
 export function speakWordTTS(word: string, voiceCode: string = "en-US") {
