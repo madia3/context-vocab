@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { VocabItem, DictSearchResult } from '@/types/vocab';
 import {
   fetchVocabulary,
@@ -142,6 +142,21 @@ export default function Home() {
   const [inputBookTitle, setInputBookTitle] = useState('햄릿 (Hamlet)');
   const [isCustomBook, setIsCustomBook] = useState(false);
   const [customBookInput, setCustomBookInput] = useState('');
+  // 단어장별 최근 사용 시각(타임스탬프) 기록
+  const [bookUsageMap, setBookUsageMap] = useState<Record<string, number>>({});
+
+  function touchBookUsage(bookTitle: string) {
+    if (!bookTitle || bookTitle === '__custom__') return;
+    const now = Date.now();
+    setBookUsageMap((prev) => {
+      const next = { ...prev, [bookTitle]: now };
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('context_vocab_book_recency', JSON.stringify(next));
+        localStorage.setItem('context_vocab_last_book_title', bookTitle);
+      }
+      return next;
+    });
+  }
 
   // OCR & Web Source State (현재 로드된 페이지/웹문서 텍스트 & 캐시)
   const [pageOcrText, setPageOcrText] = useState<string>('');
@@ -258,6 +273,22 @@ export default function Home() {
 
   // Supabase Auth & Init Lifecycle
   useEffect(() => {
+    // 이전 단어장 및 최근 단어장 사용 기록 복원
+    if (typeof window !== 'undefined') {
+      try {
+        const storedRecency = localStorage.getItem('context_vocab_book_recency');
+        if (storedRecency) {
+          setBookUsageMap(JSON.parse(storedRecency));
+        }
+        const lastBook = localStorage.getItem('context_vocab_last_book_title');
+        if (lastBook) {
+          setInputBookTitle(lastBook);
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
     const ready = checkIsSupabaseConfigured();
     setIsSupabaseReady(ready);
 
@@ -662,9 +693,7 @@ export default function Home() {
 
     await loadData(currentUser);
 
-    if (typeof window !== 'undefined') {
-      localStorage.setItem('context_vocab_last_book_title', bookToSave);
-    }
+    touchBookUsage(bookToSave);
 
     // Reset Form to 1 empty entry, but keep pageOcrText and loaded sources!
     setWordEntries([createWordEntryItem()]);
@@ -916,10 +945,40 @@ export default function Home() {
     executeSearchForEntry(targetId, w);
   }
 
-  // Available unique book titles
-  const availableBookTitles = Array.from(
-    new Set(vocabulary.map((v) => v.bookTitle || '기본 단어장').filter(Boolean))
-  );
+  // Available unique book titles sorted by recency (가장 최근에 사용/등록된 단어장이 맨 위에 가깝게)
+  const availableBookTitles = useMemo(() => {
+    const rawTitles = Array.from(
+      new Set(
+        [
+          inputBookTitle,
+          ...vocabulary.map((v) => v.bookTitle || '기본 단어장'),
+        ].filter(Boolean)
+      )
+    );
+
+    const getScore = (title: string): number => {
+      // 1) 명시적으로 최근에 사용(선택/저장)된 기록
+      if (bookUsageMap[title]) return bookUsageMap[title];
+
+      // 2) 현재 폼에 선택된 단어장
+      if (title === inputBookTitle) return Date.now();
+
+      // 3) 해당 단어장의 단어들 중 가장 최근 등록일자
+      const items = vocabulary.filter((v) => (v.bookTitle || '기본 단어장') === title);
+      let maxTime = 0;
+      for (const item of items) {
+        const t = item.created_at
+          ? new Date(item.created_at).getTime()
+          : item.date
+          ? new Date(item.date).getTime()
+          : 0;
+        if (t > maxTime) maxTime = t;
+      }
+      return maxTime;
+    };
+
+    return [...rawTitles].sort((a, b) => getScore(b) - getScore(a));
+  }, [vocabulary, inputBookTitle, bookUsageMap]);
 
   // Filtered vocabulary list
   const filteredVocabulary =
@@ -1143,7 +1202,7 @@ export default function Home() {
                       <BookMarked className="w-3.5 h-3.5 text-indigo-600" />
                       <span>저장할 단어장 선택 <span className="text-rose-500">*</span></span>
                     </label>
-                    <span className="text-[10px] text-indigo-600 font-semibold">이전 단어장 자동 선택됨</span>
+                    <span className="text-[10px] text-indigo-600 font-semibold">최근 사용순 자동 정렬</span>
                   </div>
 
                   {/* 선택형 드롭다운 */}
@@ -1155,6 +1214,7 @@ export default function Home() {
                       } else {
                         setIsCustomBook(false);
                         setInputBookTitle(e.target.value);
+                        touchBookUsage(e.target.value);
                       }
                     }}
                     className="w-full px-3 py-2 text-xs bg-white text-slate-900 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold cursor-pointer"
@@ -1772,7 +1832,12 @@ export default function Home() {
                 <div className="relative flex-1 md:w-64">
                   <select
                     value={selectedBookFilter}
-                    onChange={(e) => setSelectedBookFilter(e.target.value)}
+                    onChange={(e) => {
+                      setSelectedBookFilter(e.target.value);
+                      if (e.target.value !== 'all') {
+                        touchBookUsage(e.target.value);
+                      }
+                    }}
                     className="w-full px-3 py-2 text-xs font-bold bg-slate-50 text-slate-800 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
                   >
                     <option value="all">📚 전체 단어장 보기 (총 {vocabulary.length}단어)</option>
