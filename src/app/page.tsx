@@ -177,6 +177,8 @@ export default function Home() {
   const [ocrDetectedNotice, setOcrDetectedNotice] = useState<string | null>(null);
   const [detectedCandidateSentences, setDetectedCandidateSentences] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const isAppendModeRef = useRef<boolean>(false);
+  const [completingSentenceId, setCompletingSentenceId] = useState<string | null>(null);
 
   // Background Non-blocking Processing State (백그라운드 분석 및 저장 대기)
   const [isSourceProcessing, setIsSourceProcessing] = useState(false);
@@ -571,24 +573,72 @@ export default function Home() {
     return taskPromise;
   }
 
-  // OCR 페이지 사진 촬영 / 업로드 핸들러 (백그라운드 비동기 처리 - 블로킹 없음)
+  // 잘린 문장 AI 자동 완성 핸들러
+  async function handleCompleteSentence(entryId: string, sentence: string, word: string) {
+    if (!sentence || !sentence.trim()) return;
+    setCompletingSentenceId(entryId);
+    try {
+      const res = await fetch('/api/ai/complete-sentence', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(geminiApiKey ? { 'x-gemini-key': geminiApiKey } : {}),
+        },
+        body: JSON.stringify({ sentence, word }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.completedSentence) {
+          updateWordEntry(entryId, {
+            context: data.completedSentence,
+            ocrDetectedNotice: '✨ AI가 잘린 문장을 자연스럽게 완성/보정했습니다.',
+          });
+          triggerToast('문장 완성 완료! ✨', '페이지 경계로 잘려 있던 문맥을 자연스럽게 보정했습니다.');
+        }
+      }
+    } catch (err) {
+      console.warn('Sentence completion error:', err);
+    } finally {
+      setCompletingSentenceId(null);
+    }
+  }
+
+  // OCR 페이지 사진 촬영 / 업로드 핸들러 (백그라운드 비동기 처리 - 블로킹 없음 & 이어붙이기 지원)
   async function handlePagePhotoUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
 
     if (fileInputRef.current) fileInputRef.current.value = '';
 
+    const isAppend = isAppendModeRef.current;
+    isAppendModeRef.current = false; // Reset
+
     setIsOcrProcessing(true);
     setOcrProgress(30);
 
-    triggerToast('사진 분석 시작! 📸', '표/그래프를 제외한 본문 글자와 밑줄/동그라미 친 단어를 감지합니다.');
+    triggerToast(
+      isAppend ? '다음 페이지 분석 시작! 📄' : '사진 분석 시작! 📸',
+      isAppend
+        ? '이전 페이지 문장 끝에 이어붙여 잘린 문맥을 하나로 연결합니다.'
+        : '표/그래프를 제외한 본문 글자와 밑줄/동그라미 친 단어를 감지합니다.'
+    );
 
-    startBackgroundSourceAnalysis('책 사진 분석', 'camera', async () => {
-      setOcrProgress(60);
-      const { text: extractedText, markedWords } = await extractTextWithAI(file, geminiApiKey);
-      setOcrProgress(100);
-      return { text: extractedText, markedWords };
-    });
+    startBackgroundSourceAnalysis(
+      isAppend ? '다음 페이지 이어붙이기' : '책 사진 분석',
+      'camera',
+      async () => {
+        setOcrProgress(60);
+        const { text: extractedText, markedWords } = await extractTextWithAI(file, geminiApiKey);
+        setOcrProgress(100);
+
+        // 이어붙이기 모드인 경우 기존 텍스트와 자연스럽게 연결
+        const combinedText = isAppend && pageOcrText
+          ? `${pageOcrText.trim()}\n\n${extractedText.trim()}`
+          : extractedText;
+
+        return { text: combinedText, markedWords };
+      }
+    );
   }
 
   // Handle Web Page URL Scraping (백그라운드 비동기 처리 - 블로킹 없음)
@@ -1681,10 +1731,27 @@ export default function Home() {
                         &quot;{pageOcrText.slice(0, 140)}...&quot;
                       </p>
                       <div className="flex items-center justify-end gap-1.5 pt-0.5">
+                        {loadedSourceType === 'camera' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              isAppendModeRef.current = true;
+                              fileInputRef.current?.click();
+                            }}
+                            className="text-[11px] font-bold bg-[#5090B3] text-white hover:bg-[#3d7a9c] px-2.5 py-1 rounded-md shadow-xs flex items-center gap-1 transition cursor-pointer"
+                            title="문장이 다음 페이지로 이어질 때 다음 장을 찍어 문맥을 하나로 연결합니다"
+                          >
+                            <Plus className="w-3 h-3" />
+                            <span>+ 다음 장 이어찍기</span>
+                          </button>
+                        )}
                         <button
                           type="button"
-                          onClick={() => fileInputRef.current?.click()}
-                          className="text-[11px] font-bold bg-white border border-slate-200 hover:border-indigo-400 text-indigo-600 px-2 py-1 rounded-md shadow-xs flex items-center gap-1"
+                          onClick={() => {
+                            isAppendModeRef.current = false;
+                            fileInputRef.current?.click();
+                          }}
+                          className="text-[11px] font-bold bg-white border border-slate-200 hover:border-[#5090B3] text-[#5090B3] px-2 py-1 rounded-md shadow-xs flex items-center gap-1 cursor-pointer"
                         >
                           <Camera className="w-3 h-3" />
                           <span>새 사진</span>
@@ -2189,6 +2256,44 @@ export default function Home() {
                                     );
                                   })}
                                 </div>
+                              </div>
+                            )}
+
+                            {/* 잘린 문장 감지 및 AI 자연스러운 완성 버튼 */}
+                            {entry.context && (
+                              <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1">
+                                <span className="text-[10px] text-slate-400">
+                                  {(!/[.!?]["'”’]?$/.test(entry.context.trim()) || /^[a-z]/.test(entry.context.trim())) && (
+                                    <span className="text-amber-600 font-bold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                                      ⚠️ 페이지 경계로 문장이 잘린 것 같습니다
+                                    </span>
+                                  )}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() =>
+                                    handleCompleteSentence(
+                                      entry.id,
+                                      entry.context,
+                                      entry.word || entry.dictResult?.word || ''
+                                    )
+                                  }
+                                  disabled={completingSentenceId === entry.id}
+                                  className="text-[10px] bg-sky-50 border border-[#5090B3]/50 text-[#3d7a9c] hover:bg-[#5090B3] hover:text-white px-2 py-0.5 rounded-md font-bold flex items-center gap-1 transition cursor-pointer ml-auto shadow-2xs disabled:opacity-50"
+                                  title="페이지 경계나 여백으로 잘린 문장을 AI가 자연스러운 완전한 문장으로 복원합니다"
+                                >
+                                  {completingSentenceId === entry.id ? (
+                                    <>
+                                      <RotateCw className="w-2.5 h-2.5 animate-spin text-[#3d7a9c]" />
+                                      <span>문장 완성 중...</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Sparkles className="w-2.5 h-2.5 text-[#5090B3]" />
+                                      <span>잘린 문장 AI 완성 ✨</span>
+                                    </>
+                                  )}
+                                </button>
                               </div>
                             )}
 

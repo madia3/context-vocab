@@ -77,32 +77,48 @@ Return ONLY valid JSON:
   "aiExplanation": "이 문장에서는 ~라는 의미로 쓰였습니다."
 }`;
 
-    const geminiRes = await fetch(geminiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [{ text: prompt }],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.0,
-          responseMimeType: 'application/json',
-        },
-      }),
-    });
+    const candidateModels = ['gemini-3.5-flash-lite', 'gemini-3.8-flash'];
 
-    if (!geminiRes.ok) {
-      const errBody = await geminiRes.text();
-      console.error('Gemini Match Sentence Error:', geminiRes.status, errBody);
-      return NextResponse.json(
-        { error: 'Gemini API request failed', details: errBody },
-        { status: geminiRes.status }
-      );
+    let data: any = null;
+    let lastError: string = '';
+
+    for (const model of candidateModels) {
+      try {
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+        const geminiRes = await fetch(geminiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(8000),
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [{ text: prompt }],
+              },
+            ],
+            generationConfig: {
+              temperature: 0.0,
+              responseMimeType: 'application/json',
+            },
+          }),
+        });
+
+        if (geminiRes.ok) {
+          data = await geminiRes.json();
+          break;
+        } else {
+          lastError = await geminiRes.text();
+        }
+      } catch (err: any) {
+        lastError = err?.message || String(err);
+      }
     }
 
-    const data = await geminiRes.json();
+    if (!data) {
+      return NextResponse.json(
+        { error: 'Gemini API request failed', details: lastError },
+        { status: 502 }
+      );
+    }
     const rawJsonText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
 
     try {
