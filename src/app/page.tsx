@@ -1243,12 +1243,11 @@ export default function Home() {
             <div className="max-w-2xl mx-auto space-y-4">
                 {/* Book Title Selection / Input */}
                 <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
-                  <div className="flex items-center justify-between mb-1.5">
+                  <div className="mb-1.5">
                     <label className="block text-xs font-bold text-slate-700 flex items-center gap-1">
                       <BookMarked className="w-3.5 h-3.5 text-indigo-600" />
                       <span>저장할 단어장 선택 <span className="text-rose-500">*</span></span>
                     </label>
-                    <span className="text-[10px] text-indigo-600 font-semibold">최근 사용순 자동 정렬</span>
                   </div>
 
                   {/* 선택형 드롭다운 */}
@@ -1334,28 +1333,11 @@ export default function Home() {
                     </div>
                   ) : pageOcrText ? (
                     <div className="space-y-2 pt-0.5">
-                      <div className="flex items-center gap-1.5 text-[11px] font-bold text-indigo-950 truncate">
-                        {loadedSourceType === 'web' ? (
-                          <>
-                            <Globe className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                            <span className="truncate">출처: {loadedWebTitle || '웹 기사'}</span>
-                          </>
-                        ) : (
-                          <>
-                            <Camera className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                            <span>출처: 촬영한 책 페이지</span>
-                          </>
-                        )}
-                      </div>
                       <p className="text-[11px] text-slate-700 line-clamp-2 italic bg-white/90 p-2.5 rounded-lg border border-indigo-100 leading-relaxed font-serif">
                         &quot;{pageOcrText.slice(0, 140)}...&quot;
                       </p>
-                      <div className="flex flex-wrap items-center justify-between gap-2 pt-0.5">
-                        <span className="text-[10px] text-slate-400">
-                          💡 단어 입력 시 문맥 자동 완성
-                        </span>
-                        <div className="flex items-center gap-1.5 shrink-0">
-                          <button
+                      <div className="flex items-center justify-end gap-1.5 pt-0.5">
+                        <button
                             type="button"
                             onClick={() => fileInputRef.current?.click()}
                             className="text-[11px] font-bold bg-white border border-slate-200 hover:border-indigo-400 text-indigo-600 px-2 py-1 rounded-md shadow-xs flex items-center gap-1"
@@ -1385,8 +1367,7 @@ export default function Home() {
                           </button>
                         </div>
                       </div>
-                    </div>
-                  ) : (
+                    ) : (
                     <div className="pt-0.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                       <p className="text-[11px] text-slate-500">
                         사진이나 웹페이지 URL을 넣으면 문장들이 자동으로 채워집니다.
@@ -1450,13 +1431,10 @@ export default function Home() {
 
                       {/* 1. Word Input */}
                       <div>
-                        <div className="flex items-center justify-between mb-1.5">
+                        <div className="mb-1.5">
                           <label className="block text-xs font-bold text-slate-700">
                             영어 단어 <span className="text-rose-500">*</span>
                           </label>
-                          <span className="text-[10px] text-slate-400 font-medium">
-                            타이핑 시 실시간 뜻 리스트 표시
-                          </span>
                         </div>
 
                         <div className="flex gap-2">
