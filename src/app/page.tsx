@@ -196,7 +196,8 @@ export default function Home() {
   const sourceTaskPromiseRef = useRef<Promise<string | null> | null>(null);
   const wordDebounceTimersRef = useRef<{ [entryId: string]: any }>({});
 
-  // Web URL Scraper & Article Paste State (웹페이지 URL 또는 로그인/유료 기사 본문 붙여넣기)
+  // Web URL Scraper & Article Paste State (웹페이지 URL 또는 로그인/유료 기사 본문 붙여넣기 통합)
+  const [inputSourceText, setInputSourceText] = useState<string>('');
   const [inputWebUrl, setInputWebUrl] = useState<string>('');
   const [isUrlModalOpen, setIsUrlModalOpen] = useState(false);
   const [urlModalTab, setUrlModalTab] = useState<'url' | 'paste'>('url');
@@ -906,10 +907,31 @@ export default function Home() {
         triggerToast('📄 기사 본문 감지됨!', '복사한 글을 본문 문맥으로 자동 등록합니다.');
         await handleApplyPastedText(trimmed);
       }
+      setInputSourceText('');
     } catch (err: any) {
       console.warn('Clipboard read error:', err);
       triggerToast('클립보드 권한 필요', '붙여넣기 허용을 누르시거나 아래 입력창에 직접 붙여넣어 주세요.');
     }
+  }
+
+  // URL 및 기사 본문 통합 제출 처리
+  async function handleUnifiedSubmit() {
+    const raw = (inputSourceText || inputWebUrl || inputPastedText).trim();
+    if (!raw) {
+      setUrlScrapeError('웹 주소(URL) 또는 기사 본문 텍스트를 입력해 주세요.');
+      return;
+    }
+
+    setUrlScrapeError(null);
+    const detected = detectContentType(raw);
+    if (detected.type === 'url' && detected.cleanUrl) {
+      await handleScrapeUrl(detected.cleanUrl);
+    } else {
+      await handleApplyPastedText(raw);
+    }
+    setInputSourceText('');
+    setInputWebUrl('');
+    setInputPastedText('');
   }
 
   // Multi-Word Form Helpers
@@ -3674,7 +3696,7 @@ export default function Home() {
         )}
       </main>
 
-      {/* Web Page URL & Article Paste Modal */}
+      {/* Web Page URL & Article Paste Unified Modal */}
       {isUrlModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-fade-in">
           <div className="bg-white rounded-3xl max-w-lg w-full p-5 sm:p-6 shadow-2xl border border-indigo-100 flex flex-col max-h-[90vh]">
@@ -3682,16 +3704,14 @@ export default function Home() {
             <div className="flex items-center justify-between border-b border-slate-100 pb-3 shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 to-blue-600 text-white flex items-center justify-center shadow-md">
-                  {urlModalTab === 'url' ? <Globe className="w-5 h-5" /> : <Copy className="w-5 h-5" />}
+                  <Globe className="w-5 h-5" />
                 </div>
                 <div>
                   <h3 className="font-black text-sm sm:text-base text-slate-900 leading-tight">
-                    {urlModalTab === 'url' ? '웹페이지 URL로 원문 가져오기' : '기사 본문 직접 붙여넣기'}
+                    원문 가져오기 (URL / 본문 글 통합)
                   </h3>
                   <p className="text-[11px] text-indigo-600 font-semibold">
-                    {urlModalTab === 'url'
-                      ? '기사 주소만 넣으면 본문 문맥을 자동 연결합니다'
-                      : '유료/로그인 기사도 복사해 넣으면 AI가 광고를 자동 삭제합니다'}
+                    웹 주소(URL)나 복사한 기사 본문을 넣으면 자동 감지해 불러옵니다
                   </p>
                 </div>
               </div>
@@ -3713,191 +3733,95 @@ export default function Home() {
                 title="복사한 내용이 URL이면 기사를 불러오고, 글이면 본문으로 자동 등록합니다"
               >
                 <ClipboardPaste className="w-4 h-4 text-amber-300 shrink-0" />
-                <span>📋 클립보드 붙여넣기 (URL · 본문 자동 감지)</span>
+                <span>📋 클립보드에서 바로 붙여넣기 (원터치 자동 판별)</span>
               </button>
             </div>
 
-            {/* Tab Switcher */}
-            <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl mt-3 shrink-0">
-              <button
-                type="button"
-                onClick={() => setUrlModalTab('url')}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                  urlModalTab === 'url'
-                    ? 'bg-white text-indigo-700 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <Globe className="w-3.5 h-3.5" />
-                <span>웹 URL 입력</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setUrlModalTab('paste')}
-                className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1.5 cursor-pointer ${
-                  urlModalTab === 'paste'
-                    ? 'bg-white text-indigo-700 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <Copy className="w-3.5 h-3.5" />
-                <span>본문 직접 붙여넣기</span>
-                <span className="text-[9px] bg-indigo-100 text-indigo-700 px-1 py-0.2 rounded font-black">로그인/유료용</span>
-              </button>
-            </div>
-
-            {/* Modal Body */}
+            {/* Modal Body: Unified Input */}
             <div className="flex-1 overflow-y-auto py-3 space-y-3.5">
-              {urlModalTab === 'url' ? (
-                <>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                      웹페이지 주소 (URL)
-                    </label>
-                    <div className="relative flex items-center">
-                      <input
-                        type="url"
-                        value={inputWebUrl}
-                        onChange={(e) => {
-                          setInputWebUrl(e.target.value);
-                          setUrlScrapeError(null);
-                        }}
-                        onKeyDown={(e) => {
-                          if (e.key === 'Enter') handleScrapeUrl();
-                        }}
-                        placeholder="예: https://www.bbc.com/news/... 또는 영문 기사 URL"
-                        className="w-full px-4 py-3 bg-white text-slate-900 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none pr-24"
-                      />
-                      <div className="absolute right-2 flex items-center gap-1">
-                        {inputWebUrl ? (
-                          <button
-                            type="button"
-                            onClick={() => setInputWebUrl('')}
-                            className="text-slate-400 hover:text-slate-600 text-xs p-1.5 cursor-pointer"
-                          >
-                            ✕
-                          </button>
-                        ) : (
-                          <button
-                            type="button"
-                            onClick={handleClipboardPasteSmart}
-                            className="px-2.5 py-1 text-[11px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-lg border border-indigo-200 transition flex items-center gap-1 cursor-pointer active:scale-95"
-                            title="클립보드에서 바로 붙여넣기"
-                          >
-                            <ClipboardPaste className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                            <span>붙여넣기</span>
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Sample Quick Chips */}
-                  <div>
-                    <span className="text-[11px] font-bold text-slate-500 mb-1.5 block">빠른 테스트 추천 URL:</span>
-                    <div className="flex flex-wrap gap-1.5">
-                      {[
-                        { label: 'BBC World News', url: 'https://www.bbc.com/news' },
-                        { label: 'Wikipedia (AI)', url: 'https://en.wikipedia.org/wiki/Artificial_intelligence' },
-                        { label: 'TechCrunch', url: 'https://techcrunch.com' },
-                      ].map((sample) => (
-                        <button
-                          key={sample.label}
-                          type="button"
-                          onClick={() => {
-                            setInputWebUrl(sample.url);
-                            setUrlScrapeError(null);
-                          }}
-                          className="text-[10px] font-semibold bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200 border border-slate-200 text-slate-700 px-2.5 py-1 rounded-lg transition cursor-pointer"
-                        >
-                          {sample.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {urlScrapeError && (
-                    <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start gap-2">
-                      <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
-                      <span>{urlScrapeError}</span>
-                    </div>
-                  )}
-
-                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-[11px] text-slate-600 space-y-1">
-                    <p className="font-bold text-slate-800">💡 웹 URL 안내:</p>
-                    <p>• 공개 기사는 URL만 넣으면 AI가 본문 문장들을 자동으로 긁어옵니다.</p>
-                    <p>• 로그인이 필요한 유료 사이트(WSJ, NYT 등)는 상단의 <b>[본문 직접 붙여넣기]</b>를 이용하세요!</p>
-                  </div>
-                </>
-              ) : (
-                <>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1">
-                      기사/출처 제목 <span className="font-normal text-slate-400 text-[10px]">(선택 사항)</span>
-                    </label>
-                    <input
-                      type="text"
-                      value={inputPastedTitle}
-                      onChange={(e) => setInputPastedTitle(e.target.value)}
-                      placeholder="예: WSJ 기사 제목, NYT 칼럼 등"
-                      className="w-full px-3 py-2 bg-white text-slate-900 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
-                    />
-                  </div>
-
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="block text-xs font-bold text-slate-700">
-                          기사 본문 내용 <span className="text-rose-500">*</span>
-                        </label>
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={handleClipboardPasteSmart}
-                            className="px-2 py-0.5 text-[10px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-lg border border-indigo-200 transition flex items-center gap-1 cursor-pointer active:scale-95"
-                            title="클립보드에서 바로 붙여넣기"
-                          >
-                            <ClipboardPaste className="w-3 h-3 text-indigo-600" />
-                            <span>클립보드 붙여넣기</span>
-                          </button>
-                          {inputPastedText && (
-                            <button
-                              type="button"
-                              onClick={() => setInputPastedText('')}
-                              className="text-[10px] text-slate-400 hover:text-rose-500 cursor-pointer ml-1"
-                            >
-                              지우기
-                            </button>
-                          )}
-                        </div>
-                      </div>
-                    <textarea
-                      rows={7}
-                      value={inputPastedText}
-                      onChange={(e) => setInputPastedText(e.target.value)}
-                      placeholder="신문 사이트에서 복사한 본문 전체를 여기에 편하게 붙여넣으세요. 중간에 낀 광고, 배너 문구, 구독 권유 글은 AI가 자동으로 깔끔하게 삭제해 드립니다!"
-                      className="w-full px-3.5 py-2.5 bg-white text-slate-900 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none font-serif leading-relaxed"
-                    />
-                  </div>
-
-                  {/* Auto Remove Ads Option */}
-                  <label className="flex items-center gap-2 p-2.5 bg-indigo-50/70 border border-indigo-200 rounded-xl cursor-pointer">
-                    <input
-                      type="checkbox"
-                      checked={autoRemoveAds}
-                      onChange={(e) => setAutoRemoveAds(e.target.checked)}
-                      className="w-4 h-4 accent-indigo-600 rounded"
-                    />
-                    <div className="flex-1 text-xs">
-                      <span className="font-bold text-indigo-950 flex items-center gap-1">
-                        <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-                        <span>중간 광고 및 구독 안내 문구 자동 삭제 & 정제</span>
-                      </span>
-                      <p className="text-[10px] text-slate-500">
-                        기사 복사 시 딸려온 &quot;Advertisement&quot;, &quot;Subscribe&quot;, 소셜 링크를 깨끗하게 지웁니다.
-                      </p>
-                    </div>
+              <div>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700">
+                    웹 주소(URL) 또는 기사 본문 텍스트
                   </label>
-                </>
+                  <div className="flex items-center gap-2">
+                    {inputSourceText && (
+                      <button
+                        type="button"
+                        onClick={() => setInputSourceText('')}
+                        className="text-[10px] text-slate-400 hover:text-rose-500 font-semibold cursor-pointer"
+                      >
+                        지우기
+                      </button>
+                    )}
+                  </div>
+                </div>
+
+                <textarea
+                  rows={6}
+                  value={inputSourceText}
+                  onChange={(e) => {
+                    setInputSourceText(e.target.value);
+                    setUrlScrapeError(null);
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
+                      handleUnifiedSubmit();
+                    }
+                  }}
+                  placeholder="웹페이지 주소(URL) 또는 복사한 기사 본문을 여기에 편하게 넣으세요.&#10;&#10;• 웹 URL 입력: 예) https://www.bbc.com/news/... -> 기사 본문 자동 수집&#10;• 기사 글 붙여넣기: 복사한 뉴스/책 내용 -> 광고 자동 삭제 후 본문 등록"
+                  className="w-full px-3.5 py-3 bg-white text-slate-900 border border-slate-300 rounded-2xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none font-serif leading-relaxed"
+                />
+              </div>
+
+              {/* Sample Quick Chips */}
+              <div>
+                <span className="text-[11px] font-bold text-slate-500 mb-1.5 block">빠른 테스트 추천 URL:</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {[
+                    { label: 'BBC World News', url: 'https://www.bbc.com/news' },
+                    { label: 'Wikipedia (AI)', url: 'https://en.wikipedia.org/wiki/Artificial_intelligence' },
+                    { label: 'TechCrunch', url: 'https://techcrunch.com' },
+                  ].map((sample) => (
+                    <button
+                      key={sample.label}
+                      type="button"
+                      onClick={() => {
+                        setInputSourceText(sample.url);
+                        setUrlScrapeError(null);
+                      }}
+                      className="text-[10px] font-semibold bg-slate-100 hover:bg-indigo-50 hover:text-indigo-700 hover:border-indigo-200 border border-slate-200 text-slate-700 px-2.5 py-1 rounded-lg transition cursor-pointer"
+                    >
+                      {sample.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Auto Remove Ads Option */}
+              <label className="flex items-center gap-2 p-2.5 bg-indigo-50/70 border border-indigo-200 rounded-xl cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={autoRemoveAds}
+                  onChange={(e) => setAutoRemoveAds(e.target.checked)}
+                  className="w-4 h-4 accent-indigo-600 rounded"
+                />
+                <div className="flex-1 text-xs">
+                  <span className="font-bold text-indigo-950 flex items-center gap-1">
+                    <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>중간 광고 및 배너 안내 문구 자동 삭제 & 정제</span>
+                  </span>
+                  <p className="text-[10px] text-slate-500">
+                    기사 복사 시 포함된 광고, 소셜 링크, 구독 권유 문구를 깨끗하게 정제합니다.
+                  </p>
+                </div>
+              </label>
+
+              {urlScrapeError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-xs text-rose-700 flex items-start gap-2">
+                  <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
+                  <span>{urlScrapeError}</span>
+                </div>
               )}
             </div>
 
@@ -3911,45 +3835,24 @@ export default function Home() {
                 취소
               </button>
 
-              {urlModalTab === 'url' ? (
-                <button
-                  type="button"
-                  onClick={() => handleScrapeUrl()}
-                  disabled={isUrlScraping || !inputWebUrl.trim()}
-                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white text-xs font-bold rounded-xl shadow-md transition flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
-                >
-                  {isUrlScraping ? (
-                    <>
-                      <RotateCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>본문 문장 분석 중...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Globe className="w-3.5 h-3.5" />
-                      <span>문장 불러오기</span>
-                    </>
-                  )}
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => handleApplyPastedText()}
-                  disabled={isCleaningPastedText || !inputPastedText.trim()}
-                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white text-xs font-bold rounded-xl shadow-md transition flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
-                >
-                  {isCleaningPastedText ? (
-                    <>
-                      <RotateCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>광고 삭제 및 본문 정제 중...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="w-3.5 h-3.5" />
-                      <span>{autoRemoveAds ? '광고 자동삭제 후 본문 등록' : '본문 등록하기'}</span>
-                    </>
-                  )}
-                </button>
-              )}
+              <button
+                type="button"
+                onClick={handleUnifiedSubmit}
+                disabled={isUrlScraping || isCleaningPastedText || !inputSourceText.trim()}
+                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white text-xs font-bold rounded-xl shadow-md transition flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
+              >
+                {isUrlScraping || isCleaningPastedText ? (
+                  <>
+                    <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>원문 분석 및 정제 중...</span>
+                  </>
+                ) : (
+                  <>
+                    <Globe className="w-3.5 h-3.5" />
+                    <span>원문 불러오기</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>
