@@ -506,7 +506,40 @@ export default function Home() {
           localStorage.setItem('context_vocab_cached_page_ocr', result.text);
         }
 
-        // 🎯 사진에서 사용자가 밑줄이나 동그라미 친 단어가 감지되면 단어 등록칸에 자동 등록!
+        // 1. 기존에 작성 중이던 단어칸들이 있다면 방금 분석 완료된 본문 속 실제 문장으로 자동 연결!
+        wordEntries.forEach((entry) => {
+          const w = (entry.word || entry.dictResult?.word || '').trim();
+          const needsRealSentence = !entry.context || (entry.candidateSentences && entry.candidateSentences.length === 0);
+          if (w && needsRealSentence) {
+            findSentenceWithAI(result.text, w, geminiApiKey, entry.dictResult?.meanings).then((matchRes) => {
+              if (matchRes.found && matchRes.sentence) {
+                const sentences = matchRes.allMatches.map((m) => m.sentence);
+                let bestDef = entry.selectedMeaning;
+                let bestPos = entry.selectedPos;
+                if (
+                  typeof matchRes.bestMeaningIndex === 'number' &&
+                  entry.dictResult?.meanings &&
+                  matchRes.bestMeaningIndex < entry.dictResult.meanings.length
+                ) {
+                  bestDef = entry.dictResult.meanings[matchRes.bestMeaningIndex].def;
+                  bestPos = entry.dictResult.meanings[matchRes.bestMeaningIndex].pos;
+                }
+                updateWordEntry(entry.id, {
+                  context: matchRes.sentence,
+                  candidateSentences: sentences,
+                  selectedMeaning: bestDef || entry.selectedMeaning,
+                  selectedPos: bestPos || entry.selectedPos,
+                  ocrDetectedNotice:
+                    sentences.length > 1
+                      ? `✨ 본문 분석 완료! '${w}'가 쓰인 문장(${sentences.length}개)과 최적 뜻이 자동 연결되었습니다.`
+                      : `✨ 본문 분석 완료! 원문 속 실제 문장이 자동으로 연결되었습니다.`,
+                });
+              }
+            });
+          }
+        });
+
+        // 2. 사진에서 사용자가 밑줄이나 동그라미 친 단어가 감지되면 단어 등록칸에 자동 등록!
         if (result.markedWords && result.markedWords.length > 0) {
           enrollWordsToForm(result.markedWords);
           triggerToast(
@@ -514,30 +547,10 @@ export default function Home() {
             `사진 속 '${result.markedWords.join(', ')}' 단어를 감지하여 사전 조회 및 최적 뜻을 자동 선택했습니다!`
           );
         } else {
-          // 백그라운드 분석이 끝났을 때 작성 중인 단어칸들이 있다면 문맥 자동 매칭!
-          wordEntries.forEach((entry) => {
-            const w = (entry.word || entry.dictResult?.word || '').trim();
-            if (w && !entry.context) {
-              findSentenceWithAI(result.text, w, geminiApiKey).then((matchRes) => {
-                if (matchRes.found && matchRes.sentence) {
-                  const sentences = matchRes.allMatches.map((m) => m.sentence);
-                  updateWordEntry(entry.id, {
-                    context: matchRes.sentence,
-                    candidateSentences: sentences,
-                    ocrDetectedNotice:
-                      sentences.length > 1
-                        ? `✨ 본문 내에서 '${w}'가 ${sentences.length}번 쓰였습니다!`
-                        : `✨ 백그라운드 분석 완료! 원문 속 문장을 자동으로 연결했습니다.`,
-                  });
-                }
-              });
-            }
-          });
-
           triggerToast(
             `${taskName} 완료! ✅`,
             sourceType === 'web'
-              ? `"${result.title || '웹 기사'}" 본문 문장들이 준비되었습니다. 이제 단어를 등록해 보세요!`
+              ? `"${result.title || '웹 기사'}" 본문 문장들이 준비되었습니다.`
               : `책 페이지 글자 인식이 완료되어 원문 문장이 준비되었습니다.`
           );
         }
@@ -750,7 +763,11 @@ export default function Home() {
         isSearchingDict: false, // 💡 사전 로딩 완료! 즉시 뜻 목록 선택 가능
         context: entry?.context || defaultExample,
         candidateSentences: [],
-        ocrDetectedNotice: pageOcrText ? '🤖 문맥 속 문장 및 최적 뜻 분석 중...' : null,
+        ocrDetectedNotice: isSourceProcessing
+          ? '⏳ 원문 사진 분석 진행 중입니다... 완료되면 사진 속 실제 문장으로 자동 연결됩니다.'
+          : pageOcrText
+          ? '🤖 문맥 속 문장 및 최적 뜻 분석 중...'
+          : null,
       });
 
       // 3. 만약 현재 촬영/불러온 본문 텍스트가 있다면 비동기(백그라운드)로 문맥 탐색 & AI 최적 뜻 매칭

@@ -10,9 +10,160 @@ const POS_MAP: Record<string, string> = {
   preposition: '전치사',
   conjunction: '접속사',
   pronoun: '대명사',
+  determiner: '한정사',
   interjection: '감탄사',
   exclamation: '감탄사',
 };
+
+// 필수 기초 핵심 어휘 내장 사전 (0ms 초고속 & 정확한 한국어 뜻 + 자연스러운 예문 보장)
+const BUILTIN_CORE_DICT: Record<
+  string,
+  {
+    phonetic: string;
+    meanings: { pos: string; def: string }[];
+    exampleSentence: string;
+  }
+> = {
+  this: {
+    phonetic: '/ðɪs/',
+    meanings: [
+      { pos: '대명사', def: '이것, 이 사람' },
+      { pos: '형용사', def: '이, 이번의' },
+      { pos: '부사', def: '이렇게, 이만큼' },
+    ],
+    exampleSentence: 'This is what I have been looking for.',
+  },
+  that: {
+    phonetic: '/ðæt/',
+    meanings: [
+      { pos: '대명사', def: '그것, 저것' },
+      { pos: '형용사', def: '그, 저' },
+      { pos: '접속사', def: '~라는 점, ~하도록' },
+    ],
+    exampleSentence: 'That is completely true.',
+  },
+  these: {
+    phonetic: '/ðiːz/',
+    meanings: [
+      { pos: '대명사', def: '이것들, 이 사람들' },
+      { pos: '형용사', def: '이, 이들의' },
+    ],
+    exampleSentence: 'These are the main factors to consider.',
+  },
+  those: {
+    phonetic: '/ðoʊz/',
+    meanings: [
+      { pos: '대명사', def: '저것들, 그것들' },
+      { pos: '형용사', def: '저, 그' },
+    ],
+    exampleSentence: 'Those who work hard will succeed.',
+  },
+  it: {
+    phonetic: '/ɪt/',
+    meanings: [
+      { pos: '대명사', def: '그것, 그것은' },
+      { pos: '대명사', def: '날씨/시간/거리 등의 비인칭 주어' },
+    ],
+    exampleSentence: 'It is important to review the facts.',
+  },
+  what: {
+    phonetic: '/wɑːt/',
+    meanings: [
+      { pos: '대명사', def: '무엇, 무슨 일' },
+      { pos: '형용사', def: '어떤, 무슨' },
+      { pos: '관계대명사', def: '~하는 것' },
+    ],
+    exampleSentence: 'What do you think about this plan?',
+  },
+  which: {
+    phonetic: '/wɪtʃ/',
+    meanings: [
+      { pos: '대명사', def: '어느 것, 어떤 쪽' },
+      { pos: '형용사', def: '어느, 어떤' },
+      { pos: '관계대명사', def: '그리고 그것은' },
+    ],
+    exampleSentence: 'Which option do you prefer?',
+  },
+  who: {
+    phonetic: '/huː/',
+    meanings: [
+      { pos: '대명사', def: '누구, 어떤 사람' },
+      { pos: '관계대명사', def: '~하는 사람' },
+    ],
+    exampleSentence: 'Who is responsible for this project?',
+  },
+  where: {
+    phonetic: '/wer/',
+    meanings: [
+      { pos: '부사', def: '어디에, 어디서' },
+      { pos: '관계부사', def: '~하는 곳' },
+    ],
+    exampleSentence: 'Where can we find more information?',
+  },
+  when: {
+    phonetic: '/wen/',
+    meanings: [
+      { pos: '부사', def: '언제' },
+      { pos: '접속사', def: '~할 때' },
+    ],
+    exampleSentence: 'When the meeting ended, everyone agreed.',
+  },
+  why: {
+    phonetic: '/waɪ/',
+    meanings: [
+      { pos: '부사', def: '왜, 어째서' },
+      { pos: '명사', def: '이유, 까닭' },
+    ],
+    exampleSentence: 'Why did the results change so quickly?',
+  },
+  how: {
+    phonetic: '/haʊ/',
+    meanings: [
+      { pos: '부사', def: '어떻게, 어떠한 방식으로' },
+      { pos: '부사', def: '얼마나, 어느 정도로' },
+    ],
+    exampleSentence: 'How can we improve this process?',
+  },
+  there: {
+    phonetic: '/ðer/',
+    meanings: [
+      { pos: '부사', def: '그곳에, 저기에' },
+      { pos: '대명사', def: '~이 있다 (there is/are)' },
+    ],
+    exampleSentence: 'There are several ways to solve this.',
+  },
+  here: {
+    phonetic: '/hɪr/',
+    meanings: [
+      { pos: '부사', def: '여기에, 이곳으로' },
+      { pos: '감탄사', def: '자, 여기' },
+    ],
+    exampleSentence: 'Here is the summary of the report.',
+  },
+};
+
+// 한국어 번역 뜻 정제 및 노이즈 필터링 함수
+function isValidKoreanDefinition(def: string): boolean {
+  if (!def || typeof def !== 'string') return false;
+  const trimmed = def.trim();
+
+  // 비어있거나 너무 길면 배제 (뜻은 간결해야 함)
+  if (trimmed.length === 0 || trimmed.length > 25) return false;
+
+  // 시스템 메타데이터 및 HTML/툴팁 태그 배제
+  if (/@|tooltip|info:|http|www\.|\.com|\[|\]|<|>|\{|\}/i.test(trimmed)) return false;
+
+  // 영문자가 절반 이상 포함된 경우 배제 (번역 미완성 또는 노이즈)
+  const englishCount = (trimmed.match(/[a-zA-Z]/g) || []).length;
+  if (englishCount > trimmed.length * 0.4) return false;
+
+  // 번역 메모리의 문장형 번역(예: '연필입니다', '그것은 사과이다') 배제
+  if (/(입니다|합니다|습니다|한다|했다|이다|된다)$/.test(trimmed) && trimmed.length > 3) {
+    return false;
+  }
+
+  return true;
+}
 
 // In-memory cache for ultra-fast (0ms) repeat queries
 const dictCache = new Map<string, { data: any; timestamp: number }>();
@@ -27,7 +178,19 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'Word parameter is required' }, { status: 400 });
   }
 
-  // Check in-memory cache first
+  // 1. 필수 기초 어휘 내장 사전 우선 확인 (0ms 즉시 반환)
+  if (BUILTIN_CORE_DICT[word]) {
+    const builtin = BUILTIN_CORE_DICT[word];
+    return NextResponse.json({
+      word,
+      phonetic: builtin.phonetic,
+      meanings: builtin.meanings,
+      exampleSentence: builtin.exampleSentence,
+      sourceName: '표준 영한 사전 (기본 어휘)',
+    });
+  }
+
+  // 2. Check in-memory cache
   const cached = dictCache.get(word);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
     return NextResponse.json(cached.data, {
@@ -43,7 +206,7 @@ export async function GET(request: NextRequest) {
   let fallbackPos = '명사';
   let exampleSentence = '';
 
-  // Concurrent Execution: Fetch Google Translate (meanings & POS) AND Free Dictionary API (phonetics & examples) in PARALLEL!
+  // Concurrent Execution: Fetch Google Translate AND Free Dictionary API in PARALLEL
   const googleTranslatePromise = (async () => {
     try {
       const gRes = await fetch(
@@ -52,7 +215,7 @@ export async function GET(request: NextRequest) {
           headers: {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
           },
-          signal: AbortSignal.timeout(2500),
+          signal: AbortSignal.timeout(3000),
           next: { revalidate: 86400 },
         }
       );
@@ -68,24 +231,22 @@ export async function GET(request: NextRequest) {
 
   const phoneticsPromise = (async () => {
     try {
-      // Set short 1.2s timeout so slow/unresponsive foreign dictionary API never blocks response!
       const pRes = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`, {
-        signal: AbortSignal.timeout(1200),
+        signal: AbortSignal.timeout(1500),
         next: { revalidate: 86400 },
       });
       if (pRes.ok) {
         return await pRes.json();
       }
     } catch (err) {
-      // Gracefully ignore timeout or network issue
+      // Gracefully ignore timeout
     }
     return null;
   })();
 
-  // Run both requests concurrently
   const [gData, pData] = await Promise.all([googleTranslatePromise, phoneticsPromise]);
 
-  // 1. Process Phonetics & Example Sentence (if available)
+  // 1. Process Phonetics & Natural Example Sentence from English Dictionary API
   if (pData && Array.isArray(pData) && pData.length > 0) {
     if (pData[0]?.phonetic) {
       phonetic = pData[0].phonetic;
@@ -120,9 +281,8 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // 2. Process Google Translate Results
+  // 2. Process Google Translate Results with strict sanitization
   if (gData) {
-    // gData[1] contains part of speech and detailed definitions
     if (gData[1] && Array.isArray(gData[1])) {
       gData[1].forEach((entry: any) => {
         const posEn = String(entry[0] || '').toLowerCase();
@@ -132,7 +292,7 @@ export async function GET(request: NextRequest) {
         const seen = new Set<string>();
         defs.forEach((d: string) => {
           const trimmed = String(d || '').trim();
-          if (trimmed && !seen.has(trimmed) && seen.size < 4) {
+          if (isValidKoreanDefinition(trimmed) && !seen.has(trimmed) && seen.size < 4) {
             seen.add(trimmed);
             meanings.push({
               pos: posKo,
@@ -145,14 +305,17 @@ export async function GET(request: NextRequest) {
 
     // Fallback: If gData[1] is empty, use main translation from gData[0]
     if (meanings.length === 0 && gData[0]?.[0]?.[0]) {
-      meanings.push({
-        pos: fallbackPos,
-        def: String(gData[0][0][0]).trim(),
-      });
+      const mainDef = String(gData[0][0][0]).trim();
+      if (isValidKoreanDefinition(mainDef)) {
+        meanings.push({
+          pos: fallbackPos,
+          def: mainDef,
+        });
+      }
     }
   }
 
-  // 3. Fallback: If still empty, fast attempt with MyMemory API
+  // 3. Fallback with MyMemory API (엄격 필터링 적용 - 툴팁/문장 노이즈 차단)
   if (meanings.length === 0) {
     try {
       const mRes = await fetch(
@@ -161,13 +324,23 @@ export async function GET(request: NextRequest) {
       );
       if (mRes.ok) {
         const mData = await mRes.json();
+        const seenDefs = new Set<string>();
+
         if (mData.responseData?.translatedText) {
-          meanings.push({ pos: fallbackPos, def: mData.responseData.translatedText });
+          const t = String(mData.responseData.translatedText).trim();
+          if (isValidKoreanDefinition(t)) {
+            seenDefs.add(t);
+            meanings.push({ pos: fallbackPos, def: t });
+          }
         }
-        if (mData.matches) {
-          mData.matches.slice(0, 3).forEach((m: any) => {
-            if (m.translation && !meanings.some((x) => x.def === m.translation)) {
-              meanings.push({ pos: fallbackPos, def: m.translation });
+        if (mData.matches && Array.isArray(mData.matches)) {
+          mData.matches.forEach((m: any) => {
+            const quality = Number(m.quality || 0);
+            const translation = String(m.translation || '').trim();
+            // 품질 점수 60 이상 & 노이즈 필터 통과한 항목만 수용
+            if (quality >= 60 && isValidKoreanDefinition(translation) && !seenDefs.has(translation) && meanings.length < 4) {
+              seenDefs.add(translation);
+              meanings.push({ pos: fallbackPos, def: translation });
             }
           });
         }
@@ -177,32 +350,37 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // Fallback sentence template if no example found
+  // 자연스러운 실생활 예문 템플릿 (어색한 더미 문장 완전 배제)
   if (!exampleSentence) {
     if (fallbackPos === '동사') {
-      exampleSentence = `She ${word} to the station early this morning.`;
+      exampleSentence = `They decided to ${word} the project together.`;
     } else if (fallbackPos === '형용사') {
-      exampleSentence = `This is a very ${word} approach to the problem.`;
+      exampleSentence = `It was a very ${word} experience for all of us.`;
+    } else if (fallbackPos === '부사') {
+      exampleSentence = `She spoke ${word} during the presentation.`;
+    } else if (fallbackPos === '대명사') {
+      exampleSentence = `${word.charAt(0).toUpperCase() + word.slice(1)} is the most important part of the story.`;
     } else {
-      exampleSentence = `Here is a sample sentence illustrating the word "${word}".`;
+      exampleSentence = `She learned how to use the word "${word}" in context.`;
     }
   }
 
-  const result = meanings.length > 0
-    ? {
-        word,
-        phonetic,
-        meanings,
-        exampleSentence,
-        sourceName: '표준 영한 사전',
-      }
-    : {
-        word,
-        phonetic,
-        meanings: [{ pos: '직접입력', def: '한국어 뜻을 직접 입력해 주세요.' }],
-        exampleSentence,
-        sourceName: '수동 입력 모드',
-      };
+  const result =
+    meanings.length > 0
+      ? {
+          word,
+          phonetic,
+          meanings,
+          exampleSentence,
+          sourceName: '표준 영한 사전',
+        }
+      : {
+          word,
+          phonetic,
+          meanings: [{ pos: '직접입력', def: '한국어 뜻을 직접 입력해 주세요.' }],
+          exampleSentence,
+          sourceName: '수동 입력 모드',
+        };
 
   // Cache in server memory
   dictCache.set(word, { data: result, timestamp: Date.now() });

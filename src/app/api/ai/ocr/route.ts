@@ -22,10 +22,10 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Google Gemini REST API 호출
+    // Google Gemini REST API 호출 (가장 빠른 gemini-3.5-flash-lite 우선 시도, 실패 시 gemini-3.8-flash 폴백)
     const cleanBase64 = base64.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, '');
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`;
+    const candidateModels = ['gemini-3.5-flash-lite', 'gemini-3.8-flash'];
 
     const prompt = `You are a high-precision OCR and document analysis AI specializing in English books, news articles, and research reports.
 Carefully inspect the provided image.
@@ -48,41 +48,57 @@ Output strictly valid JSON in this exact structure without markdown backticks:
   "markedWords": ["word1", "word2"]
 }`;
 
-    const geminiRes = await fetch(geminiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [
-              { text: prompt },
+    let data: any = null;
+    let lastError: string = '';
+
+    for (const model of candidateModels) {
+      try {
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+        const geminiRes = await fetch(geminiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(12000),
+          body: JSON.stringify({
+            contents: [
               {
-                inline_data: {
-                  mime_type: mimeType || 'image/jpeg',
-                  data: cleanBase64,
-                },
+                parts: [
+                  { text: prompt },
+                  {
+                    inline_data: {
+                      mime_type: mimeType || 'image/jpeg',
+                      data: cleanBase64,
+                    },
+                  },
+                ],
               },
             ],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.1,
-          maxOutputTokens: 2500,
-          responseMimeType: 'application/json',
-        },
-      }),
-    });
+            generationConfig: {
+              temperature: 0.1,
+              maxOutputTokens: 2500,
+              responseMimeType: 'application/json',
+            },
+          }),
+        });
 
-    if (!geminiRes.ok) {
-      const errBody = await geminiRes.text();
-      console.error('Gemini API Error:', geminiRes.status, errBody);
-      return NextResponse.json(
-        { error: 'Gemini Vision API request failed', details: errBody },
-        { status: geminiRes.status }
-      );
+        if (geminiRes.ok) {
+          data = await geminiRes.json();
+          break;
+        } else {
+          lastError = await geminiRes.text();
+          console.warn(`Model ${model} failed with status ${geminiRes.status}:`, lastError);
+        }
+      } catch (err: any) {
+        lastError = err?.message || String(err);
+        console.warn(`Model ${model} request error:`, err);
+      }
     }
 
-    const data = await geminiRes.json();
+    if (!data) {
+      return NextResponse.json(
+        { error: 'Gemini Vision API request failed', details: lastError },
+        { status: 502 }
+      );
+    }
     const rawOutput = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
     let text = rawOutput;
     let markedWords: string[] = [];
