@@ -89,6 +89,7 @@ export async function findSentenceWithAI(
   bestMeaningDef?: string;
   bestPos?: string;
   aiExplanation?: string;
+  lemma?: string;
 }> {
   const apiKey = customApiKey || getStoredGeminiKey();
 
@@ -123,6 +124,7 @@ export async function findSentenceWithAI(
           bestMeaningDef: data.bestMeaningDef,
           bestPos: data.bestPos,
           aiExplanation: data.aiExplanation,
+          lemma: data.lemma ? String(data.lemma).trim().toLowerCase() : undefined,
         };
       }
     }
@@ -131,7 +133,7 @@ export async function findSentenceWithAI(
   }
 
   // AI 키 미등록 또는 오류 시 규칙 기반 스마트 형태소 검색 fallback
-  const { findAllSentencesWithWordSmart } = await import('./ocr');
+  const { findAllSentencesWithWordSmart, extractLemmaCandidate } = await import('./ocr');
   const all = findAllSentencesWithWordSmart(pageText, word);
   return {
     found: all.length > 0,
@@ -139,5 +141,6 @@ export async function findSentenceWithAI(
     matchedWord: all.length > 0 ? all[0].matchedWord : undefined,
     allMatches: all,
     method: 'rule',
+    lemma: extractLemmaCandidate(word),
   };
 }

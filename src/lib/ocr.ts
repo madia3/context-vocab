@@ -203,3 +203,220 @@ export function findSentenceWithWord(fullText: string, word: string): string | n
   const res = findSentenceWithWordSmart(fullText, word);
   return res ? res.sentence : null;
 }
+
+// 불규칙 동사/명사/형용사 -> 원형(Lemma) 역방향 매핑 테이블
+export const IRREGULAR_TO_BASE: Record<string, string> = {
+  // 불규칙 동사 과거형 / 분사 / 3인칭
+  went: 'go', gone: 'go', goes: 'go', going: 'go',
+  did: 'do', done: 'do', does: 'do', doing: 'do',
+  saw: 'see', seen: 'see', sees: 'see', seeing: 'see',
+  ran: 'run', runs: 'run', running: 'run',
+  took: 'take', taken: 'take', takes: 'take', taking: 'take',
+  got: 'get', gotten: 'get', gets: 'get', getting: 'get',
+  made: 'make', makes: 'make', making: 'make',
+  knew: 'know', known: 'know', knows: 'know', knowing: 'know',
+  thought: 'think', thinks: 'think', thinking: 'think',
+  came: 'come', comes: 'come', coming: 'come',
+  gave: 'give', given: 'give', gives: 'give', giving: 'give',
+  found: 'find', finds: 'find', finding: 'find',
+  told: 'tell', tells: 'tell', telling: 'tell',
+  felt: 'feel', feels: 'feel', feeling: 'feel',
+  left: 'leave', leaves: 'leave', leaving: 'leave',
+  wrote: 'write', written: 'write', writes: 'write', writing: 'write',
+  read: 'read', reads: 'read', reading: 'read',
+  spoke: 'speak', spoken: 'speak', speaks: 'speak', speaking: 'speak',
+  brought: 'bring', brings: 'bring', bringing: 'bring',
+  began: 'begin', begun: 'begin', begins: 'begin', beginning: 'begin',
+  bought: 'buy', buys: 'buy', buying: 'buy',
+  caught: 'catch', catches: 'catch', catching: 'catch',
+  built: 'build', builds: 'build', building: 'build',
+  lost: 'lose', loses: 'lose', losing: 'lose',
+  sent: 'send', sends: 'send', sending: 'send',
+  kept: 'keep', keeps: 'keep', keeping: 'keep',
+  fell: 'fall', fallen: 'fall', falls: 'fall', falling: 'fall',
+  held: 'hold', holds: 'hold', holding: 'hold',
+  drew: 'draw', drawn: 'draw', draws: 'draw', drawing: 'draw',
+  flew: 'fly', flown: 'fly', flies: 'fly', flying: 'fly',
+  grew: 'grow', grown: 'grow', grows: 'grow', growing: 'grow',
+  chose: 'choose', chosen: 'choose', chooses: 'choose', choosing: 'choose',
+  drove: 'drive', driven: 'drive', drives: 'drive', driving: 'drive',
+  broke: 'break', broken: 'break', breaks: 'break', breaking: 'break',
+  wore: 'wear', worn: 'wear', wears: 'wear', wearing: 'wear',
+  swam: 'swim', swum: 'swim', swims: 'swim', swimming: 'swim',
+  sat: 'sit', sits: 'sit', sitting: 'sit',
+  stood: 'stand', stands: 'stand', standing: 'stand',
+  slept: 'sleep', sleeps: 'sleep', sleeping: 'sleep',
+  understood: 'understand', understands: 'understand', understanding: 'understand',
+  meant: 'mean', means: 'mean', meaning: 'mean',
+  led: 'lead', leads: 'lead', leading: 'lead',
+  met: 'meet', meets: 'meet', meeting: 'meet',
+  paid: 'pay', pays: 'pay', paying: 'pay',
+  laid: 'lay', lays: 'lay', laying: 'lay',
+  heard: 'hear', hears: 'hear', hearing: 'hear',
+  sold: 'sell', sells: 'sell', selling: 'sell',
+  spent: 'spend', spends: 'spend', spending: 'spend',
+  won: 'win', wins: 'win', winning: 'win',
+  taught: 'teach', teaches: 'teach', teaching: 'teach',
+  sang: 'sing', sung: 'sing', sings: 'sing', singing: 'sing',
+  drank: 'drink', drunk: 'drink', drinks: 'drink', drinking: 'drink',
+  ate: 'eat', eaten: 'eat', eats: 'eat', eating: 'eat',
+  cut: 'cut', cuts: 'cut', cutting: 'cut',
+  put: 'put', puts: 'put', putting: 'put',
+  hit: 'hit', hits: 'hit', hitting: 'hit',
+  set: 'set', sets: 'set', setting: 'set',
+
+  // 불규칙 명사 복수형
+  children: 'child',
+  men: 'man',
+  women: 'woman',
+  people: 'person',
+  persons: 'person',
+  feet: 'foot',
+  teeth: 'tooth',
+  mice: 'mouse',
+  geese: 'goose',
+  oxen: 'ox',
+  data: 'datum',
+  criteria: 'criterion',
+  phenomena: 'phenomenon',
+  analyses: 'analysis',
+  crises: 'crisis',
+  hypotheses: 'hypothesis',
+  theses: 'thesis',
+  bases: 'basis',
+
+  // 비교급 / 최상급
+  better: 'good',
+  best: 'good',
+  worse: 'bad',
+  worst: 'bad',
+  more: 'many',
+  most: 'many',
+  less: 'little',
+  least: 'little',
+  farther: 'far',
+  further: 'far',
+  farthest: 'far',
+  furthest: 'far',
+};
+
+// 복수형, 과거형, 진행형, 3인칭 단수 등을 단어장 등록용 '원형(Lemma)'으로 복원
+export function extractLemmaCandidate(rawWord: string): string {
+  const w = rawWord.trim().toLowerCase();
+  if (w.length <= 2) return w;
+
+  // 1. 불규칙 사전 매핑 확인
+  if (IRREGULAR_TO_BASE[w]) {
+    return IRREGULAR_TO_BASE[w];
+  }
+
+  // 2. 복수형 / 3인칭 단수 -ies -> -y (cities -> city, parties -> party, stories -> story)
+  if (w.endsWith('ies') && w.length > 4) {
+    return w.slice(0, -3) + 'y';
+  }
+
+  // 3. 과거형 / 분사 -ied -> -y (studied -> study, carried -> carry, worried -> worry)
+  if (w.endsWith('ied') && w.length > 4) {
+    return w.slice(0, -3) + 'y';
+  }
+
+  // 4. 불규칙 복수형 -ves -> -f / -fe (leaves -> leaf, wolves -> wolf, wives -> wife, knives -> knife)
+  if (w.endsWith('ves') && w.length > 4) {
+    if (['knives', 'wives', 'lives'].includes(w)) return w.slice(0, -3) + 'fe';
+    return w.slice(0, -3) + 'f';
+  }
+
+  // 5. -es 복수형/3인칭 단수
+  // prices -> price, changes -> change, causes -> cause, plates -> plate, slides -> slide, voices -> voice
+  if (
+    w.endsWith('ces') ||
+    w.endsWith('ges') ||
+    w.endsWith('ses') ||
+    w.endsWith('tes') ||
+    w.endsWith('des') ||
+    w.endsWith('nes') ||
+    w.endsWith('les')
+  ) {
+    return w.slice(0, -1);
+  }
+  // passes -> pass, wishes -> wish, watches -> watch, boxes -> box, quizzes -> quiz
+  if (
+    w.endsWith('sses') ||
+    w.endsWith('shes') ||
+    w.endsWith('ches') ||
+    w.endsWith('xes') ||
+    w.endsWith('zes')
+  ) {
+    return w.slice(0, -2);
+  }
+
+  // 6. 진행형 / 동명사 -ing (growing -> grow, running -> run, declining -> decline)
+  if (w.endsWith('ing') && w.length > 4) {
+    const stem = w.slice(0, -3);
+    // 자음 중복 (running -> run, stopping -> stop, swimming -> swim, getting -> get)
+    if (
+      stem.length >= 3 &&
+      stem[stem.length - 1] === stem[stem.length - 2] &&
+      /[bcdfghjklmnpqrstvwxyz]/.test(stem[stem.length - 1])
+    ) {
+      return stem.slice(0, -1);
+    }
+    // declining -> decline, making -> make, writing -> write, taking -> take
+    if (
+      /[bcdfghjklmnpqrstvwxyz]$/.test(stem) &&
+      !/[aeiou]{2}[bcdfghjklmnpqrstvwxyz]$/.test(stem) &&
+      !stem.endsWith('y') &&
+      !stem.endsWith('w') &&
+      !stem.endsWith('x')
+    ) {
+      return stem + 'e';
+    }
+    return stem;
+  }
+
+  // 7. 과거형 / 분사 -ed (declined -> decline, boosted -> boost, stopped -> stop)
+  if (w.endsWith('ed') && w.length > 4) {
+    const stem = w.slice(0, -2);
+    // 자음 중복 (stopped -> stop, planned -> plan, begged -> beg)
+    if (
+      stem.length >= 3 &&
+      stem[stem.length - 1] === stem[stem.length - 2] &&
+      /[bcdfghjklmnpqrstvwxyz]/.test(stem[stem.length - 1])
+    ) {
+      return stem.slice(0, -1);
+    }
+    if (w.endsWith('eed')) {
+      return w.slice(0, -1); // agreed -> agree, freed -> free
+    }
+    if (stem.endsWith('e')) {
+      return stem;
+    }
+    // boost -> boosted, walk -> walked, adapt -> adapted
+    if (/[bcdfghjklmnpqrstvwxyz]{2}$/.test(stem)) {
+      return stem;
+    }
+    // decline -> declined, like -> liked, close -> closed
+    return stem + 'e';
+  }
+
+  // 8. 단순 복수형 / 3인칭 단수 -s (prices -> price, books -> book, cats -> cat, forecasts -> forecast)
+  if (
+    w.endsWith('s') &&
+    !w.endsWith('ss') &&
+    !w.endsWith('us') &&
+    !w.endsWith('is') &&
+    w.length > 3
+  ) {
+    return w.slice(0, -1);
+  }
+
+  // 9. 비교급 -ier -> -y, -iest -> -y (easier -> easy, easiest -> easy)
+  if (w.endsWith('ier') && w.length > 4) {
+    return w.slice(0, -3) + 'y';
+  }
+  if (w.endsWith('iest') && w.length > 5) {
+    return w.slice(0, -4) + 'y';
+  }
+
+  return w;
+}

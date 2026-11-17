@@ -25,6 +25,7 @@ import {
   findSentenceWithWord,
   findSentenceWithWordSmart,
   findAllSentencesWithWordSmart,
+  extractLemmaCandidate,
 } from '@/lib/ocr';
 import {
   extractTextWithAI,
@@ -624,8 +625,12 @@ export default function Home() {
       return;
     }
 
-    // 이전 검색 결과 및 문맥 초기화 & 로딩 표시
+    // 1. 단어의 원형(Lemma / Base form) 후보 자동 추출 (예: Prices -> price, declined -> decline, growing -> grow, went -> go)
+    const lemmaCandidate = extractLemmaCandidate(wordToSearch);
+
+    // 이전 검색 결과 및 문맥 초기화 & 로딩 표시 (표제어는 원형으로 즉시 산뜻하게 반영)
     updateWordEntry(entryId, {
+      word: lemmaCandidate,
       isSearchingDict: true,
       dictResult: null,
       selectedMeaning: '',
@@ -634,17 +639,29 @@ export default function Home() {
     });
 
     try {
-      // 1. 영한 사전 조회 (기본 예문 포함)
-      const res = await lookupDictionary(wordToSearch);
-      const defaultExample =
-        res.exampleSentence || `This is a sample sentence illustrating the word "${wordToSearch}".`;
+      // 2. 영한 사전 조회: 원형(lemmaCandidate)으로 우선 조회하여 풍부한 사전 뜻 확보
+      let res = await lookupDictionary(lemmaCandidate);
+      // 만약 원형 조회 결과가 부족하고 원래 단어가 다른 경우 원래 단어로도 보완
+      if ((!res.meanings || res.meanings.length === 0) && lemmaCandidate !== wordToSearch.toLowerCase()) {
+        const altRes = await lookupDictionary(wordToSearch);
+        if (altRes.meanings && altRes.meanings.length > 0) {
+          res = altRes;
+        }
+      }
 
-      // 2. 만약 현재 촬영/불러온 본문 텍스트가 있다면 문맥 스마트 탐색 + AI 최적 뜻 선정
+      const defaultExample =
+        res.exampleSentence || `This is a sample sentence illustrating the word "${lemmaCandidate}".`;
+
+      // 3. 만약 현재 촬영/불러온 본문 텍스트가 있다면 문맥 스마트 탐색 + AI 최적 뜻 선정
       if (pageOcrText) {
         try {
+          // 본문 속 검색: 원래 단어(wordToSearch)와 원형(lemmaCandidate) 모두 전달
           const matchRes = await findSentenceWithAI(pageOcrText, wordToSearch, geminiApiKey, res.meanings);
           if (matchRes.found && matchRes.sentence) {
             const sentences = matchRes.allMatches.map((m) => m.sentence);
+
+            // AI가 확정한 원형(Lemma)이 있으면 최종 표제어로 확정
+            const finalLemma = (matchRes.lemma || lemmaCandidate).trim().toLowerCase();
 
             // AI가 문맥을 분석하여 선택해준 최적의 뜻 인덱스 적용
             let bestIdx = 0;
@@ -665,11 +682,17 @@ export default function Home() {
               matchRes.bestPos ||
               (res.meanings[0]?.pos ?? '');
 
+            const isFormChanged = wordToSearch.toLowerCase() !== finalLemma;
+            const formChangeMsg = isFormChanged
+              ? `(원문 '${wordToSearch}' ➔ 표제어 '${finalLemma}') `
+              : '';
+
             const noticeText = matchRes.aiExplanation
-              ? `✨ AI 문맥 분석: ${matchRes.aiExplanation}`
-              : `✨ 본문 문맥에 가장 적절한 뜻('${selectedDef}')이 자동 선택되었습니다!`;
+              ? `✨ ${formChangeMsg}AI 문맥 분석: ${matchRes.aiExplanation}`
+              : `✨ ${formChangeMsg}본문 문맥에 가장 적절한 뜻('${selectedDef}')이 자동 선택되었습니다!`;
 
             updateWordEntry(entryId, {
+              word: finalLemma,
               dictResult: res,
               selectedMeaning: selectedDef,
               selectedPos: selectedPos,
@@ -680,14 +703,20 @@ export default function Home() {
             });
             return;
           } else {
-            // 본문에 해당 단어가 없는 경우! 사용자 요청: 해당 단어가 없다고 알리고 기본 예문 입력
+            // 본문에 해당 단어가 없는 경우
+            const isFormChanged = wordToSearch.toLowerCase() !== lemmaCandidate;
+            const noticeMsg = isFormChanged
+              ? `💡 '${wordToSearch}'의 원형 표제어 '${lemmaCandidate}'(으)로 등록되었습니다. (원문 미발견으로 기본 예문 제공)`
+              : `⚠️ 현재 본문(사진/기사)에 '${wordToSearch}' 단어가 없어 기본 예문이 입력되었습니다.`;
+
             updateWordEntry(entryId, {
+              word: lemmaCandidate,
               dictResult: res,
               selectedMeaning: res.meanings.length > 0 ? res.meanings[0].def : '',
               selectedPos: res.meanings.length > 0 ? res.meanings[0].pos : '',
               candidateSentences: [],
               context: defaultExample,
-              ocrDetectedNotice: `⚠️ 현재 본문(사진/기사)에 '${wordToSearch}' 단어가 없어 기본 예문이 입력되었습니다.`,
+              ocrDetectedNotice: noticeMsg,
               isSearchingDict: false,
             });
             return;
@@ -697,14 +726,18 @@ export default function Home() {
         }
       }
 
-      // 본문이 없거나 문맥 탐색이 없는 경우 기본 첫 번째 뜻 채우기
+      // 본문이 없는 경우 (직접 입력 등)
+      const isFormChanged = wordToSearch.toLowerCase() !== lemmaCandidate;
       updateWordEntry(entryId, {
+        word: lemmaCandidate,
         dictResult: res,
         selectedMeaning: res.meanings.length > 0 ? res.meanings[0].def : '',
         selectedPos: res.meanings.length > 0 ? res.meanings[0].pos : '',
         context: entry?.context || defaultExample,
         candidateSentences: [],
-        ocrDetectedNotice: null,
+        ocrDetectedNotice: isFormChanged
+          ? `💡 '${wordToSearch}'의 원형 표제어 '${lemmaCandidate}'(으)로 사전을 조회했습니다.`
+          : null,
         isSearchingDict: false,
       });
     } catch (e) {
@@ -763,23 +796,27 @@ export default function Home() {
     // 만약 첫 번째 단어칸이 아직 비어있다면 첫 단어를 채움
     if (newEntries.length === 1 && !newEntries[0].word.trim()) {
       const targetId = newEntries[0].id;
+      const rawW = wordsToAdd[0];
+      const lemma = extractLemmaCandidate(rawW);
       newEntries[0] = {
         ...newEntries[0],
-        word: wordsToAdd[0],
+        word: lemma,
         sourceMemo: loadedSourceType === 'web' && loadedWebTitle ? loadedWebTitle : '',
       };
-      entriesToSearch.push({ id: targetId, word: wordsToAdd[0] });
+      entriesToSearch.push({ id: targetId, word: rawW });
       startIdx = 1;
     }
 
     // 나머지 선택된 단어들에 대해 새로운 단어 카드 생성
     for (let i = startIdx; i < wordsToAdd.length; i++) {
+      const rawW = wordsToAdd[i];
+      const lemma = extractLemmaCandidate(rawW);
       const item = createWordEntryItem({
-        word: wordsToAdd[i],
+        word: lemma,
         sourceMemo: loadedSourceType === 'web' && loadedWebTitle ? loadedWebTitle : '',
       });
       newEntries.push(item);
-      entriesToSearch.push({ id: item.id, word: wordsToAdd[i] });
+      entriesToSearch.push({ id: item.id, word: rawW });
     }
 
     setWordEntries(newEntries);
@@ -2879,21 +2916,32 @@ export default function Home() {
 
               {selectedWordsFromText.length > 0 ? (
                 <div className="flex flex-wrap gap-1.5 max-h-20 overflow-y-auto p-2 bg-slate-50 rounded-xl border border-slate-100">
-                  {selectedWordsFromText.map((word) => (
-                    <span
-                      key={word}
-                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-indigo-200 text-indigo-700 rounded-lg text-xs font-semibold shadow-2xs"
-                    >
-                      <span>{word}</span>
-                      <button
-                        type="button"
-                        onClick={() => handleToggleWordFromText(word)}
-                        className="text-indigo-400 hover:text-rose-500 text-[10px] font-bold cursor-pointer"
+                  {selectedWordsFromText.map((word) => {
+                    const lemma = extractLemmaCandidate(word);
+                    const isChanged = lemma.toLowerCase() !== word.toLowerCase();
+                    return (
+                      <span
+                        key={word}
+                        className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-indigo-200 text-indigo-700 rounded-lg text-xs font-semibold shadow-2xs"
                       >
-                        ✕
-                      </button>
-                    </span>
-                  ))}
+                        {isChanged ? (
+                          <span className="flex items-center gap-1">
+                            <span className="text-slate-400 line-through text-[11px]">{word}</span>
+                            <span className="text-indigo-600 font-bold">{lemma}</span>
+                          </span>
+                        ) : (
+                          <span>{word}</span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => handleToggleWordFromText(word)}
+                          className="text-indigo-400 hover:text-rose-500 text-[10px] font-bold cursor-pointer"
+                        >
+                          ✕
+                        </button>
+                      </span>
+                    );
+                  })}
                 </div>
               ) : (
                 <p className="text-[11px] text-slate-400 italic">

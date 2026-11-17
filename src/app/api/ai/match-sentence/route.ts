@@ -41,10 +41,11 @@ Available Korean Dictionary Definitions:
 ${meaningsText}
 
 CRITICAL INSTRUCTIONS:
-1. Determine if the target English vocabulary word "${word}" (or any of its direct grammatical inflections: e.g. "go" -> "went"/"gone"/"going", "decline" -> "declined"/"declining", "boost" -> "boosted"/"boosting"/"boosts") appears in the provided Page Text.
+1. Determine if the target English vocabulary word "${word}" (or any of its direct grammatical inflections: e.g. "go" -> "went"/"gone"/"going", "decline" -> "declined"/"declining", "boost" -> "boosted"/"boosting"/"boosts", "prices" -> "price") appears in the provided Page Text.
 2. If "${word}" or its inflection does NOT appear in the page text, you MUST return:
 {
   "found": false,
+  "lemma": "${word}",
   "sentence": "",
   "matchedWord": "",
   "allMatches": [],
@@ -54,6 +55,7 @@ CRITICAL INSTRUCTIONS:
   "aiExplanation": ""
 }
 3. If it DOES appear:
+   - Identify the root dictionary base lemma form of the word (e.g. "prices" -> "price", "declined" -> "decline", "growing" -> "grow", "went" -> "go", "easier" -> "easy", "better" -> "good") and put it in "lemma".
    - Extract the EXACT complete sentence from the text containing the word.
    - Analyze how the word is used in that sentence grammatically and contextually.
    - From the Available Korean Dictionary Definitions above, pick the 0-based index that BEST fits this sentence's context.
@@ -63,8 +65,9 @@ CRITICAL INSTRUCTIONS:
 Return ONLY valid JSON:
 {
   "found": true,
+  "lemma": "base dictionary form (e.g. price, decline, grow, go)",
   "sentence": "Exact complete sentence from text",
-  "matchedWord": "the exact word form found",
+  "matchedWord": "the exact word form found in text",
   "allMatches": [
     { "sentence": "Exact complete sentence 1", "matchedWord": "form1" }
   ],
