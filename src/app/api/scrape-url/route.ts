@@ -81,7 +81,29 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: '올바른 웹페이지 URL 형식이 아닙니다.' }, { status: 400 });
     }
 
-    // 웹페이지 HTML 가져오기 (User-Agent 포함)
+    // SSRF 보안 방어: http/https 프로토콜만 허용 및 로컬/사설망/메타데이터 주소 차단
+    if (parsedUrl.protocol !== 'http:' && parsedUrl.protocol !== 'https:') {
+      return NextResponse.json({ error: 'http 또는 https 웹페이지만 불러올 수 있습니다.' }, { status: 400 });
+    }
+
+    const host = parsedUrl.hostname.toLowerCase();
+    const isPrivateHost =
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host === '::1' ||
+      host === '0.0.0.0' ||
+      host.endsWith('.local') ||
+      host.endsWith('.internal') ||
+      /^10\.\d+\.\d+\.\d+$/.test(host) ||
+      /^192\.168\.\d+\.\d+$/.test(host) ||
+      /^172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+$/.test(host) ||
+      /^169\.254\.\d+\.\d+$/.test(host); // 클라우드 메타데이터 IP 보호
+
+    if (isPrivateHost) {
+      return NextResponse.json({ error: '보안 정책상 내부망이나 로컬 주소는 접근할 수 없습니다.' }, { status: 403 });
+    }
+
+    // 웹페이지 HTML 가져오기 (User-Agent 포함 및 8초 타임아웃)
     const response = await fetch(parsedUrl.toString(), {
       headers: {
         'User-Agent':
@@ -89,6 +111,7 @@ export async function POST(req: NextRequest) {
         Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.9,ko;q=0.8',
       },
+      signal: AbortSignal.timeout(8000),
       next: { revalidate: 60 },
     });
 

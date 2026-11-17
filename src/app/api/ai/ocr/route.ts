@@ -25,7 +25,12 @@ export async function POST(req: NextRequest) {
     // Google Gemini REST API 호출 (가장 빠른 gemini-3.5-flash-lite 우선 시도, 실패 시 gemini-3.8-flash 폴백)
     const cleanBase64 = base64.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, '');
 
-    const candidateModels = ['gemini-3.5-flash-lite', 'gemini-3.8-flash'];
+    const candidateModels = [
+      'gemini-3.5-flash-lite',
+      'gemini-3.8-flash',
+      'gemini-2.5-flash',
+      'gemini-1.5-flash',
+    ];
 
     const prompt = `You are a high-precision OCR and document analysis AI specializing in English books, news articles, and research reports.
 Carefully inspect the provided image.

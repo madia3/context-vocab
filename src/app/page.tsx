@@ -209,9 +209,14 @@ export default function Home() {
   const [currentSourceImage, setCurrentSourceImage] = useState<{ base64: string; mimeType: string } | null>(null);
   const currentSourceImageRef = useRef<{ base64: string; mimeType: string } | null>(null);
 
-  // Word Selection from Loaded Text State (원문에서 단어 직접 클릭 선택)
+  // Word Selection from Loaded Text State (원문에서 단어 직접 클릭 선택 및 원본 사진 대조)
   const [isWordSelectModalOpen, setIsWordSelectModalOpen] = useState(false);
   const [selectedWordsFromText, setSelectedWordsFromText] = useState<string[]>([]);
+  const [pickerTab, setPickerTab] = useState<'text' | 'image'>('text');
+  const [editingWordIdx, setEditingWordIdx] = useState<number | null>(null);
+  const [editingWordVal, setEditingWordVal] = useState<string>('');
+  const [manualWordInput, setManualWordInput] = useState<string>('');
+  const [isCleaningWithAI, setIsCleaningWithAI] = useState<boolean>(false);
 
   // Filter & Grouping State
   const [selectedBookFilter, setSelectedBookFilter] = useState<string>('all');
@@ -972,6 +977,79 @@ export default function Home() {
     setSelectedWordsFromText((prev) =>
       prev.includes(clean) ? prev.filter((w) => w !== clean) : [...prev, clean]
     );
+  }
+
+  // 선택된 단어 직접 수정 시작
+  function handleStartEditWord(idx: number, currentWord: string) {
+    setEditingWordIdx(idx);
+    setEditingWordVal(currentWord);
+  }
+
+  // 선택된 단어 직접 수정 완료
+  function handleSaveEditWord(idx: number) {
+    const trimmed = editingWordVal.trim().toLowerCase();
+    if (trimmed) {
+      setSelectedWordsFromText((prev) => {
+        const next = [...prev];
+        next[idx] = trimmed;
+        return Array.from(new Set(next));
+      });
+    }
+    setEditingWordIdx(null);
+    setEditingWordVal('');
+  }
+
+  // 사진/본문 보면서 임의의 단어 직접 입력하여 목록에 추가
+  function handleAddManualWord() {
+    const trimmed = manualWordInput.trim().toLowerCase();
+    if (trimmed && trimmed.length >= 2) {
+      setSelectedWordsFromText((prev) => Array.from(new Set([...prev, trimmed])));
+      setManualWordInput('');
+    }
+  }
+
+  // Tesseract로 읽어 깨진 본문을 Gemini AI로 원본 사진에서 고정밀 재복원
+  async function handleAiCleanPageText() {
+    const activeImg = currentSourceImageRef.current || currentSourceImage;
+    if (!activeImg || !activeImg.base64) {
+      alert('분석할 원본 사진 데이터가 없습니다.');
+      return;
+    }
+    setIsCleaningWithAI(true);
+    try {
+      const apiKey = geminiApiKey || getStoredGeminiKey();
+      const res = await fetch('/api/ai/ocr', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(apiKey ? { 'x-gemini-key': apiKey } : {}),
+        },
+        body: JSON.stringify({
+          base64: activeImg.base64,
+          mimeType: activeImg.mimeType || 'image/jpeg',
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        if (data.text && data.text.trim()) {
+          setPageOcrText(data.text.trim());
+          if (Array.isArray(data.markedWords) && data.markedWords.length > 0) {
+            setSelectedWordsFromText((prev) => Array.from(new Set([...prev, ...data.markedWords])));
+          }
+          setPickerTab('text');
+        } else {
+          alert('AI 본문 정제 결과를 가져오지 못했습니다.');
+        }
+      } else {
+        alert('AI 본문 정제에 실패했습니다. Gemini API 설정을 확인해 주세요.');
+      }
+    } catch (err) {
+      console.error('AI clean text error:', err);
+      alert('AI 본문 정제 중 오류가 발생했습니다.');
+    } finally {
+      setIsCleaningWithAI(false);
+    }
   }
 
   // 단어 목록(배열)을 받아 단어 등록칸에 일괄 추가하고 사전 조회 및 문맥 최적 뜻 분석을 자동 실행하는 공통 함수
@@ -3665,12 +3743,12 @@ export default function Home() {
         </div>
       )}
 
-      {/* Word Selection from Loaded Text Modal (원문에서 단어 직접 클릭 선택 모달) */}
+      {/* Word Selection from Loaded Text Modal (원문에서 단어 직접 클릭 선택 & 원본 사진 대조 모달) */}
       {isWordSelectModalOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-xl w-full p-5 sm:p-6 shadow-2xl border border-indigo-100 flex flex-col max-h-[85vh]">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-2.5 sm:p-4 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-4 sm:p-6 shadow-2xl border border-indigo-100 flex flex-col max-h-[92vh] sm:max-h-[85vh]">
             {/* Modal Header */}
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-3 shrink-0">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-2 shrink-0">
               <div className="flex items-center gap-2.5">
                 <div className="w-9 h-9 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center shadow-xs">
                   <ScanLine className="w-5 h-5" />
@@ -3680,63 +3758,126 @@ export default function Home() {
                     원문에서 모르는 단어 선택
                   </h3>
                   <p className="text-[11px] text-slate-500">
-                    본문 속 단어를 터치하여 고른 뒤 단어장에 담으세요
+                    본문 속 단어를 터치하거나 사진을 보며 단어장에 담으세요
                   </p>
                 </div>
               </div>
               <button
                 type="button"
-                onClick={() => setIsWordSelectModalOpen(false)}
+                onClick={() => {
+                  setIsWordSelectModalOpen(false);
+                  setEditingWordIdx(null);
+                }}
                 className="text-slate-400 hover:text-slate-600 text-lg font-bold w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 transition cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            {/* Scrollable Text Body */}
-            <div className="flex-1 overflow-y-auto pr-1 py-1 min-h-[160px]">
-              <div className="p-3.5 sm:p-4 bg-slate-50/80 rounded-2xl border border-slate-200/80 text-[13px] sm:text-[14px] leading-relaxed text-slate-800 font-serif whitespace-pre-wrap select-none">
-                {textTokens.length > 0 ? (
-                  textTokens.map((token, idx) => {
-                    if (!token.isWord || !token.cleanWord) {
-                      return <span key={idx}>{token.raw}</span>;
-                    }
-
-                    const clean = token.cleanWord;
-                    const isSelected = selectedWordsFromText.includes(clean);
-                    const isAlreadyAdded = wordEntries.some(
-                      (e) => e.word.trim().toLowerCase() === clean
-                    );
-
-                    return (
-                      <button
-                        key={idx}
-                        type="button"
-                        onClick={() => handleToggleWordFromText(clean)}
-                        className={`inline font-sans rounded px-0.5 py-0 text-xs sm:text-[13px] transition cursor-pointer ${
-                          isSelected
-                            ? 'bg-indigo-600 text-white font-bold px-1 py-0.5 shadow-xs'
-                            : isAlreadyAdded
-                            ? 'bg-emerald-100 text-emerald-800 font-medium px-1 py-0.5'
-                            : 'text-slate-900 underline decoration-indigo-300 decoration-1 underline-offset-2 hover:bg-indigo-50 hover:text-indigo-700'
-                        }`}
-                        title={isAlreadyAdded ? '이미 단어칸에 등록됨' : '클릭하여 선택'}
-                      >
-                        {token.raw}
-                      </button>
-                    );
-                  })
-                ) : (
-                  <p className="text-center text-slate-400 py-8">
-                    불러온 본문 텍스트가 없습니다. 사진이나 URL을 먼저 불러와 주세요.
-                  </p>
+            {/* Top Toolbar: Tabs (Text vs Image) & AI Clean Button */}
+            <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 mb-1 shrink-0 border-b border-slate-100/80">
+              <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-xl text-xs font-bold">
+                <button
+                  type="button"
+                  onClick={() => setPickerTab('text')}
+                  className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
+                    pickerTab === 'text'
+                      ? 'bg-white text-indigo-700 shadow-2xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  📝 텍스트로 선택
+                </button>
+                {(currentSourceImageRef.current || currentSourceImage) && (
+                  <button
+                    type="button"
+                    onClick={() => setPickerTab('image')}
+                    className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1 cursor-pointer ${
+                      pickerTab === 'image'
+                        ? 'bg-white text-indigo-700 shadow-2xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    <span>📷 원본 사진 보기</span>
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                  </button>
                 )}
               </div>
+
+              {(currentSourceImageRef.current || currentSourceImage) && (
+                <button
+                  type="button"
+                  onClick={handleAiCleanPageText}
+                  disabled={isCleaningWithAI}
+                  className="text-[11px] bg-gradient-to-r from-indigo-50 to-sky-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 px-2.5 py-1.5 rounded-xl font-bold transition flex items-center gap-1 shadow-2xs cursor-pointer disabled:opacity-50"
+                  title="Tesseract 인식 오타나 깨진 글자를 Gemini AI로 깔끔하게 복원합니다"
+                >
+                  <Sparkles className={`w-3 h-3 ${isCleaningWithAI ? 'animate-spin' : 'text-indigo-500'}`} />
+                  <span>{isCleaningWithAI ? 'AI 본문 복원 중...' : '✨ AI로 텍스트 깨끗하게 복원'}</span>
+                </button>
+              )}
             </div>
 
-            {/* Bottom Actions / Selected Words Chips */}
-            <div className="pt-3 border-t border-slate-100 mt-3 space-y-2.5 shrink-0">
-              {/* Selected Words Chips Bar */}
+            {/* Modal Body: Switch between Text View and Image View */}
+            <div className="flex-1 overflow-y-auto pr-1 py-1 min-h-[160px]">
+              {pickerTab === 'image' && (currentSourceImageRef.current || currentSourceImage) ? (
+                <div className="space-y-2">
+                  <div className="p-2 bg-slate-900/5 rounded-2xl border border-slate-200/80 flex items-center justify-center max-h-[48vh] overflow-auto">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={`data:${(currentSourceImageRef.current || currentSourceImage)?.mimeType || 'image/jpeg'};base64,${(currentSourceImageRef.current || currentSourceImage)?.base64}`}
+                      alt="원본 도서 페이지 사진"
+                      className="max-h-[44vh] w-auto object-contain rounded-xl shadow-xs"
+                    />
+                  </div>
+                  <p className="text-[11px] text-slate-500 text-center leading-normal">
+                    💡 책 사진 속 단어 위치를 확인하세요. 이상하게 읽힌 단어는 아래에서 바로 <strong className="text-indigo-600">수정(✏️)</strong>하거나 <strong className="text-indigo-600">직접 입력</strong>할 수 있습니다.
+                  </p>
+                </div>
+              ) : (
+                <div className="p-3.5 sm:p-4 bg-slate-50/80 rounded-2xl border border-slate-200/80 text-[13px] sm:text-[14px] leading-relaxed text-slate-800 font-serif whitespace-pre-wrap select-none">
+                  {textTokens.length > 0 ? (
+                    textTokens.map((token, idx) => {
+                      if (!token.isWord || !token.cleanWord) {
+                        return <span key={idx}>{token.raw}</span>;
+                      }
+
+                      const clean = token.cleanWord;
+                      const isSelected = selectedWordsFromText.includes(clean);
+                      const isAlreadyAdded = wordEntries.some(
+                        (e) => e.word.trim().toLowerCase() === clean
+                      );
+
+                      return (
+                        <button
+                          key={idx}
+                          type="button"
+                          onClick={() => handleToggleWordFromText(clean)}
+                          className={`inline font-sans rounded px-0.5 py-0 text-xs sm:text-[13px] transition cursor-pointer ${
+                            isSelected
+                              ? 'bg-indigo-600 text-white font-bold px-1 py-0.5 shadow-xs'
+                              : isAlreadyAdded
+                              ? 'bg-emerald-100 text-emerald-800 font-medium px-1 py-0.5'
+                              : 'text-slate-900 underline decoration-indigo-300 decoration-1 underline-offset-2 hover:bg-indigo-50 hover:text-indigo-700'
+                          }`}
+                          title={isAlreadyAdded ? '이미 단어칸에 등록됨' : '클릭하여 선택'}
+                        >
+                          {token.raw}
+                        </button>
+                      );
+                    })
+                  ) : (
+                    <p className="text-center text-slate-400 py-8">
+                      불러온 본문 텍스트가 없습니다. 사진이나 URL을 먼저 불러와 주세요.
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            {/* Bottom Actions / Selected Words Chips & Direct Input */}
+            <div className="pt-2.5 border-t border-slate-100 mt-2 space-y-2 shrink-0">
+              {/* Selected Words Chips Bar Header */}
               <div className="flex items-center justify-between text-xs">
                 <span className="font-bold text-slate-700 flex items-center gap-1.5">
                   <span>선택한 단어</span>
@@ -3747,7 +3888,10 @@ export default function Home() {
                 {selectedWordsFromText.length > 0 && (
                   <button
                     type="button"
-                    onClick={() => setSelectedWordsFromText([])}
+                    onClick={() => {
+                      setSelectedWordsFromText([]);
+                      setEditingWordIdx(null);
+                    }}
                     className="text-[11px] text-slate-400 hover:text-rose-500 font-medium transition cursor-pointer"
                   >
                     전체 해제
@@ -3755,14 +3899,53 @@ export default function Home() {
                 )}
               </div>
 
+              {/* Word Chips (With Inline Edit ✏️ and Delete ✕) */}
               {selectedWordsFromText.length > 0 ? (
-                <div className="flex flex-wrap gap-1.5 max-h-20 overflow-y-auto p-2 bg-slate-50 rounded-xl border border-slate-100">
-                  {selectedWordsFromText.map((word) => {
+                <div className="flex flex-wrap gap-1.5 max-h-24 overflow-y-auto p-2 bg-slate-50 rounded-xl border border-slate-100">
+                  {selectedWordsFromText.map((word, idx) => {
+                    const isEditing = editingWordIdx === idx;
                     const lemma = extractLemmaCandidate(word);
                     const isChanged = lemma.toLowerCase() !== word.toLowerCase();
+
+                    if (isEditing) {
+                      return (
+                        <div
+                          key={idx}
+                          className="inline-flex items-center gap-1 px-2 py-0.5 bg-white border-2 border-indigo-500 rounded-lg shadow-xs"
+                        >
+                          <input
+                            type="text"
+                            autoFocus
+                            value={editingWordVal}
+                            onChange={(e) => setEditingWordVal(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') handleSaveEditWord(idx);
+                              if (e.key === 'Escape') setEditingWordIdx(null);
+                            }}
+                            className="text-xs font-bold text-slate-900 outline-none w-24"
+                            placeholder="단어 수정..."
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleSaveEditWord(idx)}
+                            className="text-[11px] bg-indigo-600 text-white px-1.5 py-0.5 rounded font-bold cursor-pointer hover:bg-indigo-700"
+                          >
+                            확인
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setEditingWordIdx(null)}
+                            className="text-[11px] text-slate-400 hover:text-slate-600 px-1"
+                          >
+                            취소
+                          </button>
+                        </div>
+                      );
+                    }
+
                     return (
                       <span
-                        key={word}
+                        key={idx}
                         className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-white border border-indigo-200 text-indigo-700 rounded-lg text-xs font-semibold shadow-2xs"
                       >
                         {isChanged ? (
@@ -3775,8 +3958,17 @@ export default function Home() {
                         )}
                         <button
                           type="button"
+                          onClick={() => handleStartEditWord(idx, word)}
+                          className="text-slate-400 hover:text-indigo-600 text-[11px] transition cursor-pointer"
+                          title="오인식된 단어 철자 수정"
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => handleToggleWordFromText(word)}
                           className="text-indigo-400 hover:text-rose-500 text-[10px] font-bold cursor-pointer"
+                          title="삭제"
                         >
                           ✕
                         </button>
@@ -3786,15 +3978,43 @@ export default function Home() {
                 </div>
               ) : (
                 <p className="text-[11px] text-slate-400 italic">
-                  위 본문에서 외우고 싶은 영단어를 탭하세요.
+                  위 본문에서 단어를 탭하거나, 아래 입력창에 직접 입력하세요.
                 </p>
               )}
+
+              {/* Direct Word Input Bar (사진 보면서 단어 직접 추가) */}
+              <div className="flex items-center gap-1.5 pt-0.5">
+                <input
+                  type="text"
+                  value={manualWordInput}
+                  onChange={(e) => setManualWordInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleAddManualWord();
+                    }
+                  }}
+                  placeholder="사진 보며 단어 직접 입력 (예: questions)..."
+                  className="flex-1 text-xs px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-indigo-400 focus:ring-1 focus:ring-indigo-300 outline-none text-slate-800 transition"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddManualWord}
+                  disabled={!manualWordInput.trim()}
+                  className="px-3 py-2 bg-indigo-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 disabled:opacity-40 text-xs font-bold rounded-xl transition cursor-pointer shrink-0"
+                >
+                  + 직접 추가
+                </button>
+              </div>
 
               {/* Action Buttons */}
               <div className="flex items-center gap-2 pt-1">
                 <button
                   type="button"
-                  onClick={() => setIsWordSelectModalOpen(false)}
+                  onClick={() => {
+                    setIsWordSelectModalOpen(false);
+                    setEditingWordIdx(null);
+                  }}
                   className="flex-1 py-2.5 px-3 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 text-xs font-bold transition cursor-pointer"
                 >
                   닫기
@@ -3813,7 +4033,7 @@ export default function Home() {
                   <span>
                     {selectedWordsFromText.length > 0
                       ? `선택한 단어 ${selectedWordsFromText.length}개 담기`
-                      : '단어를 터치해 선택하세요'}
+                      : '단어를 터치하거나 입력해 담으세요'}
                   </span>
                 </button>
               </div>

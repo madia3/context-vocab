@@ -62,7 +62,12 @@ Return strictly valid JSON:
   "aiExplanation": "이 문맥에서는 ~라는 의미로 쓰였습니다."
 }`;
 
-    const candidateModels = ['gemini-3.5-flash-lite', 'gemini-3.8-flash'];
+    const candidateModels = [
+      'gemini-3.5-flash-lite',
+      'gemini-3.8-flash',
+      'gemini-2.5-flash',
+      'gemini-1.5-flash',
+    ];
 
     const contentParts: any[] = [{ text: prompt }];
     if (hasImage && cleanBase64) {

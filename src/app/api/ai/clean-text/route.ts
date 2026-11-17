@@ -29,7 +29,12 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. Gemini AI 고정밀 광고 및 노이즈 정제
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`;
+    const candidateModels = [
+      'gemini-3.5-flash-lite',
+      'gemini-3.8-flash',
+      'gemini-2.5-flash',
+      'gemini-1.5-flash',
+    ];
 
     const prompt = `You are a professional news editor assistant.
 The following English text was copied directly from a news article / web page (often paywalled or requiring login).
@@ -55,36 +60,44 @@ Original Text:
 ${rawText.slice(0, 8000)}
 """`;
 
-    const geminiRes = await fetch(geminiUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [
-          {
-            parts: [{ text: prompt }],
-          },
-        ],
-        generationConfig: {
-          temperature: 0.1,
-          responseMimeType: 'application/json',
-        },
-      }),
-    });
+    for (const model of candidateModels) {
+      try {
+        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
+        const geminiRes = await fetch(geminiUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(10000),
+          body: JSON.stringify({
+            contents: [
+              {
+                parts: [{ text: prompt }],
+              },
+            ],
+            generationConfig: {
+              temperature: 0.1,
+              responseMimeType: 'application/json',
+            },
+          }),
+        });
 
-    if (geminiRes.ok) {
-      const data = await geminiRes.json();
-      const rawJson = data.candidates?.[0]?.content?.parts?.[0]?.text;
-      if (rawJson) {
-        const parsed = JSON.parse(rawJson);
-        if (parsed.cleanedText && parsed.cleanedText.trim().length > 20) {
-          return NextResponse.json({
-            cleanedText: parsed.cleanedText.trim(),
-            title: parsed.title || '',
-            removedCount: heuristicResult.removedCount || 1,
-            notes: parsed.removedAdNotes || '',
-            method: 'gemini',
-          });
+        if (geminiRes.ok) {
+          const data = await geminiRes.json();
+          const rawJson = data.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (rawJson) {
+            const parsed = JSON.parse(rawJson);
+            if (parsed.cleanedText && parsed.cleanedText.trim().length > 20) {
+              return NextResponse.json({
+                cleanedText: parsed.cleanedText.trim(),
+                title: parsed.title || '',
+                removedCount: heuristicResult.removedCount || 1,
+                notes: parsed.removedAdNotes || '',
+                method: 'gemini',
+              });
+            }
+          }
         }
+      } catch (err) {
+        console.warn(`Clean text failed on model ${model}, trying next...`, err);
       }
     }
 

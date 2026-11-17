@@ -19,7 +19,12 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Gemini API key is not configured' }, { status: 401 });
     }
 
-    const candidateModels = ['gemini-3.5-flash-lite', 'gemini-3.8-flash'];
+    const candidateModels = [
+      'gemini-3.5-flash-lite',
+      'gemini-3.8-flash',
+      'gemini-2.5-flash',
+      'gemini-1.5-flash',
+    ];
 
     const prompt = `You are an expert English editor and lexicographer.
 A reader took a photo of a book/article page, but the sentence was cut off across page boundaries or margin limits.
