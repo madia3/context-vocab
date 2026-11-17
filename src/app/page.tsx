@@ -81,6 +81,7 @@ import {
   ChevronDown,
   Image as ImageIcon,
   ClipboardPaste,
+  Shuffle,
 } from 'lucide-react';
 
 function GoogleIcon({ className = 'w-4 h-4' }: { className?: string }) {
@@ -163,6 +164,8 @@ export default function Home() {
   const [customBookInput, setCustomBookInput] = useState('');
   // 단어장별 최근 사용 시각(타임스탬프) 기록
   const [bookUsageMap, setBookUsageMap] = useState<Record<string, number>>({});
+  // 단어 목록 랜덤 순서 재배치를 위한 셔플 키
+  const [shuffleKey, setShuffleKey] = useState(0);
 
   function touchBookUsage(bookTitle: string) {
     if (!bookTitle || bookTitle === '__custom__') return;
@@ -1823,11 +1826,47 @@ export default function Home() {
     return [...rawTitles].sort((a, b) => getScore(b) - getScore(a));
   }, [vocabulary, inputBookTitle, bookUsageMap]);
 
-  // Filtered vocabulary list
-  const filteredVocabulary =
-    selectedBookFilter === 'all'
+  // Filtered vocabulary list in random order
+  const filteredVocabulary = useMemo(() => {
+    const list =
+      selectedBookFilter === 'all'
+        ? [...vocabulary]
+        : vocabulary.filter((v) => (v.bookTitle || '기본 단어장') === selectedBookFilter);
+
+    // Fisher-Yates random shuffle
+    const shuffled = [...list];
+    for (let i = shuffled.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+    }
+    return shuffled;
+  }, [vocabulary, selectedBookFilter, shuffleKey]);
+
+  // Selected book summary stats for the info display
+  const selectedBookStats = useMemo(() => {
+    const isAll = selectedBookFilter === 'all';
+    const items = isAll
       ? vocabulary
       : vocabulary.filter((v) => (v.bookTitle || '기본 단어장') === selectedBookFilter);
+
+    const totalWords = items.length;
+    const totalQuiz = items.reduce((acc, v) => acc + (v.quizCount || 0), 0);
+    const totalCorrect = items.reduce((acc, v) => acc + (v.correctCount || 0), 0);
+    const accuracy = totalQuiz > 0 ? Math.round((totalCorrect / totalQuiz) * 100) : 0;
+    const masteredCount = items.filter(
+      (v) => (v.quizCount || 0) >= 2 && Math.round(((v.correctCount || 0) / (v.quizCount || 1)) * 100) >= 80
+    ).length;
+
+    return {
+      title: isAll ? '전체 단어장 보기' : selectedBookFilter,
+      isAll,
+      totalWords,
+      totalQuiz,
+      totalCorrect,
+      accuracy,
+      masteredCount,
+    };
+  }, [vocabulary, selectedBookFilter]);
 
   const currentQuizItem = quizList[currentQuizIndex];
 
@@ -2968,23 +3007,25 @@ export default function Home() {
         {/* ========================================= */}
         {activeTab === 'list' && (
           <section className="space-y-4">
-            {/* Top Header & Dropdown Selector */}
-            <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
-              <div>
-                <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                  <span>내 문맥 영한 단어장</span>
-                  <span className="text-xs bg-indigo-100 text-indigo-700 px-2.5 py-0.5 rounded-full font-bold">
-                    총 {vocabulary.length}단어 ({availableBookTitles.length}개 단어장)
-                  </span>
-                </h2>
-                <p className="text-xs text-slate-500 mt-0.5">
-                  단어장 목록에서 책·레포트를 선택하고 바로 퀴즈를 풀 수 있습니다.
-                </p>
+            {/* Top Vocabulary Book Selector & Controls */}
+            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3.5">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                <div>
+                  <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                    <span>내 문맥 영한 단어장</span>
+                    <span className="text-xs bg-indigo-100 text-indigo-700 px-2.5 py-0.5 rounded-full font-bold">
+                      총 {vocabulary.length}단어 ({availableBookTitles.length}개 단어장)
+                    </span>
+                  </h2>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    학습할 단어장을 선택하고 바로 퀴즈를 풀거나 문맥 카드로 복습하세요.
+                  </p>
+                </div>
               </div>
 
-              {/* Dropdown Selector & Quick Quiz Button */}
-              <div className="flex items-center gap-2 w-full md:w-auto">
-                <div className="relative flex-1 md:w-64">
+              {/* 1. 단어장 선택 목록 (화면 너비에 맞춰 길고 시원하게 배치) */}
+              <div className="space-y-2">
+                <div className="relative w-full">
                   <select
                     value={selectedBookFilter}
                     onChange={(e) => {
@@ -2993,7 +3034,7 @@ export default function Home() {
                         touchBookUsage(e.target.value);
                       }
                     }}
-                    className="w-full px-3 py-2 text-xs font-bold bg-slate-50 text-slate-800 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                    className="w-full px-4 py-3 text-sm font-bold bg-slate-50 hover:bg-slate-100/80 text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs cursor-pointer appearance-none pr-10 transition"
                   >
                     <option value="all">📚 전체 단어장 보기 (총 {vocabulary.length}단어)</option>
                     {availableBookTitles.map((title) => {
@@ -3005,190 +3046,157 @@ export default function Home() {
                       );
                     })}
                   </select>
+                  <div className="absolute right-3.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                    <ChevronDown className="w-4 h-4" />
+                  </div>
                 </div>
 
+                {/* 가로 스크롤형 단어장 탭 목록 (옆으로 길게 펼쳐진 선택 목록) */}
+                <div className="flex items-center gap-2 overflow-x-auto pb-1 pt-0.5 no-scrollbar">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedBookFilter('all')}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-xl whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                      selectedBookFilter === 'all'
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                    }`}
+                  >
+                    <Layers className="w-3.5 h-3.5" />
+                    <span>전체 ({vocabulary.length})</span>
+                  </button>
+                  {availableBookTitles.map((title) => {
+                    const count = vocabulary.filter((v) => (v.bookTitle || '기본 단어장') === title).length;
+                    const isSelected = selectedBookFilter === title;
+                    return (
+                      <button
+                        key={title}
+                        type="button"
+                        onClick={() => {
+                          setSelectedBookFilter(title);
+                          touchBookUsage(title);
+                        }}
+                        className={`px-3 py-1.5 text-xs font-bold rounded-xl whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                          isSelected
+                            ? 'bg-indigo-600 text-white shadow-xs'
+                            : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+                        }`}
+                      >
+                        <BookMarked className="w-3.5 h-3.5" />
+                        <span>{title} ({count})</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* 2. 퀴즈 버튼 (선택 목록 아래에 크게 배치) */}
+              <div className="pt-1">
                 <button
+                  type="button"
                   onClick={() => startQuiz(selectedBookFilter)}
-                  className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs px-4 py-2 rounded-xl shadow-sm transition flex items-center gap-1.5 shrink-0 cursor-pointer"
+                  className="w-full py-3 px-4 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-black text-xs sm:text-sm rounded-xl shadow-xs transition flex items-center justify-center gap-2 cursor-pointer active:scale-[0.99]"
                 >
-                  <Award className="w-4 h-4" />
+                  <Award className="w-4 h-4 text-amber-300" />
                   <span>
                     {selectedBookFilter === 'all'
-                      ? '🎯 전체 퀴즈 풀기'
-                      : '🎯 이 단어장 퀴즈'}
+                      ? `🎯 전체 퀴즈 풀기 (${vocabulary.length}단어)`
+                      : `🎯 [${selectedBookFilter}] 퀴즈 풀기 (${selectedBookStats.totalWords}단어)`}
                   </span>
                 </button>
               </div>
             </div>
 
-            {/* Deck List Hub & Instant Quiz Cards */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between px-1">
-                <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                  <Layers className="w-3.5 h-3.5 text-indigo-600" />
-                  <span>단어장 목록 ({availableBookTitles.length + 1}개)</span>
-                </span>
-                <span className="text-[11px] text-slate-400">
-                  목록을 선택하면 아래 단어가 필터링되고 바로 퀴즈를 풀 수 있습니다
-                </span>
+            {/* 3. 선택된 단어장의 상세 정보 카드 */}
+            <div className="bg-gradient-to-br from-indigo-50/70 via-white to-slate-50 p-4 sm:p-5 rounded-2xl border border-indigo-100/80 shadow-2xs space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2.5 min-w-0">
+                  <div className="w-9 h-9 rounded-xl bg-indigo-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                    {selectedBookStats.isAll ? <Layers className="w-5 h-5" /> : <BookMarked className="w-5 h-5" />}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h3 className="text-sm sm:text-base font-black text-slate-900 truncate">
+                        {selectedBookStats.title}
+                      </h3>
+                      {selectedBookStats.isAll ? (
+                        <span className="text-[10px] font-bold bg-indigo-100 text-indigo-700 px-2 py-0.5 rounded-full shrink-0">
+                          전체 통합
+                        </span>
+                      ) : (
+                        <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full shrink-0">
+                          선택됨
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-slate-500 mt-0.5 truncate">
+                      {selectedBookStats.isAll
+                        ? `총 ${availableBookTitles.length}개의 단어장에 수록된 모든 단어를 학습합니다.`
+                        : `'${selectedBookStats.title}'에 등록된 단어들을 문맥과 함께 학습합니다.`}
+                    </p>
+                  </div>
+                </div>
+
+                {/* 랜덤 순서 표시 배지 & 다시 섞기 버튼 */}
+                <div className="flex items-center gap-1.5 shrink-0 ml-auto">
+                  <span className="text-[11px] font-bold text-indigo-700 bg-indigo-100/80 px-2.5 py-1 rounded-lg flex items-center gap-1">
+                    <Shuffle className="w-3.5 h-3.5 text-indigo-600" />
+                    <span>랜덤 순서</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => setShuffleKey((k) => k + 1)}
+                    className="text-[11px] font-bold text-slate-700 hover:text-indigo-600 bg-white hover:bg-slate-50 border border-slate-200 px-2.5 py-1 rounded-lg transition flex items-center gap-1 shadow-2xs cursor-pointer active:scale-95"
+                    title="단어 순서를 무작위로 다시 섞습니다"
+                  >
+                    <RotateCw className="w-3 h-3" />
+                    <span>다시 섞기</span>
+                  </button>
+                </div>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
-                {/* 1. Entire Vocab Card */}
-                {(() => {
-                  const isSelected = selectedBookFilter === 'all';
-                  const totalQuiz = vocabulary.reduce((acc, v) => acc + (v.quizCount || 0), 0);
-                  const totalCorrect = vocabulary.reduce((acc, v) => acc + (v.correctCount || 0), 0);
-                  const accuracy = totalQuiz > 0 ? Math.round((totalCorrect / totalQuiz) * 100) : 0;
-
-                  return (
-                    <div
-                      className={`p-3.5 rounded-xl border transition flex flex-col justify-between gap-2.5 ${
-                        isSelected
-                          ? 'bg-indigo-50/70 border-indigo-400 shadow-xs ring-1 ring-indigo-400'
-                          : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/50'
-                      }`}
-                    >
-                      <div>
-                        <div className="flex items-start justify-between gap-1.5 mb-1.5">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <Layers className="w-4 h-4 text-slate-700 shrink-0" />
-                            <h4 className="text-xs font-black text-slate-900 truncate">
-                              전체 단어장 보기
-                            </h4>
-                          </div>
-                          <span
-                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
-                              isSelected ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700'
-                            }`}
-                          >
-                            총 {vocabulary.length}단어
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-2 text-[10px] text-slate-500">
-                          {totalQuiz > 0 ? (
-                            <span className="flex items-center gap-1 font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">
-                              <BarChart3 className="w-3 h-3" />
-                              <span>정답률 {accuracy}% ({totalQuiz}회 풀이)</span>
-                            </span>
-                          ) : (
-                            <span className="text-slate-400">퀴즈 미도전</span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-1.5 pt-1 border-t border-slate-100">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedBookFilter('all')}
-                          className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1 cursor-pointer ${
-                            isSelected
-                              ? 'bg-indigo-600 text-white shadow-xs'
-                              : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
-                          }`}
-                        >
-                          <span>{isSelected ? '✓ 전체 보는 중' : '전체 단어 보기'}</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => startQuiz('all')}
-                          className="py-1.5 px-3 text-xs font-bold rounded-lg bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white border border-indigo-200 hover:border-indigo-600 transition flex items-center gap-1 shrink-0 cursor-pointer"
-                          title="전체 단어로 퀴즈 풀기"
-                        >
-                          <Award className="w-3.5 h-3.5" />
-                          <span>전체 퀴즈</span>
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })()}
-
-                {/* 2. Individual Book Decks */}
-                {availableBookTitles.map((title) => {
-                  const items = vocabulary.filter((v) => (v.bookTitle || '기본 단어장') === title);
-                  const isSelected = selectedBookFilter === title;
-                  const deckQuiz = items.reduce((acc, v) => acc + (v.quizCount || 0), 0);
-                  const deckCorrect = items.reduce((acc, v) => acc + (v.correctCount || 0), 0);
-                  const accuracy = deckQuiz > 0 ? Math.round((deckCorrect / deckQuiz) * 100) : 0;
-
-                  return (
-                    <div
-                      key={title}
-                      className={`p-3.5 rounded-xl border transition flex flex-col justify-between gap-2.5 ${
-                        isSelected
-                          ? 'bg-indigo-50/70 border-indigo-400 shadow-xs ring-1 ring-indigo-400'
-                          : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/50'
-                      }`}
-                    >
-                      <div>
-                        <div className="flex items-start justify-between gap-1.5 mb-1.5">
-                          <div className="flex items-center gap-1.5 min-w-0">
-                            <BookMarked className="w-4 h-4 text-indigo-600 shrink-0" />
-                            <h4 className="text-xs font-black text-slate-900 truncate" title={title}>
-                              {title}
-                            </h4>
-                          </div>
-                          <span
-                            className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
-                              isSelected ? 'bg-indigo-600 text-white' : 'bg-slate-100 text-slate-700'
-                            }`}
-                          >
-                            {items.length}단어
-                          </span>
-                        </div>
-
-                        <div className="flex items-center gap-2 text-[10px] text-slate-500">
-                          {deckQuiz > 0 ? (
-                            <span className="flex items-center gap-1 font-semibold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded">
-                              <BarChart3 className="w-3 h-3" />
-                              <span>정답률 {accuracy}% ({deckQuiz}회 풀이)</span>
-                            </span>
-                          ) : (
-                            <span className="text-slate-400">퀴즈 미도전</span>
-                          )}
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-1.5 pt-1 border-t border-slate-100">
-                        <button
-                          type="button"
-                          onClick={() => setSelectedBookFilter(title)}
-                          className={`flex-1 py-1.5 text-xs font-bold rounded-lg transition flex items-center justify-center gap-1 cursor-pointer ${
-                            isSelected
-                              ? 'bg-indigo-600 text-white shadow-xs'
-                              : 'bg-white border border-slate-200 text-slate-700 hover:bg-slate-100'
-                          }`}
-                        >
-                          <span>{isSelected ? '✓ 보는 중' : '단어 보기'}</span>
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => startQuiz(title)}
-                          className="py-1.5 px-3 text-xs font-bold rounded-lg bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white border border-indigo-200 hover:border-indigo-600 transition flex items-center gap-1 shrink-0 cursor-pointer"
-                          title={`[${title}] 퀴즈 풀기`}
-                        >
-                          <Award className="w-3.5 h-3.5" />
-                          <span>퀴즈</span>
-                        </button>
-                      </div>
-                    </div>
-                  );
-                })}
+              {/* 통계 지표 그리드 */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-2 border-t border-indigo-100/60">
+                <div className="bg-white/80 p-2.5 rounded-xl border border-slate-200/60 text-center">
+                  <span className="text-[10px] text-slate-400 block font-medium">총 수록 단어</span>
+                  <span className="text-base font-black text-slate-900">{selectedBookStats.totalWords}단어</span>
+                </div>
+                <div className="bg-white/80 p-2.5 rounded-xl border border-slate-200/60 text-center">
+                  <span className="text-[10px] text-slate-400 block font-medium">퀴즈 푼 횟수</span>
+                  <span className="text-base font-black text-indigo-600">{selectedBookStats.totalQuiz}회</span>
+                </div>
+                <div className="bg-white/80 p-2.5 rounded-xl border border-slate-200/60 text-center">
+                  <span className="text-[10px] text-slate-400 block font-medium">퀴즈 정답률</span>
+                  <span
+                    className={`text-base font-black ${
+                      selectedBookStats.accuracy >= 80
+                        ? 'text-emerald-600'
+                        : selectedBookStats.accuracy >= 50
+                        ? 'text-blue-600'
+                        : 'text-slate-700'
+                    }`}
+                  >
+                    {selectedBookStats.totalQuiz > 0 ? `${selectedBookStats.accuracy}%` : '-'}
+                  </span>
+                </div>
+                <div className="bg-white/80 p-2.5 rounded-xl border border-slate-200/60 text-center">
+                  <span className="text-[10px] text-slate-400 block font-medium">완전 정복 단어</span>
+                  <span className="text-base font-black text-emerald-600">
+                    {selectedBookStats.masteredCount}단어
+                  </span>
+                </div>
               </div>
             </div>
 
-            {/* Filtered Word Header Notice */}
-            <div className="flex items-center justify-between pt-2 border-t border-slate-200">
+            {/* 4. 단어 목록 헤더 (랜덤순) */}
+            <div className="flex items-center justify-between pt-1 px-1">
               <div className="flex items-center gap-2">
                 <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
                   <BookOpen className="w-4 h-4 text-indigo-600" />
                   <span>
                     {selectedBookFilter === 'all'
-                      ? '전체 단어 목록'
-                      : `[${selectedBookFilter}] 단어 목록`}
+                      ? '전체 단어 목록 (랜덤순)'
+                      : `[${selectedBookFilter}] 단어 목록 (랜덤순)`}
                   </span>
                 </span>
                 <span className="text-[11px] bg-slate-100 text-slate-700 font-bold px-2 py-0.5 rounded-full">
