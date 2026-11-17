@@ -80,6 +80,7 @@ import {
   Cloud,
   ChevronDown,
   Image as ImageIcon,
+  ClipboardPaste,
 } from 'lucide-react';
 
 function GoogleIcon({ className = 'w-4 h-4' }: { className?: string }) {
@@ -731,19 +732,57 @@ export default function Home() {
     );
   }
 
+  // 스마트 입력 감지: URL인지 기사 본문 텍스트인지 자동 판별
+  function detectContentType(raw: string): { type: 'url' | 'text'; cleanUrl?: string } {
+    const trimmed = raw.trim();
+    if (!trimmed) return { type: 'text' };
+
+    // 줄바꿈이 포함되어 여러 줄로 구성된 경우 무조건 본문 텍스트로 처리
+    if (trimmed.includes('\n')) {
+      const lines = trimmed.split('\n').map((l) => l.trim()).filter(Boolean);
+      if (lines.length > 1) {
+        return { type: 'text' };
+      }
+    }
+
+    // URL 판별: http/https로 시작하거나, www.로 시작하거나, 공백 없는 유효 도메인 경로 형식
+    const isHttp = /^https?:\/\/[^\s]+$/i.test(trimmed);
+    const isWww = /^www\.[^\s]+\.[a-z]{2,}[^\s]*$/i.test(trimmed);
+    const isDomain = /^[a-zA-Z0-9-]+\.[a-zA-Z]{2,}(\/[^\s]*)?$/i.test(trimmed);
+
+    if ((isHttp || isWww || isDomain) && !trimmed.includes(' ') && trimmed.length < 2000) {
+      let cleanUrl = trimmed;
+      if (!cleanUrl.startsWith('http://') && !cleanUrl.startsWith('https://')) {
+        cleanUrl = `https://${cleanUrl}`;
+      }
+      return { type: 'url', cleanUrl };
+    }
+
+    return { type: 'text' };
+  }
+
   // Handle Web Page URL Scraping (백그라운드 비동기 처리 - 블로킹 없음)
-  async function handleScrapeUrl() {
-    const targetUrl = inputWebUrl.trim();
-    if (!targetUrl) {
+  async function handleScrapeUrl(overrideUrl?: unknown) {
+    const rawTarget = (typeof overrideUrl === 'string' ? overrideUrl : inputWebUrl).trim();
+    if (!rawTarget) {
       setUrlScrapeError('웹페이지 주소(URL)를 입력해 주세요.');
       return;
     }
+
+    // 스마트 감지: 만약 URL 입력창에 본문 글을 넣었을 경우 본문 등록으로 자동 전환!
+    const detected = detectContentType(rawTarget);
+    if (detected.type === 'text') {
+      await handleApplyPastedText(rawTarget);
+      return;
+    }
+
+    const targetUrl = detected.cleanUrl || rawTarget;
 
     setUrlScrapeError(null);
     setIsUrlModalOpen(false);
     setInputWebUrl('');
 
-    triggerToast('웹페이지 분석 시작! 🌐', '백그라운드에서 기사를 읽어오는 동안 단어를 먼저 입력하고 뜻을 고르세요.');
+    triggerToast('웹페이지 분석 시작! 🌐', '기사를 읽어오는 동안 단어를 먼저 입력하고 뜻을 고르세요.');
 
     startBackgroundSourceAnalysis('웹페이지 URL 분석', 'web', async () => {
       setIsUrlScraping(true);
@@ -771,17 +810,24 @@ export default function Home() {
   }
 
   // Handle Pasted Article Text with AI Ad / Noise Cleaning
-  async function handleApplyPastedText() {
-    const raw = inputPastedText.trim();
+  async function handleApplyPastedText(overrideText?: unknown, overrideTitle?: string) {
+    const raw = (typeof overrideText === 'string' ? overrideText : inputPastedText).trim();
     if (!raw) {
       alert('붙여넣을 기사 본문 텍스트를 입력해 주세요!');
+      return;
+    }
+
+    // 스마트 감지: 만약 본문 입력창에 URL을 넣었을 경우 URL 분석으로 자동 전환!
+    const detected = detectContentType(raw);
+    if (detected.type === 'url' && detected.cleanUrl) {
+      await handleScrapeUrl(detected.cleanUrl);
       return;
     }
 
     setIsCleaningPastedText(true);
     try {
       let cleaned = raw;
-      let title = inputPastedTitle.trim();
+      let title = (overrideTitle || inputPastedTitle).trim();
       let removedAdCount = 0;
 
       if (autoRemoveAds) {
@@ -833,6 +879,36 @@ export default function Home() {
       alert('텍스트 처리 중 오류가 발생했습니다.');
     } finally {
       setIsCleaningPastedText(false);
+    }
+  }
+
+  // 클립보드 원터치 붙여넣기: URL이면 기사 스크래핑, 본문이면 기사 본문으로 스마트 자동 실행
+  async function handleClipboardPasteSmart() {
+    try {
+      if (!navigator.clipboard || !navigator.clipboard.readText) {
+        triggerToast('클립보드 안내 📋', '브라우저 보안으로 인해 입력창에 직접 붙여넣어 주세요.');
+        return;
+      }
+
+      const clipText = await navigator.clipboard.readText();
+      const trimmed = clipText ? clipText.trim() : '';
+
+      if (!trimmed) {
+        triggerToast('클립보드가 비어 있습니다', '웹 주소(URL)나 기사 본문을 복사한 후 다시 눌러주세요!');
+        return;
+      }
+
+      const detected = detectContentType(trimmed);
+      if (detected.type === 'url' && detected.cleanUrl) {
+        triggerToast('🌐 웹 URL 감지됨!', `${detected.cleanUrl.slice(0, 40)}... 본문을 불러옵니다.`);
+        await handleScrapeUrl(detected.cleanUrl);
+      } else {
+        triggerToast('📄 기사 본문 감지됨!', '복사한 글을 본문 문맥으로 자동 등록합니다.');
+        await handleApplyPastedText(trimmed);
+      }
+    } catch (err: any) {
+      console.warn('Clipboard read error:', err);
+      triggerToast('클립보드 권한 필요', '붙여넣기 허용을 누르시거나 아래 입력창에 직접 붙여넣어 주세요.');
     }
   }
 
@@ -3628,6 +3704,19 @@ export default function Home() {
               </button>
             </div>
 
+            {/* Primary Smart Clipboard Paste Button */}
+            <div className="mt-3 shrink-0">
+              <button
+                type="button"
+                onClick={handleClipboardPasteSmart}
+                className="w-full py-3 px-4 bg-gradient-to-r from-indigo-600 via-indigo-700 to-blue-600 hover:opacity-95 text-white font-bold text-xs sm:text-sm rounded-2xl shadow-sm transition flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+                title="복사한 내용이 URL이면 기사를 불러오고, 글이면 본문으로 자동 등록합니다"
+              >
+                <ClipboardPaste className="w-4 h-4 text-amber-300 shrink-0" />
+                <span>📋 클립보드 붙여넣기 (URL · 본문 자동 감지)</span>
+              </button>
+            </div>
+
             {/* Tab Switcher */}
             <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl mt-3 shrink-0">
               <button
@@ -3665,7 +3754,7 @@ export default function Home() {
                     <label className="block text-xs font-bold text-slate-700 mb-1.5">
                       웹페이지 주소 (URL)
                     </label>
-                    <div className="relative">
+                    <div className="relative flex items-center">
                       <input
                         type="url"
                         value={inputWebUrl}
@@ -3677,17 +3766,29 @@ export default function Home() {
                           if (e.key === 'Enter') handleScrapeUrl();
                         }}
                         placeholder="예: https://www.bbc.com/news/... 또는 영문 기사 URL"
-                        className="w-full px-4 py-3 bg-white text-slate-900 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none pr-10"
+                        className="w-full px-4 py-3 bg-white text-slate-900 border border-slate-300 rounded-xl text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none pr-24"
                       />
-                      {inputWebUrl && (
-                        <button
-                          type="button"
-                          onClick={() => setInputWebUrl('')}
-                          className="absolute right-3 top-3 text-slate-400 hover:text-slate-600 text-xs cursor-pointer"
-                        >
-                          ✕
-                        </button>
-                      )}
+                      <div className="absolute right-2 flex items-center gap-1">
+                        {inputWebUrl ? (
+                          <button
+                            type="button"
+                            onClick={() => setInputWebUrl('')}
+                            className="text-slate-400 hover:text-slate-600 text-xs p-1.5 cursor-pointer"
+                          >
+                            ✕
+                          </button>
+                        ) : (
+                          <button
+                            type="button"
+                            onClick={handleClipboardPasteSmart}
+                            className="px-2.5 py-1 text-[11px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-lg border border-indigo-200 transition flex items-center gap-1 cursor-pointer active:scale-95"
+                            title="클립보드에서 바로 붙여넣기"
+                          >
+                            <ClipboardPaste className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                            <span>붙여넣기</span>
+                          </button>
+                        )}
+                      </div>
                     </div>
                   </div>
 
@@ -3743,21 +3844,32 @@ export default function Home() {
                     />
                   </div>
 
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="block text-xs font-bold text-slate-700">
-                        기사 본문 내용 <span className="text-rose-500">*</span>
-                      </label>
-                      {inputPastedText && (
-                        <button
-                          type="button"
-                          onClick={() => setInputPastedText('')}
-                          className="text-[10px] text-slate-400 hover:text-rose-500 cursor-pointer"
-                        >
-                          지우기
-                        </button>
-                      )}
-                    </div>
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-xs font-bold text-slate-700">
+                          기사 본문 내용 <span className="text-rose-500">*</span>
+                        </label>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={handleClipboardPasteSmart}
+                            className="px-2 py-0.5 text-[10px] bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold rounded-lg border border-indigo-200 transition flex items-center gap-1 cursor-pointer active:scale-95"
+                            title="클립보드에서 바로 붙여넣기"
+                          >
+                            <ClipboardPaste className="w-3 h-3 text-indigo-600" />
+                            <span>클립보드 붙여넣기</span>
+                          </button>
+                          {inputPastedText && (
+                            <button
+                              type="button"
+                              onClick={() => setInputPastedText('')}
+                              className="text-[10px] text-slate-400 hover:text-rose-500 cursor-pointer ml-1"
+                            >
+                              지우기
+                            </button>
+                          )}
+                        </div>
+                      </div>
                     <textarea
                       rows={7}
                       value={inputPastedText}
@@ -3802,7 +3914,7 @@ export default function Home() {
               {urlModalTab === 'url' ? (
                 <button
                   type="button"
-                  onClick={handleScrapeUrl}
+                  onClick={() => handleScrapeUrl()}
                   disabled={isUrlScraping || !inputWebUrl.trim()}
                   className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white text-xs font-bold rounded-xl shadow-md transition flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
                 >
@@ -3821,7 +3933,7 @@ export default function Home() {
               ) : (
                 <button
                   type="button"
-                  onClick={handleApplyPastedText}
+                  onClick={() => handleApplyPastedText()}
                   disabled={isCleaningPastedText || !inputPastedText.trim()}
                   className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white text-xs font-bold rounded-xl shadow-md transition flex items-center gap-1.5 cursor-pointer disabled:cursor-not-allowed"
                 >
