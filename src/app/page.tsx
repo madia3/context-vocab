@@ -102,12 +102,12 @@ function GoogleIcon({ className = 'w-4 h-4' }: { className?: string }) {
 
 function getPosBadgeColor(pos?: string): string {
   const p = (pos || '').trim();
-  if (p === '명사' || p.includes('명사')) return 'bg-blue-100 text-blue-800 border-blue-200';
+  if (p === '명사' || p.includes('명사')) return 'bg-brand-100 text-brand-800 border-brand-200';
   if (p === '동사' || p.includes('동사')) return 'bg-emerald-100 text-emerald-800 border-emerald-200';
-  if (p === '형용사' || p.includes('형용사')) return 'bg-purple-100 text-purple-800 border-purple-200';
-  if (p === '부사' || p.includes('부사')) return 'bg-amber-100 text-amber-800 border-amber-200';
-  if (p === '전치사' || p === '접속사') return 'bg-cyan-100 text-cyan-800 border-cyan-200';
-  return 'bg-indigo-50 text-indigo-700 border-indigo-200';
+  if (p === '형용사' || p.includes('형용사')) return 'bg-amber-100 text-amber-800 border-amber-200';
+  if (p === '부사' || p.includes('부사')) return 'bg-orange-100 text-orange-800 border-orange-200';
+  if (p === '전치사' || p === '접속사') return 'bg-teal-100 text-teal-800 border-teal-200';
+  return 'bg-brand-50 text-brand-700 border-brand-200';
 }
 
 interface WordEntryItem {
@@ -1251,18 +1251,18 @@ export default function Home() {
       {/* Header (Mobile First Clean 2-Tier Structure) */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
         <div className="max-w-5xl mx-auto px-4 py-2.5 flex items-center justify-between gap-3">
-          {/* Logo */}
+          {/* Logo - Styled identically to leegwajang.com signature logo */}
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-indigo-600 text-white flex items-center justify-center font-black text-base shadow-sm">
-              V
+            <div className="w-8 h-8 rounded-xl bg-[#5090B3] text-[#F3D372] flex items-center justify-center font-black text-base shadow-sm ring-1 ring-[#417897]/20 select-none">
+              이
             </div>
             <div>
               <div className="flex items-center gap-1.5">
                 <h1 className="font-extrabold text-base text-slate-900 tracking-tight leading-none">
                   ContextVocab
                 </h1>
-                <span className="hidden sm:inline-block text-[10px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded font-bold">
-                  영한 원서 단어장
+                <span className="hidden sm:inline-block text-[10px] bg-brand-50 text-brand-700 border border-brand-200 px-1.5 py-0.5 rounded font-bold">
+                  이과장 영한 단어장
                 </span>
               </div>
               <p className="text-[10px] text-slate-400 font-medium hidden sm:block mt-0.5">
@@ -1277,20 +1277,20 @@ export default function Home() {
               <button
                 type="button"
                 onClick={() => setIsAiModalOpen(true)}
-                className="text-xs bg-purple-50 hover:bg-purple-100 text-purple-700 border border-purple-200 px-2 sm:px-2.5 py-1.5 rounded-xl flex items-center gap-1 font-bold transition cursor-pointer"
+                className="text-xs bg-brand-50 hover:bg-brand-100 text-brand-700 border border-brand-200 px-2 sm:px-2.5 py-1.5 rounded-xl flex items-center gap-1 font-bold transition cursor-pointer"
                 title="Google Gemini AI 연결됨"
               >
-                <Bot className="w-3.5 h-3.5 text-purple-600" />
+                <Bot className="w-3.5 h-3.5 text-brand-600" />
                 <span className="hidden sm:inline">AI 켜짐</span>
               </button>
             ) : (
               <button
                 type="button"
                 onClick={() => setIsAiModalOpen(true)}
-                className="text-xs bg-gradient-to-r from-purple-600 to-indigo-600 text-white px-2 sm:px-2.5 py-1.5 rounded-xl flex items-center gap-1 font-bold shadow-xs hover:opacity-95 transition cursor-pointer"
+                className="text-xs bg-gradient-to-r from-brand-600 to-brand-500 text-white px-2 sm:px-2.5 py-1.5 rounded-xl flex items-center gap-1 font-bold shadow-xs hover:opacity-95 transition cursor-pointer"
                 title="Google Gemini AI 무료 연동"
               >
-                <Sparkles className="w-3.5 h-3.5" />
+                <Sparkles className="w-3.5 h-3.5 text-[#F3D372]" />
                 <span className="hidden sm:inline">AI 연동</span>
               </button>
             )}
@@ -1513,10 +1513,10 @@ export default function Home() {
                 />
 
                 {/* Page Photo Capture / Web URL Scanner Card */}
-                <div className="bg-gradient-to-r from-indigo-50/80 to-purple-50/80 p-3 sm:p-3.5 rounded-xl border border-indigo-100">
+                <div className="bg-gradient-to-r from-brand-50 to-brand-100/40 p-3 sm:p-3.5 rounded-xl border border-brand-200">
                   <div className="flex items-center justify-between gap-2 mb-2">
                     <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 shrink-0">
-                      <BookOpen className="w-4 h-4 text-indigo-600" />
+                      <BookOpen className="w-4 h-4 text-brand-600" />
                       <span>원문 문장 불러오기</span>
                     </span>
                     <div className="flex items-center gap-1 shrink-0">
@@ -2771,7 +2771,7 @@ export default function Home() {
                       </button>
                       <button
                         onClick={() => startQuiz(selectedBookFilter, 'smart')}
-                        className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow transition"
+                        className="bg-brand-600 hover:bg-brand-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow transition"
                       >
                         🧠 스마트 복습
                       </button>
@@ -3201,17 +3201,17 @@ export default function Home() {
       {/* Dedicated AI Setup Modal */}
       {isAiModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-purple-100 space-y-5">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-brand-100 space-y-5">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3.5">
               <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-purple-600 to-indigo-600 text-white flex items-center justify-center shadow-md">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-brand-600 to-brand-500 text-[#F3D372] flex items-center justify-center shadow-md">
                   <Bot className="w-5 h-5" />
                 </div>
                 <div>
                   <h3 className="font-black text-base text-slate-900 leading-tight">
                     Google Gemini AI 원클릭 연동
                   </h3>
-                  <p className="text-[11px] text-purple-600 font-semibold">
+                  <p className="text-[11px] text-brand-600 font-semibold">
                     책 사진 오타 교정 & 복수/시제 변화형 문맥 자동 탐색
                   </p>
                 </div>
@@ -3225,18 +3225,18 @@ export default function Home() {
             </div>
 
             {/* Benefits Explanation */}
-            <div className="bg-purple-50/70 rounded-2xl p-4 border border-purple-100 space-y-2 text-xs text-purple-950">
-              <h4 className="font-black text-xs text-purple-900 flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-purple-600" />
+            <div className="bg-brand-50/70 rounded-2xl p-4 border border-brand-200/80 space-y-2 text-xs text-slate-800">
+              <h4 className="font-black text-xs text-brand-900 flex items-center gap-1.5">
+                <Sparkles className="w-3.5 h-3.5 text-[#5090B3]" />
                 <span>AI 연동 시 이런 점이 강력해집니다:</span>
               </h4>
-              <ul className="space-y-1.5 text-[11px] text-purple-900/90 leading-relaxed pl-1">
+              <ul className="space-y-1.5 text-[11px] text-slate-700 leading-relaxed pl-1">
                 <li className="flex items-start gap-1.5">
-                  <span className="text-purple-600 font-bold">1.</span>
+                  <span className="text-brand-600 font-bold">1.</span>
                   <span><strong>사진 오타·줄바꿈 100% 자동 교정</strong>: 모바일 카메라로 대충 찍어도 흐릿한 글자, 잘린 하이픈(con- / dition)을 자연스러운 문장으로 복원합니다.</span>
                 </li>
                 <li className="flex items-start gap-1.5">
-                  <span className="text-purple-600 font-bold">2.</span>
+                  <span className="text-brand-600 font-bold">2.</span>
                   <span><strong>문맥 속 변화형 자동 감지</strong>: 단어를 원형(party, run)으로 입력해도 책 속의 복수형(parties), 과거형(ran), 분사형 등을 AI가 문맥에서 스스로 찾아냅니다.</span>
                 </li>
               </ul>
@@ -3246,14 +3246,14 @@ export default function Home() {
             <div className="space-y-3">
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                  <Key className="w-3.5 h-3.5 text-indigo-600" />
+                  <Key className="w-3.5 h-3.5 text-brand-600" />
                   <span>Gemini API Key 등록 (신용카드 불필요 · 평생 무료)</span>
                 </label>
                 <a
                   href="https://aistudio.google.com/app/apikey"
                   target="_blank"
                   rel="noreferrer"
-                  className="text-[11px] text-indigo-600 hover:text-indigo-800 font-bold underline flex items-center gap-1"
+                  className="text-[11px] text-brand-600 hover:text-brand-800 font-bold underline flex items-center gap-1"
                 >
                   <span>무료 키 발급받기 (30초)</span>
                   <ExternalLink className="w-3 h-3" />
@@ -3269,13 +3269,13 @@ export default function Home() {
                     setKeyTestStatus(null);
                   }}
                   placeholder="AIzaSy... (발급받은 키를 여기에 붙여넣으세요)"
-                  className="flex-1 px-3.5 py-2.5 text-xs font-mono bg-slate-50 text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 font-semibold"
+                  className="flex-1 px-3.5 py-2.5 text-xs font-mono bg-slate-50 text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 font-semibold"
                 />
                 <button
                   type="button"
                   onClick={() => handleSaveAndTestAiKey()}
                   disabled={isTestingKey}
-                  className="bg-purple-600 hover:bg-purple-700 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-md transition shrink-0 flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                  className="bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-md transition shrink-0 flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
                 >
                   {isTestingKey ? (
                     <>
@@ -3397,14 +3397,14 @@ export default function Home() {
               </div>
 
               {/* Google Gemini AI Vision & Sentence Matcher Settings */}
-              <div className="bg-purple-50/70 p-3.5 rounded-xl border border-purple-200/80 space-y-2">
+              <div className="bg-brand-50/70 p-3.5 rounded-xl border border-brand-200/80 space-y-2">
                 <div className="flex items-center justify-between">
-                  <span className="font-bold text-purple-950 flex items-center gap-1.5 text-xs">
-                    <Bot className="w-4 h-4 text-purple-600" />
+                  <span className="font-bold text-slate-900 flex items-center gap-1.5 text-xs">
+                    <Bot className="w-4 h-4 text-brand-600" />
                     <span>Google Gemini AI 비전 & 문맥 분석</span>
                   </span>
                   {geminiApiKey ? (
-                    <span className="text-[10px] bg-purple-200 text-purple-900 font-bold px-2 py-0.5 rounded-full">
+                    <span className="text-[10px] bg-brand-200 text-brand-800 font-bold px-2 py-0.5 rounded-full">
                       연동 활성화됨
                     </span>
                   ) : (
@@ -3413,7 +3413,7 @@ export default function Home() {
                     </span>
                   )}
                 </div>
-                <p className="text-[11px] text-purple-900/80 leading-relaxed">
+                <p className="text-[11px] text-slate-600 leading-relaxed">
                   Gemini API를 연동하면 책 사진의 오타·잘린 줄바꿈을 완벽히 복원하고, 단어의 복수형(parties)/과거형(walked) 등 형태소 변화형까지 AI가 문맥에서 스스로 찾아냅니다.
                 </p>
                 <div className="flex gap-1.5 pt-1">
@@ -3422,7 +3422,7 @@ export default function Home() {
                     value={geminiKeyInput}
                     onChange={(e) => setGeminiKeyInput(e.target.value)}
                     placeholder="AIzaSy... (Gemini API 키 입력)"
-                    className="flex-1 px-2.5 py-1.5 bg-white border border-purple-200 rounded-lg text-xs font-mono focus:outline-none focus:ring-1 focus:ring-purple-500"
+                    className="flex-1 px-2.5 py-1.5 bg-white border border-brand-200 rounded-lg text-xs font-mono focus:outline-none focus:ring-1 focus:ring-brand-500"
                   />
                   <button
                     type="button"
@@ -3436,7 +3436,7 @@ export default function Home() {
                           : '기본 로컬 엔진으로 작동합니다.'
                       );
                     }}
-                    className="bg-purple-600 hover:bg-purple-700 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition shrink-0 cursor-pointer"
+                    className="bg-brand-500 hover:bg-brand-600 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition shrink-0 cursor-pointer"
                   >
                     저장
                   </button>
@@ -3449,19 +3449,19 @@ export default function Home() {
                         setGeminiKeyInput('');
                         triggerToast('AI 키 삭제됨', '기본 로컬 모드로 전환되었습니다.');
                       }}
-                      className="bg-white border border-purple-300 text-purple-700 hover:bg-purple-100 font-bold px-2.5 py-1.5 rounded-lg text-xs transition shrink-0 cursor-pointer"
+                      className="bg-white border border-brand-300 text-brand-700 hover:bg-brand-100 font-bold px-2.5 py-1.5 rounded-lg text-xs transition shrink-0 cursor-pointer"
                     >
                       해제
                     </button>
                   )}
                 </div>
-                <div className="flex items-center justify-between pt-0.5 text-[10px] text-purple-700">
+                <div className="flex items-center justify-between pt-0.5 text-[10px] text-brand-700">
                   <span>💡 개인용 무료 키 발급 (신용카드 불필요)</span>
                   <a
                     href="https://aistudio.google.com/app/apikey"
                     target="_blank"
                     rel="noreferrer"
-                    className="font-bold underline flex items-center gap-0.5 hover:text-purple-900"
+                    className="font-bold underline flex items-center gap-0.5 hover:text-brand-900"
                   >
                     <span>Google AI Studio 열기</span>
                     <ExternalLink className="w-2.5 h-2.5" />
