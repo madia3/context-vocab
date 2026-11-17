@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { callGeminiWithFallback } from '@/lib/geminiServer';
 
 export const runtime = 'nodejs';
 
@@ -236,7 +237,7 @@ const BUILTIN_CORE_DICT: Record<
     ],
     exampleSentence: 'The risks to the forecast are tilted to the downside.',
   },
-  tilt: {
+   tilt: {
     phonetic: '/tɪlt/',
     meanings: [
       { pos: '동사', def: '기울다, 기울이다, 편향되다' },
@@ -244,12 +245,59 @@ const BUILTIN_CORE_DICT: Record<
     ],
     exampleSentence: 'The balance of risks is tilted toward the downside.',
   },
+  complete: {
+    phonetic: '/kəmˈpliːt/',
+    meanings: [
+      { pos: '형용사', def: '완전한, 완벽한' },
+      { pos: '형용사', def: '완성된, 끝난' },
+      { pos: '동사', def: '완료하다, 끝마치다' },
+      { pos: '동사', def: '완성하다, 작성하다' },
+    ],
+    exampleSentence: 'He completed the project on time.',
+  },
+  completed: {
+    phonetic: '/kəmˈpliːtɪd/',
+    meanings: [
+      { pos: '형용사', def: '완료된, 완성된' },
+      { pos: '동사', def: '완료했다, 끝마쳤다' },
+    ],
+    exampleSentence: 'The task is successfully completed.',
+  },
+  completely: {
+    phonetic: '/kəmˈpliːtli/',
+    meanings: [
+      { pos: '부사', def: '완전히, 전적으로' },
+      { pos: '부사', def: '완벽하게, 온전히' },
+    ],
+    exampleSentence: 'I completely agree with your proposal.',
+  },
+  completion: {
+    phonetic: '/kəmˈpliː.ʃən/',
+    meanings: [
+      { pos: '명사', def: '완료, 완성, 완공' },
+      { pos: '명사', def: '성취, 체결' },
+    ],
+    exampleSentence: 'The project is nearing completion.',
+  },
+  incomplete: {
+    phonetic: '/ˌɪn.kəmˈpliːt/',
+    meanings: [
+      { pos: '형용사', def: '불완전한, 미완성의' },
+      { pos: '형용사', def: '미결의, 부족한' },
+    ],
+    exampleSentence: 'The report was incomplete and needed more data.',
+  },
 };
 
 // 한국어 번역 뜻 정제 및 노이즈 필터링 함수
+const BANNED_DEFINITIONS = new Set(['성업', '번역', 'matecat', 'mymemory', 'undefined', 'null']);
+
 function isValidKoreanDefinition(def: string): boolean {
   if (!def || typeof def !== 'string') return false;
   const trimmed = def.trim();
+
+  // 크라우드소싱 오역 및 시스템 노이즈 배제
+  if (BANNED_DEFINITIONS.has(trimmed.toLowerCase())) return false;
 
   // 비어있거나 너무 길면 배제 (뜻은 간결해야 함)
   if (trimmed.length === 0 || trimmed.length > 25) return false;
@@ -420,7 +468,61 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // 3. Fallback with MyMemory API (엄격 필터링 적용 - 툴팁/문장 노이즈 차단)
+  // 3. High-Accuracy AI Lexicographer Fallback via Gemini (표준 영한 사전 수준의 품사별 뜻 & 예문)
+  if (meanings.length === 0) {
+    const geminiKey = process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+    if (geminiKey) {
+      try {
+        const aiPrompt = `You are a standard English-Korean dictionary (like Naver/Daum English Dictionary).
+Word: "${word}"
+Provide standard, accurate Korean dictionary definitions.
+Categorize by standard Korean parts of speech (형용사, 동사, 명사, 부사, etc.).
+Exclude obscure, archaic, or crowd-sourced mistranslations (e.g. NEVER translate "complete" as "성업").
+Return strictly valid JSON:
+{
+  "phonetic": "/.../",
+  "meanings": [
+    { "pos": "형용사", "def": "완전한, 완벽한" }
+  ],
+  "exampleSentence": "..."
+}`;
+        const aiRes = await callGeminiWithFallback({
+          apiKey: geminiKey,
+          parts: [{ text: aiPrompt }],
+          responseMimeType: 'application/json',
+          temperature: 0.0,
+          candidates: [
+            { model: 'gemini-3.1-flash-lite', thinkingConfig: { thinkingBudget: 0 }, timeoutMs: 2500 },
+            { model: 'gemini-3.5-flash-lite', thinkingConfig: { thinkingLevel: 'LOW' }, timeoutMs: 3000 },
+          ],
+        });
+
+        if (aiRes.ok && aiRes.text) {
+          const cleanJson = aiRes.text.replace(/```json/gi, '').replace(/```/g, '').trim();
+          const parsed = JSON.parse(cleanJson);
+          if (parsed.phonetic && typeof parsed.phonetic === 'string' && parsed.phonetic.trim()) {
+            phonetic = parsed.phonetic.trim();
+          }
+          if (Array.isArray(parsed.meanings) && parsed.meanings.length > 0) {
+            parsed.meanings.forEach((m: any) => {
+              const def = String(m.def || '').trim();
+              const pos = String(m.pos || fallbackPos).trim();
+              if (def && isValidKoreanDefinition(def) && meanings.length < 5) {
+                meanings.push({ pos, def });
+              }
+            });
+          }
+          if (parsed.exampleSentence && typeof parsed.exampleSentence === 'string' && parsed.exampleSentence.trim()) {
+            exampleSentence = parsed.exampleSentence.trim();
+          }
+        }
+      } catch (geminiErr) {
+        console.warn('Gemini dictionary fallback error:', geminiErr);
+      }
+    }
+  }
+
+  // 4. Secondary Fallback with MyMemory API (엄격 필터링 적용 - 툴팁/문장 노이즈 차단)
   if (meanings.length === 0) {
     try {
       const mRes = await fetch(
@@ -442,8 +544,8 @@ export async function GET(request: NextRequest) {
           mData.matches.forEach((m: any) => {
             const quality = Number(m.quality || 0);
             const translation = String(m.translation || '').trim();
-            // 품질 점수 60 이상 & 노이즈 필터 통과한 항목만 수용
-            if (quality >= 60 && isValidKoreanDefinition(translation) && !seenDefs.has(translation) && meanings.length < 4) {
+            // 품질 점수 70 이상 & 노이즈 필터 통과한 항목만 수용
+            if (quality >= 70 && isValidKoreanDefinition(translation) && !seenDefs.has(translation) && meanings.length < 4) {
               seenDefs.add(translation);
               meanings.push({ pos: fallbackPos, def: translation });
             }

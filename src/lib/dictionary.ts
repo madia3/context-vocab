@@ -87,6 +87,43 @@ export const BUILTIN_KOREAN_DICT: Record<string, { phonetic: string; meanings: M
     phonetic: "/ˈpær.ə.daɪm/",
     meanings: [{ pos: "명사", def: "패러다임, 전형적인 예, 인식의 틀" }],
   },
+  complete: {
+    phonetic: "/kəmˈpliːt/",
+    meanings: [
+      { pos: "형용사", def: "완전한, 완벽한" },
+      { pos: "형용사", def: "완성된, 끝난" },
+      { pos: "동사", def: "완료하다, 끝마치다" },
+      { pos: "동사", def: "완성하다, 작성하다" },
+    ],
+  },
+  completed: {
+    phonetic: "/kəmˈpliːtɪd/",
+    meanings: [
+      { pos: "형용사", def: "완료된, 완성된" },
+      { pos: "동사", def: "완료했다, 끝마쳤다" },
+    ],
+  },
+  completely: {
+    phonetic: "/kəmˈpliːtli/",
+    meanings: [
+      { pos: "부사", def: "완전히, 전적으로" },
+      { pos: "부사", def: "완벽하게, 온전히" },
+    ],
+  },
+  completion: {
+    phonetic: "/kəmˈpliː.ʃən/",
+    meanings: [
+      { pos: "명사", def: "완료, 완성, 완공" },
+      { pos: "명사", def: "성취, 체결" },
+    ],
+  },
+  incomplete: {
+    phonetic: "/ˌɪn.kəmˈpliːt/",
+    meanings: [
+      { pos: "형용사", def: "불완전한, 미완성의" },
+      { pos: "형용사", def: "미결의, 부족한" },
+    ],
+  },
 };
 
 export const DISTRACTOR_POOL_KOREAN = [
@@ -159,8 +196,15 @@ export async function lookupDictionary(rawWord: string): Promise<DictSearchResul
     if (apiRes.ok) {
       const data: DictSearchResult = await apiRes.json();
       if (data && data.meanings && data.meanings.length > 0) {
-        clientDictCache.set(word, data);
-        return data;
+        // Sanitize out known crowdsourced errors like '성업'
+        const validMeanings = data.meanings.filter(
+          (m) => m.def && !['성업', '번역', 'matecat', 'mymemory'].includes(m.def.trim().toLowerCase())
+        );
+        if (validMeanings.length > 0) {
+          const sanitized = { ...data, meanings: validMeanings };
+          clientDictCache.set(word, sanitized);
+          return sanitized;
+        }
       }
     }
   } catch (apiErr) {
