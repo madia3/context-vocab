@@ -306,34 +306,67 @@ export const IRREGULAR_TO_BASE: Record<string, string> = {
   furthest: 'far',
 };
 
+// 원래 s로 끝나는 단어(단수 명사/부사/전치사) 보호 목록
+const WORDS_NATURALLY_ENDING_IN_S = new Set([
+  'always', 'sometimes', 'perhaps', 'towards', 'besides', 'nowadays', 'whereas', 'downstairs', 'upstairs', 'outdoors', 'indoors', 'overseas', 'nonetheless', 'nevertheless',
+  'series', 'species', 'news', 'means', 'goods', 'economics', 'politics', 'physics', 'mathematics', 'statistics', 'ethics', 'genetics', 'linguistics', 'logistics', 'athletics',
+  'focus', 'status', 'consensus', 'census', 'campus', 'virus', 'bonus', 'genius', 'corpus', 'surplus', 'apparatus', 'stimulus', 'syllabus',
+  'lens', 'chaos', 'bias', 'canvas', 'atlas', 'alias', 'gas', 'bus', 'plus', 'thus', 'this',
+]);
+
+// 불규칙 -ves -> -f / -fe 명확한 폐쇄 집합
+const VES_IRREGULAR_MAP: Record<string, string> = {
+  knives: 'knife',
+  wives: 'wife',
+  lives: 'life',
+  leaves: 'leaf',
+  halves: 'half',
+  calves: 'calf',
+  wolves: 'wolf',
+  shelves: 'shelf',
+  selves: 'self',
+  themselves: 'themselves',
+  ourselves: 'ourselves',
+  yourselves: 'yourself',
+  thieves: 'thief',
+  loaves: 'loaf',
+  sheaves: 'sheaf',
+  scarves: 'scarf',
+  wharves: 'wharf',
+  elves: 'elf',
+};
+
 // 복수형, 과거형, 진행형, 3인칭 단수 등을 단어장 등록용 '원형(Lemma)'으로 복원
 export function extractLemmaCandidate(rawWord: string): string {
   const w = rawWord.trim().toLowerCase();
   if (w.length <= 2) return w;
 
-  // 1. 불규칙 사전 매핑 확인
+  // 1. 본래 s로 끝나는 고유 단어는 원형 보존
+  if (WORDS_NATURALLY_ENDING_IN_S.has(w)) {
+    return w;
+  }
+
+  // 2. 불규칙 사전 매핑 확인
   if (IRREGULAR_TO_BASE[w]) {
     return IRREGULAR_TO_BASE[w];
   }
 
-  // 2. 복수형 / 3인칭 단수 -ies -> -y (cities -> city, parties -> party, stories -> story)
+  // 3. 불규칙 -ves -> -f / -fe 확인 (예: knives -> knife, leaves -> leaf)
+  if (VES_IRREGULAR_MAP[w]) {
+    return VES_IRREGULAR_MAP[w];
+  }
+
+  // 4. 복수형 / 3인칭 단수 -ies -> -y (cities -> city, parties -> party, stories -> story)
   if (w.endsWith('ies') && w.length > 4) {
     return w.slice(0, -3) + 'y';
   }
 
-  // 3. 과거형 / 분사 -ied -> -y (studied -> study, carried -> carry, worried -> worry)
+  // 5. 과거형 / 분사 -ied -> -y (studied -> study, carried -> carry, worried -> worry)
   if (w.endsWith('ied') && w.length > 4) {
     return w.slice(0, -3) + 'y';
   }
 
-  // 4. 불규칙 복수형 -ves -> -f / -fe (leaves -> leaf, wolves -> wolf, wives -> wife, knives -> knife)
-  if (w.endsWith('ves') && w.length > 4) {
-    if (['knives', 'wives', 'lives'].includes(w)) return w.slice(0, -3) + 'fe';
-    return w.slice(0, -3) + 'f';
-  }
-
-  // 5. -es 복수형/3인칭 단수
-  // prices -> price, changes -> change, causes -> cause, plates -> plate, slides -> slide, voices -> voice
+  // 6. -es 복수형/3인칭 단수 (-e로 끝나는 단어에 s가 붙은 경우 s만 제거: perspective, price, change, cause 등)
   if (
     w.endsWith('ces') ||
     w.endsWith('ges') ||
@@ -341,7 +374,11 @@ export function extractLemmaCandidate(rawWord: string): string {
     w.endsWith('tes') ||
     w.endsWith('des') ||
     w.endsWith('nes') ||
-    w.endsWith('les')
+    w.endsWith('les') ||
+    w.endsWith('ves') ||
+    w.endsWith('res') ||
+    w.endsWith('mes') ||
+    w.endsWith('pes')
   ) {
     return w.slice(0, -1);
   }
@@ -356,7 +393,7 @@ export function extractLemmaCandidate(rawWord: string): string {
     return w.slice(0, -2);
   }
 
-  // 6. 진행형 / 동명사 -ing (growing -> grow, running -> run, declining -> decline, publishing -> publish)
+  // 7. 진행형 / 동명사 -ing (growing -> grow, running -> run, declining -> decline, publishing -> publish)
   if (w.endsWith('ing') && w.length > 4) {
     const stem = w.slice(0, -3);
     // 자음 중복 (running -> run, stopping -> stop, swimming -> swim, getting -> get)
@@ -378,7 +415,7 @@ export function extractLemmaCandidate(rawWord: string): string {
     return stem;
   }
 
-  // 7. 과거형 / 분사 -ed (declined -> decline, boosted -> boost, stopped -> stop, looked -> look)
+  // 8. 과거형 / 분사 -ed (declined -> decline, boosted -> boost, stopped -> stop, looked -> look)
   if (w.endsWith('ed') && w.length > 4) {
     const stem = w.slice(0, -2);
     // 자음 중복 (stopped -> stop, planned -> plan, begged -> beg)
@@ -404,17 +441,6 @@ export function extractLemmaCandidate(rawWord: string): string {
       return stem + 'e';
     }
     return stem;
-  }
-
-  // 8. 원래 s로 끝나는 단어(단수 명사/부사/전치사) 보호 목록
-  const WORDS_NATURALLY_ENDING_IN_S = new Set([
-    'always', 'sometimes', 'perhaps', 'towards', 'besides', 'nowadays', 'whereas', 'downstairs', 'upstairs', 'outdoors', 'indoors', 'overseas', 'nonetheless', 'nevertheless',
-    'series', 'species', 'news', 'means', 'goods', 'economics', 'politics', 'physics', 'mathematics', 'statistics', 'ethics', 'genetics', 'linguistics', 'logistics', 'athletics',
-    'focus', 'status', 'consensus', 'census', 'campus', 'virus', 'bonus', 'genius', 'corpus', 'surplus', 'apparatus', 'stimulus', 'syllabus',
-    'lens', 'chaos', 'bias', 'canvas', 'atlas', 'alias', 'gas', 'bus', 'plus', 'thus',
-  ]);
-  if (WORDS_NATURALLY_ENDING_IN_S.has(w)) {
-    return w;
   }
 
   // 9. 단순 복수형 / 3인칭 단수 -s (prices -> price, books -> book, cats -> cat, forecasts -> forecast)

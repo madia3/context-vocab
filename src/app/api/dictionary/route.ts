@@ -330,10 +330,125 @@ const BUILTIN_CORE_DICT: Record<
     ],
     exampleSentence: 'Many professionals choose to be self-employed.',
   },
+  perspective: {
+    phonetic: '/pərˈspek.tɪv/',
+    meanings: [
+      { pos: '명사', def: '관점, 시각' },
+      { pos: '명사', def: '원근법' },
+      { pos: '명사', def: '균형 잡힌 시각, 균형감' },
+      { pos: '형용사', def: '원근법의, 투시화법의' },
+    ],
+    exampleSentence: 'Try to see the issue from a different perspective.',
+  },
+  perspectives: {
+    phonetic: '/pərˈspek.tɪvz/',
+    meanings: [
+      { pos: '명사', def: '관점, 시각' },
+      { pos: '명사', def: '원근법' },
+    ],
+    exampleSentence: 'People have different perspectives on this issue.',
+  },
+  banking: {
+    phonetic: '/ˈbæŋ.kɪŋ/',
+    meanings: [
+      { pos: '명사', def: '은행업, 은행 업무, 금융업' },
+    ],
+    exampleSentence: 'He has worked in the banking industry for ten years.',
+  },
+  lending: {
+    phonetic: '/ˈlen.dɪŋ/',
+    meanings: [
+      { pos: '명사', def: '대출, 대여, 여신' },
+    ],
+    exampleSentence: 'The bank tightened its lending policies.',
+  },
+  investment: {
+    phonetic: '/ɪnˈvest.mənt/',
+    meanings: [
+      { pos: '명사', def: '투자, 투자금' },
+    ],
+    exampleSentence: 'This business represents a good investment opportunity.',
+  },
+  investments: {
+    phonetic: '/ɪnˈvest.mənts/',
+    meanings: [
+      { pos: '명사', def: '투자, 투자금' },
+    ],
+    exampleSentence: 'She oversees foreign investments for the firm.',
+  },
+  harness: {
+    phonetic: '/ˈhɑːr.nəs/',
+    meanings: [
+      { pos: '동사', def: '활용하다, 이용하다' },
+      { pos: '명사', def: '마구, 안전벨트' },
+    ],
+    exampleSentence: 'We must harness the power of new technology.',
+  },
+  insight: {
+    phonetic: '/ˈɪn.saɪt/',
+    meanings: [
+      { pos: '명사', def: '통찰력, 안목, 통찰' },
+    ],
+    exampleSentence: 'The study offers valuable insight into human behavior.',
+  },
+  insights: {
+    phonetic: '/ˈɪn.saɪts/',
+    meanings: [
+      { pos: '명사', def: '통찰력, 깊은 식견' },
+    ],
+    exampleSentence: 'The book shares deep insights into leadership.',
+  },
+  competitive: {
+    phonetic: '/kəmˈpet̬.ə.t̬ɪv/',
+    meanings: [
+      { pos: '형용사', def: '경쟁력 있는, 경쟁적인' },
+    ],
+    exampleSentence: 'They offer services at competitive prices.',
+  },
+  superior: {
+    phonetic: '/səˈpɪr.i.ɚ/',
+    meanings: [
+      { pos: '형용사', def: '우수한, 뛰어난, 상위의' },
+      { pos: '명사', def: '상관, 상급자' },
+    ],
+    exampleSentence: 'This model is far superior in quality.',
+  },
+  analysis: {
+    phonetic: '/əˈnæl.ə.sɪs/',
+    meanings: [
+      { pos: '명사', def: '분석, 분석 결과, 검토' },
+    ],
+    exampleSentence: 'A detailed analysis will be published next week.',
+  },
+  alternative: {
+    phonetic: '/ɑːlˈtɝː.nə.t̬ɪv/',
+    meanings: [
+      { pos: '명사', def: '대안, 선택 가능한 것' },
+      { pos: '형용사', def: '대안의, 대체 가능한' },
+    ],
+    exampleSentence: 'We need to develop an alternative solution.',
+  },
+  alternatives: {
+    phonetic: '/ɑːlˈtɝː.nə.t̬ɪvz/',
+    meanings: [
+      { pos: '명사', def: '대안들, 선택지' },
+    ],
+    exampleSentence: 'There are several viable alternatives to consider.',
+  },
 };
 
 // 한국어 번역 뜻 정제 및 노이즈 필터링 함수
-const BANNED_DEFINITIONS = new Set(['성업', '번역', 'matecat', 'mymemory', 'undefined', 'null']);
+const BANNED_DEFINITIONS = new Set([
+  '성업',
+  '큐브 뷰',
+  '큐브뷰',
+  '번역',
+  'matecat',
+  'mymemory',
+  'undefined',
+  'null',
+  '직접입력',
+]);
 
 function isValidKoreanDefinition(def: string): boolean {
   if (!def || typeof def !== 'string') return false;
@@ -479,17 +594,31 @@ export async function GET(request: NextRequest) {
 
   // 2. Process Google Translate Results with strict sanitization
   if (gData) {
+    const seenDefs = new Set<string>();
+
+    // 1순위: 최우선 대표 기본 번역 뜻 (예: perspective -> '관점')
+    if (gData[0]?.[0]?.[0]) {
+      const mainDef = String(gData[0][0][0]).trim();
+      if (isValidKoreanDefinition(mainDef)) {
+        seenDefs.add(mainDef);
+        meanings.push({
+          pos: fallbackPos,
+          def: mainDef,
+        });
+      }
+    }
+
+    // 2순위: 품사별 세부 번역 뜻
     if (gData[1] && Array.isArray(gData[1])) {
       gData[1].forEach((entry: any) => {
         const posEn = String(entry[0] || '').toLowerCase();
         const posKo = POS_MAP[posEn] || posEn || '품사';
         const defs = entry[1] || [];
 
-        const seen = new Set<string>();
         defs.forEach((d: string) => {
           const trimmed = String(d || '').trim();
-          if (isValidKoreanDefinition(trimmed) && !seen.has(trimmed) && seen.size < 4) {
-            seen.add(trimmed);
+          if (isValidKoreanDefinition(trimmed) && !seenDefs.has(trimmed) && meanings.length < 5) {
+            seenDefs.add(trimmed);
             meanings.push({
               pos: posKo,
               def: trimmed,
@@ -497,17 +626,6 @@ export async function GET(request: NextRequest) {
           }
         });
       });
-    }
-
-    // Fallback: If gData[1] is empty, use main translation from gData[0]
-    if (meanings.length === 0 && gData[0]?.[0]?.[0]) {
-      const mainDef = String(gData[0][0][0]).trim();
-      if (isValidKoreanDefinition(mainDef)) {
-        meanings.push({
-          pos: fallbackPos,
-          def: mainDef,
-        });
-      }
     }
   }
 
@@ -521,12 +639,12 @@ export async function GET(request: NextRequest) {
 Word: "${word}"
 Provide standard, accurate Korean dictionary definitions.
 Categorize by standard Korean parts of speech (형용사, 동사, 명사, 부사, etc.).
-Exclude obscure, archaic, or crowd-sourced mistranslations (e.g. NEVER translate "complete" as "성업").
+Exclude obscure, archaic, or crowd-sourced mistranslations (e.g. NEVER translate "complete" as "성업", NEVER translate "perspective" as "큐브 뷰").
 Return strictly valid JSON:
 {
   "phonetic": "/.../",
   "meanings": [
-    { "pos": "형용사", "def": "완전한, 완벽한" }
+    { "pos": "명사", "def": "관점, 시각" }
   ],
   "exampleSentence": "..."
 }`;
@@ -563,41 +681,6 @@ Return strictly valid JSON:
       } catch (geminiErr) {
         console.warn('Gemini dictionary fallback error:', geminiErr);
       }
-    }
-  }
-
-  // 4. Secondary Fallback with MyMemory API (엄격 필터링 적용 - 툴팁/문장 노이즈 차단)
-  if (meanings.length === 0) {
-    try {
-      const mRes = await fetch(
-        `https://api.mymemory.translated.net/get?q=${encodeURIComponent(word)}&langpair=en|ko`,
-        { signal: AbortSignal.timeout(1800) }
-      );
-      if (mRes.ok) {
-        const mData = await mRes.json();
-        const seenDefs = new Set<string>();
-
-        if (mData.responseData?.translatedText) {
-          const t = String(mData.responseData.translatedText).trim();
-          if (isValidKoreanDefinition(t)) {
-            seenDefs.add(t);
-            meanings.push({ pos: fallbackPos, def: t });
-          }
-        }
-        if (mData.matches && Array.isArray(mData.matches)) {
-          mData.matches.forEach((m: any) => {
-            const quality = Number(m.quality || 0);
-            const translation = String(m.translation || '').trim();
-            // 품질 점수 70 이상 & 노이즈 필터 통과한 항목만 수용
-            if (quality >= 70 && isValidKoreanDefinition(translation) && !seenDefs.has(translation) && meanings.length < 4) {
-              seenDefs.add(translation);
-              meanings.push({ pos: fallbackPos, def: translation });
-            }
-          });
-        }
-      }
-    } catch (mErr) {
-      console.warn('MyMemory fallback error:', mErr);
     }
   }
 

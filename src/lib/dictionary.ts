@@ -162,6 +162,97 @@ export const BUILTIN_KOREAN_DICT: Record<string, { phonetic: string; meanings: M
       { pos: "형용사", def: "프리랜서의" },
     ],
   },
+  perspective: {
+    phonetic: "/pərˈspek.tɪv/",
+    meanings: [
+      { pos: "명사", def: "관점, 시각" },
+      { pos: "명사", def: "원근법" },
+      { pos: "명사", def: "균형 잡힌 시각, 균형감" },
+      { pos: "형용사", def: "원근법의, 투시화법의" },
+    ],
+  },
+  perspectives: {
+    phonetic: "/pərˈspek.tɪvz/",
+    meanings: [
+      { pos: "명사", def: "관점, 시각" },
+      { pos: "명사", def: "원근법" },
+    ],
+  },
+  banking: {
+    phonetic: "/ˈbæŋ.kɪŋ/",
+    meanings: [
+      { pos: "명사", def: "은행업, 은행 업무, 금융업" },
+    ],
+  },
+  lending: {
+    phonetic: "/ˈlen.dɪŋ/",
+    meanings: [
+      { pos: "명사", def: "대출, 대여, 여신" },
+    ],
+  },
+  investment: {
+    phonetic: "/ɪnˈvest.mənt/",
+    meanings: [
+      { pos: "명사", def: "투자, 투자금" },
+    ],
+  },
+  investments: {
+    phonetic: "/ɪnˈvest.mənts/",
+    meanings: [
+      { pos: "명사", def: "투자, 투자금" },
+    ],
+  },
+  harness: {
+    phonetic: "/ˈhɑːr.nəs/",
+    meanings: [
+      { pos: "동사", def: "활용하다, 이용하다" },
+      { pos: "명사", def: "마구, 안전벨트" },
+    ],
+  },
+  insight: {
+    phonetic: "/ˈɪn.saɪt/",
+    meanings: [
+      { pos: "명사", def: "통찰력, 안목, 통찰" },
+    ],
+  },
+  insights: {
+    phonetic: "/ˈɪn.saɪts/",
+    meanings: [
+      { pos: "명사", def: "통찰력, 깊은 식견" },
+    ],
+  },
+  competitive: {
+    phonetic: "/kəmˈpet̬.ə.t̬ɪv/",
+    meanings: [
+      { pos: "형용사", def: "경쟁력 있는, 경쟁적인" },
+    ],
+  },
+  superior: {
+    phonetic: "/səˈpɪr.i.ɚ/",
+    meanings: [
+      { pos: "형용사", def: "우수한, 뛰어난, 상위의" },
+      { pos: "명사", def: "상관, 상급자" },
+    ],
+  },
+  analysis: {
+    phonetic: "/əˈnæl.ə.sɪs/",
+    meanings: [
+      { pos: "명사", def: "분석, 분석 결과, 검토" },
+    ],
+  },
+  alternative: {
+    phonetic: "/ɑːlˈtɝː.nə.t̬ɪv/",
+    meanings: [
+      { pos: "명사", def: "대안, 선택 가능한 것" },
+      { pos: "형용사", def: "대안의, 대체 가능한" },
+    ],
+  },
+  alternatives: {
+    phonetic: "/ɑːlˈtɝː.nə.t̬ɪvz/",
+    meanings: [
+      { pos: "명사", def: "대안들, 선택지" },
+    ],
+  },
 };
 
 export const DISTRACTOR_POOL_KOREAN = [
@@ -251,7 +342,7 @@ export async function lookupDictionary(rawWord: string): Promise<DictSearchResul
             m.def &&
             m.pos !== '직접입력' &&
             !m.def.includes('직접 입력') &&
-            !['성업', '번역', 'matecat', 'mymemory'].includes(m.def.trim().toLowerCase())
+            !['성업', '큐브 뷰', '큐브뷰', '번역', 'matecat', 'mymemory'].includes(m.def.trim().toLowerCase())
         );
         if (validMeanings.length > 0) {
           const sanitized = { ...data, meanings: validMeanings };
@@ -273,7 +364,21 @@ export async function lookupDictionary(rawWord: string): Promise<DictSearchResul
     if (gRes.ok) {
       const gData = await gRes.json();
       const meanings: MeaningOption[] = [];
+      const seenDefs = new Set<string>();
 
+      // 1순위: 최우선 대표 기본 번역 뜻 (예: perspective -> '관점')
+      if (gData[0]?.[0]?.[0]) {
+        const main = String(gData[0][0][0]).trim();
+        if (main && !['성업', '큐브 뷰', '큐브뷰', '번역'].includes(main)) {
+          seenDefs.add(main);
+          meanings.push({
+            pos: '단어',
+            def: main,
+          });
+        }
+      }
+
+      // 2순위: 품사별 세부 번역 뜻
       if (gData[1] && Array.isArray(gData[1])) {
         gData[1].forEach((entry: any) => {
           const posEn = entry[0];
@@ -281,18 +386,15 @@ export async function lookupDictionary(rawWord: string): Promise<DictSearchResul
           const defs = entry[1] || [];
 
           defs.slice(0, 4).forEach((d: string) => {
-            meanings.push({
-              pos: posKo,
-              def: d,
-            });
+            const trimmed = String(d || '').trim();
+            if (trimmed && !seenDefs.has(trimmed) && !['성업', '큐브 뷰', '큐브뷰', '번역'].includes(trimmed)) {
+              seenDefs.add(trimmed);
+              meanings.push({
+                pos: posKo,
+                def: trimmed,
+              });
+            }
           });
-        });
-      }
-
-      if (meanings.length === 0 && gData[0]?.[0]?.[0]) {
-        meanings.push({
-          pos: '단어',
-          def: gData[0][0][0],
         });
       }
 
