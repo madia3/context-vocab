@@ -287,6 +287,49 @@ const BUILTIN_CORE_DICT: Record<
     ],
     exampleSentence: 'The report was incomplete and needed more data.',
   },
+  mean: {
+    phonetic: '/miːn/',
+    meanings: [
+      { pos: '동사', def: '의미하다, 뜻하다' },
+      { pos: '동사', def: '~을 의도하다, 작정하다' },
+      { pos: '형용사', def: '못된, 심술궂은' },
+      { pos: '명사', def: '평균, 중용' },
+    ],
+    exampleSentence: 'What do you mean by that?',
+  },
+  meaning: {
+    phonetic: '/ˈmiː.nɪŋ/',
+    meanings: [
+      { pos: '명사', def: '의미, 뜻' },
+      { pos: '명사', def: '중요성, 취지' },
+    ],
+    exampleSentence: 'The word has several different meanings.',
+  },
+  means: {
+    phonetic: '/miːnz/',
+    meanings: [
+      { pos: '명사', def: '수단, 방법' },
+      { pos: '명사', def: '재산, 재력' },
+      { pos: '동사', def: '의미하다 (mean의 3인칭 단수)' },
+    ],
+    exampleSentence: 'We must find a means to achieve this goal.',
+  },
+  selfemployed: {
+    phonetic: '/ˌself.ɪmˈplɔɪd/',
+    meanings: [
+      { pos: '형용사', def: '자영업의, 개인 사업의' },
+      { pos: '형용사', def: '프리랜서의' },
+    ],
+    exampleSentence: 'Many professionals choose to be self-employed.',
+  },
+  'self-employed': {
+    phonetic: '/ˌself.ɪmˈplɔɪd/',
+    meanings: [
+      { pos: '형용사', def: '자영업의, 개인 사업의' },
+      { pos: '형용사', def: '프리랜서의' },
+    ],
+    exampleSentence: 'Many professionals choose to be self-employed.',
+  },
 };
 
 // 한국어 번역 뜻 정제 및 노이즈 필터링 함수
@@ -470,7 +513,8 @@ export async function GET(request: NextRequest) {
 
   // 3. High-Accuracy AI Lexicographer Fallback via Gemini (표준 영한 사전 수준의 품사별 뜻 & 예문)
   if (meanings.length === 0) {
-    const geminiKey = process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+    const clientKey = request.headers.get('x-gemini-key');
+    const geminiKey = clientKey || process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
     if (geminiKey) {
       try {
         const aiPrompt = `You are a standard English-Korean dictionary (like Naver/Daum English Dictionary).
@@ -584,17 +628,19 @@ Return strictly valid JSON:
       : {
           word,
           phonetic,
-          meanings: [{ pos: '직접입력', def: '한국어 뜻을 직접 입력해 주세요.' }],
+          meanings: [],
           exampleSentence,
           sourceName: '수동 입력 모드',
         };
 
-  // Cache in server memory (with LRU-like size guard)
-  if (dictCache.size >= MAX_CACHE_ENTRIES) {
-    const oldestKey = dictCache.keys().next().value;
-    if (oldestKey) dictCache.delete(oldestKey);
+  // Only cache positive results in server memory
+  if (result.meanings.length > 0) {
+    if (dictCache.size >= MAX_CACHE_ENTRIES) {
+      const oldestKey = dictCache.keys().next().value;
+      if (oldestKey) dictCache.delete(oldestKey);
+    }
+    dictCache.set(word, { data: result, timestamp: Date.now() });
   }
-  dictCache.set(word, { data: result, timestamp: Date.now() });
 
   return NextResponse.json(result, {
     headers: {

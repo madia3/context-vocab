@@ -2611,12 +2611,14 @@ export default function Home() {
                                       </span>
                                       <span className="text-slate-900">{m.def}</span>
                                     </div>
-                                    {entry.selectedMeaning === m.def && (
-                                      <span className="text-[10px] text-indigo-700 bg-indigo-100/90 border border-indigo-200 px-1.5 py-0.5 rounded-full font-bold shrink-0 flex items-center gap-0.5">
-                                        <Sparkles className="w-2.5 h-2.5 text-indigo-600" />
-                                        <span>AI 추천 선택</span>
-                                      </span>
-                                    )}
+                                    {entry.selectedMeaning === m.def &&
+                                      m.pos !== '직접입력' &&
+                                      !m.def.includes('직접 입력') && (
+                                        <span className="text-[10px] text-indigo-700 bg-indigo-100/90 border border-indigo-200 px-1.5 py-0.5 rounded-full font-bold shrink-0 flex items-center gap-0.5">
+                                          <Sparkles className="w-2.5 h-2.5 text-indigo-600" />
+                                          <span>AI 추천 선택</span>
+                                        </span>
+                                      )}
                                   </div>
                                 </label>
                               ))}

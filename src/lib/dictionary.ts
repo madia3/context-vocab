@@ -124,6 +124,44 @@ export const BUILTIN_KOREAN_DICT: Record<string, { phonetic: string; meanings: M
       { pos: "형용사", def: "미결의, 부족한" },
     ],
   },
+  mean: {
+    phonetic: "/miːn/",
+    meanings: [
+      { pos: "동사", def: "의미하다, 뜻하다" },
+      { pos: "동사", def: "~을 의도하다, 작정하다" },
+      { pos: "형용사", def: "못된, 심술궂은" },
+      { pos: "명사", def: "평균, 중용" },
+    ],
+  },
+  meaning: {
+    phonetic: "/ˈmiː.nɪŋ/",
+    meanings: [
+      { pos: "명사", def: "의미, 뜻" },
+      { pos: "명사", def: "중요성, 취지" },
+    ],
+  },
+  means: {
+    phonetic: "/miːnz/",
+    meanings: [
+      { pos: "명사", def: "수단, 방법" },
+      { pos: "명사", def: "재산, 재력" },
+      { pos: "동사", def: "의미하다 (mean의 3인칭 단수)" },
+    ],
+  },
+  selfemployed: {
+    phonetic: "/ˌself.ɪmˈplɔɪd/",
+    meanings: [
+      { pos: "형용사", def: "자영업의, 개인 사업의" },
+      { pos: "형용사", def: "프리랜서의" },
+    ],
+  },
+  "self-employed": {
+    phonetic: "/ˌself.ɪmˈplɔɪd/",
+    meanings: [
+      { pos: "형용사", def: "자영업의, 개인 사업의" },
+      { pos: "형용사", def: "프리랜서의" },
+    ],
+  },
 };
 
 export const DISTRACTOR_POOL_KOREAN = [
@@ -189,16 +227,31 @@ export async function lookupDictionary(rawWord: string): Promise<DictSearchResul
   let phonetic = `/${word}/`;
 
   // 3. Call internal server API route (Server fetches Google Translate & Phonetics in parallel with 1.2s timeout)
+  // 3. Call internal server API route (Server fetches Google Translate, Gemini AI & Phonetics)
   try {
+    const geminiKey =
+      typeof window !== 'undefined'
+        ? localStorage.getItem('context_vocab_gemini_key') || ''
+        : '';
     const apiRes = await fetch(`/api/dictionary?word=${encodeURIComponent(word)}`, {
+      headers: geminiKey ? { 'x-gemini-key': geminiKey } : {},
       signal: AbortSignal.timeout(3500),
     });
     if (apiRes.ok) {
       const data: DictSearchResult = await apiRes.json();
-      if (data && data.meanings && data.meanings.length > 0) {
-        // Sanitize out known crowdsourced errors like '성업'
+      if (
+        data &&
+        data.sourceName !== '수동 입력 모드' &&
+        data.meanings &&
+        data.meanings.length > 0
+      ) {
+        // Sanitize out crowdsourced errors & dummy placeholders
         const validMeanings = data.meanings.filter(
-          (m) => m.def && !['성업', '번역', 'matecat', 'mymemory'].includes(m.def.trim().toLowerCase())
+          (m) =>
+            m.def &&
+            m.pos !== '직접입력' &&
+            !m.def.includes('직접 입력') &&
+            !['성업', '번역', 'matecat', 'mymemory'].includes(m.def.trim().toLowerCase())
         );
         if (validMeanings.length > 0) {
           const sanitized = { ...data, meanings: validMeanings };
