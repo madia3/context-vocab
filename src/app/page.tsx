@@ -33,6 +33,7 @@ import {
   findSentenceWithAI,
   getStoredGeminiKey,
   setStoredGeminiKey,
+  fileToBase64,
 } from '@/lib/gemini';
 import { fireConfetti } from '@/lib/confetti';
 import {
@@ -202,6 +203,7 @@ export default function Home() {
   const [urlScrapeError, setUrlScrapeError] = useState<string | null>(null);
   const [loadedSourceType, setLoadedSourceType] = useState<'camera' | 'web' | null>(null);
   const [loadedWebTitle, setLoadedWebTitle] = useState<string>('');
+  const [currentSourceImage, setCurrentSourceImage] = useState<{ base64: string; mimeType: string } | null>(null);
 
   // Word Selection from Loaded Text State (원문에서 단어 직접 클릭 선택)
   const [isWordSelectModalOpen, setIsWordSelectModalOpen] = useState(false);
@@ -516,7 +518,7 @@ export default function Home() {
           const w = (entry.word || entry.dictResult?.word || '').trim();
           const needsRealSentence = !entry.context || (entry.candidateSentences && entry.candidateSentences.length === 0);
           if (w && needsRealSentence) {
-            findSentenceWithAI(result.text, w, geminiApiKey, entry.dictResult?.meanings).then((matchRes) => {
+            findSentenceWithAI(result.text, w, geminiApiKey, entry.dictResult?.meanings, currentSourceImage).then((matchRes) => {
               if (matchRes.found && matchRes.sentence) {
                 const sentences = matchRes.allMatches.map((m) => m.sentence);
                 let bestDef = entry.selectedMeaning;
@@ -627,6 +629,13 @@ export default function Home() {
         ? '이전 페이지 문장 끝에 이어붙여 잘린 문맥을 하나로 연결합니다.'
         : '표/그래프를 제외한 본문 글자와 밑줄/동그라미 친 단어를 감지합니다.'
     );
+
+    // 단어 선택 시 사진 원본을 직접 보고 100% 무결점으로 문장을 읽어오기 위해 이미지 원본 저장
+    fileToBase64(file).then((imgData) => {
+      if (imgData.base64) {
+        setCurrentSourceImage(imgData);
+      }
+    });
 
     startBackgroundSourceAnalysis(
       isAppend ? '다음 페이지 이어붙이기' : '책 사진 분석',
@@ -828,8 +837,14 @@ export default function Home() {
       // 3. 만약 현재 촬영/불러온 본문 텍스트가 있다면 비동기(백그라운드)로 문맥 탐색 & AI 최적 뜻 매칭
       if (pageOcrText) {
         try {
-          // 본문 속 검색: 원래 단어(wordToSearch)와 원형(lemmaCandidate) 모두 전달
-          const matchRes = await findSentenceWithAI(pageOcrText, wordToSearch, geminiApiKey, res.meanings);
+          // 본문 및 원본 이미지 속 검색: 원본 이미지가 있으면 이미지를 직접 보고 100% 무결점 정밀 판독!
+          const matchRes = await findSentenceWithAI(
+            pageOcrText,
+            wordToSearch,
+            geminiApiKey,
+            res.meanings,
+            currentSourceImage
+          );
           if (matchRes.found && matchRes.sentence) {
             const sentences = matchRes.allMatches.map((m) => m.sentence);
 
@@ -860,9 +875,10 @@ export default function Home() {
               ? `(원문 '${wordToSearch}' ➔ 표제어 '${finalLemma}') `
               : '';
 
+            const sourcePrefix = currentSourceImage ? '📸 사진 원본 정밀 판독: ' : '✨ ';
             const noticeText = matchRes.aiExplanation
-              ? `✨ ${formChangeMsg}AI 문맥 분석: ${matchRes.aiExplanation}`
-              : `✨ ${formChangeMsg}본문 문맥에 가장 적절한 뜻('${selectedDef}')이 자동 선택되었습니다!`;
+              ? `${sourcePrefix}${formChangeMsg}${matchRes.aiExplanation}`
+              : `${sourcePrefix}${formChangeMsg}원문 문맥에 가장 적절한 뜻('${selectedDef}')이 자동 선택되었습니다!`;
 
             updateWordEntry(entryId, {
               word: finalLemma,

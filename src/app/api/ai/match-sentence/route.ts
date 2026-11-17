@@ -4,10 +4,10 @@ export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
   try {
-    const { pageText, word, meanings } = await req.json();
+    const { pageText, word, meanings, imageBase64, mimeType } = await req.json();
 
-    if (!pageText || !word) {
-      return NextResponse.json({ error: 'pageText and word are required' }, { status: 400 });
+    if ((!pageText && !imageBase64) || !word) {
+      return NextResponse.json({ error: 'pageText or imageBase64 and word are required' }, { status: 400 });
     }
 
     const apiKey =
@@ -22,62 +22,57 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`;
-
     const hasMeanings = Array.isArray(meanings) && meanings.length > 0;
     const meaningsText = hasMeanings
       ? meanings.map((m: any, idx: number) => `[${idx}] (${m.pos || '품사'}) ${m.def}`).join('\n')
       : 'None provided';
 
-    const prompt = `You are a strict, precise English-Korean bilingual linguist and lexicographer.
+    const hasImage = Boolean(imageBase64 && typeof imageBase64 === 'string' && imageBase64.length > 50);
+    const cleanBase64 = hasImage ? imageBase64.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, '') : '';
+
+    const prompt = `You are a strict, precise English-Korean bilingual linguist and visual document analyst.
 Target Word: "${word}"
 
-Page Text:
-"""
-${pageText}
-"""
+${hasImage ? 'PRIMARY SOURCE: Inspect the attached book/article page image directly with highest optical fidelity.' : ''}
+${pageText ? `Reference Text:\n"""\n${pageText.slice(0, 5000)}\n"""` : ''}
 
 Available Korean Dictionary Definitions:
 ${meaningsText}
 
 CRITICAL INSTRUCTIONS:
-1. Determine if the target English vocabulary word "${word}" (or any of its direct grammatical inflections: e.g. "go" -> "went"/"gone"/"going", "decline" -> "declined"/"declining", "boost" -> "boosted"/"boosting"/"boosts", "prices" -> "price") appears in the provided Page Text.
-2. If "${word}" or its inflection does NOT appear in the page text, you MUST return:
-{
-  "found": false,
-  "lemma": "${word}",
-  "sentence": "",
-  "matchedWord": "",
-  "allMatches": [],
-  "bestMeaningIndex": 0,
-  "bestMeaningDef": "",
-  "bestPos": "",
-  "aiExplanation": ""
-}
-3. If it DOES appear:
-   - Identify the root dictionary base lemma form of the word (e.g. "prices" -> "price", "declined" -> "decline", "growing" -> "grow", "went" -> "go", "easier" -> "easy", "better" -> "good") and put it in "lemma".
-   - Extract the EXACT complete sentence from the text containing the word.
-   - Analyze how the word is used in that sentence grammatically and contextually.
-   - From the Available Korean Dictionary Definitions above, pick the 0-based index that BEST fits this sentence's context.
-   - If a specific definition matches best, set "bestMeaningIndex" to its index, "bestMeaningDef" to its definition text, and "bestPos" to its part of speech.
-   - Provide a concise 1-sentence Korean explanation why this meaning fits the context in "aiExplanation".
+1. Locate the target English word "${word}" (or its grammatical inflections: past tense, -ing, plural, comparative, irregular forms) ${hasImage ? 'directly in the IMAGE' : 'in the text'}.
+2. If found, transcribe the EXACT, COMPLETE, UNCUT original sentence containing "${word}" with 100% optical accuracy (do NOT hallucinate, do NOT misspell, fix any hyphenated line-breaks naturally).
+3. If "${word}" appears multiple times in different sentences, transcribe ALL matching sentences into "allMatches".
+4. Determine the root base dictionary lemma (e.g. "prices" -> "price", "declined" -> "decline", "growing" -> "grow", "went" -> "go").
+5. From the Available Korean Dictionary Definitions, select the best index for this context, with a concise 1-sentence explanation.
+6. If the word does NOT appear, set "found": false.
 
-Return ONLY valid JSON:
+Return strictly valid JSON:
 {
   "found": true,
-  "lemma": "base dictionary form (e.g. price, decline, grow, go)",
-  "sentence": "Exact complete sentence from text",
-  "matchedWord": "the exact word form found in text",
+  "lemma": "base lemma",
+  "sentence": "Exact complete sentence",
+  "matchedWord": "exact word form found",
   "allMatches": [
-    { "sentence": "Exact complete sentence 1", "matchedWord": "form1" }
+    { "sentence": "Exact complete sentence 1", "matchedWord": "word1" }
   ],
   "bestMeaningIndex": 0,
-  "bestMeaningDef": "가장 적절한 한국어 뜻",
-  "bestPos": "v. / n. / adj.",
-  "aiExplanation": "이 문장에서는 ~라는 의미로 쓰였습니다."
+  "bestMeaningDef": "가장 어울리는 한국어 뜻",
+  "bestPos": "품사",
+  "aiExplanation": "이 문맥에서는 ~라는 의미로 쓰였습니다."
 }`;
 
     const candidateModels = ['gemini-3.5-flash-lite', 'gemini-3.8-flash'];
+
+    const contentParts: any[] = [{ text: prompt }];
+    if (hasImage && cleanBase64) {
+      contentParts.push({
+        inline_data: {
+          mime_type: mimeType || 'image/jpeg',
+          data: cleanBase64,
+        },
+      });
+    }
 
     let data: any = null;
     let lastError: string = '';
@@ -88,11 +83,11 @@ Return ONLY valid JSON:
         const geminiRes = await fetch(geminiUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          signal: AbortSignal.timeout(8000),
+          signal: AbortSignal.timeout(9000),
           body: JSON.stringify({
             contents: [
               {
-                parts: [{ text: prompt }],
+                parts: contentParts,
               },
             ],
             generationConfig: {

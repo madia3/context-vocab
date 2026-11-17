@@ -127,11 +127,13 @@ export interface MatchedSentenceItem {
 }
 
 // AI로 단어의 원형/복수형/시제 변화형을 문맥에서 파악하여 해당 원문 문장(복수 문장 포함) 및 최적의 문맥 뜻 적출
+// (imageSource가 주어지면 원본 이미지를 직접 보고 100% 무결점으로 핀포인트 추출!)
 export async function findSentenceWithAI(
   pageText: string,
   word: string,
   customApiKey?: string,
-  meanings?: { pos: string; def: string }[]
+  meanings?: { pos: string; def: string }[],
+  imageSource?: { base64: string; mimeType: string } | null
 ): Promise<{
   found: boolean;
   sentence: string;
@@ -153,7 +155,13 @@ export async function findSentenceWithAI(
         'Content-Type': 'application/json',
         ...(apiKey ? { 'x-gemini-key': apiKey } : {}),
       },
-      body: JSON.stringify({ pageText, word, meanings }),
+      body: JSON.stringify({
+        pageText,
+        word,
+        meanings,
+        imageBase64: imageSource?.base64,
+        mimeType: imageSource?.mimeType,
+      }),
     });
 
     if (res.ok) {
