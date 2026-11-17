@@ -2062,12 +2062,12 @@ export default function Home() {
                           </span>
                         )}
                       </div>
-                      {/* 깔끔한 4개 핵심 버튼 한 줄 정렬: 카메라, URL, 단어선택, 지우기 */}
-                      <div className="flex items-center gap-1.5 pt-1 overflow-x-auto no-scrollbar">
+                      {/* 깔끔한 4개 핵심 버튼 균등 4열 그리드 정렬: 카메라, URL, 단어선택, 지우기 */}
+                      <div className="grid grid-cols-4 gap-1.5 pt-1 w-full">
                         <button
                           type="button"
                           onClick={() => setIsPhotoChooserOpen(true)}
-                          className="flex-1 min-w-[70px] h-9 text-xs font-bold bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 rounded-xl shadow-xs flex items-center justify-center gap-1 cursor-pointer transition active:scale-95 whitespace-nowrap shrink-0"
+                          className="w-full h-9 text-xs font-bold bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 rounded-xl shadow-xs flex items-center justify-center gap-1 cursor-pointer transition active:scale-95 whitespace-nowrap px-1"
                           title="카메라 촬영 또는 사진첩 선택"
                         >
                           <Camera className="w-3.5 h-3.5 text-brand-600 shrink-0" />
@@ -2079,7 +2079,7 @@ export default function Home() {
                             setUrlModalTab('url');
                             setIsUrlModalOpen(true);
                           }}
-                          className="flex-1 min-w-[65px] h-9 text-xs font-bold bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 rounded-xl shadow-xs flex items-center justify-center gap-1 cursor-pointer transition active:scale-95 whitespace-nowrap shrink-0"
+                          className="w-full h-9 text-xs font-bold bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 rounded-xl shadow-xs flex items-center justify-center gap-1 cursor-pointer transition active:scale-95 whitespace-nowrap px-1"
                           title="웹페이지 URL 입력 및 본문 글 붙여넣기"
                         >
                           <Globe className="w-3.5 h-3.5 text-brand-600 shrink-0" />
@@ -2091,7 +2091,7 @@ export default function Home() {
                             setSelectedWordsFromText([]);
                             setIsWordSelectModalOpen(true);
                           }}
-                          className="flex-[1.3] min-w-[85px] h-9 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-xs flex items-center justify-center gap-1 transition cursor-pointer active:scale-95 whitespace-nowrap shrink-0"
+                          className="w-full h-9 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-xs flex items-center justify-center gap-1 transition cursor-pointer active:scale-95 whitespace-nowrap px-1"
                           title="원문 본문 속 모르는 단어 직접 선택"
                         >
                           <ScanLine className="w-3.5 h-3.5 text-white shrink-0" />
@@ -2114,10 +2114,11 @@ export default function Home() {
                             }
                             triggerToast('원문 지움', '등록된 본문과 사진이 초기화되었습니다.');
                           }}
-                          className="h-9 px-2.5 text-xs text-slate-500 hover:text-rose-600 font-bold bg-white hover:bg-rose-50 border border-slate-200 hover:border-rose-200 rounded-xl transition cursor-pointer whitespace-nowrap shrink-0 flex items-center justify-center"
+                          className="w-full h-9 text-xs text-slate-500 hover:text-rose-600 font-bold bg-white hover:bg-rose-50 border border-slate-200 hover:border-rose-200 rounded-xl transition cursor-pointer whitespace-nowrap flex items-center justify-center gap-1 active:scale-95 px-1"
                           title="불러온 원문 지우기"
                         >
-                          지우기
+                          <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                          <span>지우기</span>
                         </button>
                       </div>
                     </div>
@@ -2126,14 +2127,14 @@ export default function Home() {
                       <p className="text-[11px] text-slate-500">
                         책 사진이나 웹페이지를 불러오면 원문 문맥이 자동으로 연동됩니다.
                       </p>
-                      {/* 깔끔한 4개 핵심 버튼: 카메라, URL, 단어선택, 지우기 */}
-                      <div className="flex items-center gap-2 shrink-0">
+                      {/* 깔끔한 2개 핵심 버튼: 카메라, URL */}
+                      <div className="grid grid-cols-2 gap-2 w-full sm:w-auto sm:flex sm:items-center shrink-0">
                         <button
                           type="button"
                           onClick={() => setIsPhotoChooserOpen(true)}
-                          className="flex-1 sm:flex-none bg-white hover:bg-brand-50 border border-brand-200 text-brand-700 text-xs font-bold px-3.5 py-2 rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+                          className="w-full sm:w-auto h-9 bg-white hover:bg-brand-50 border border-brand-200 text-brand-700 text-xs font-bold px-3.5 rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 whitespace-nowrap"
                         >
-                          <Camera className="w-4 h-4 text-brand-600" />
+                          <Camera className="w-4 h-4 text-brand-600 shrink-0" />
                           <span>카메라</span>
                         </button>
                         <button
@@ -2142,9 +2143,9 @@ export default function Home() {
                             setUrlModalTab('url');
                             setIsUrlModalOpen(true);
                           }}
-                          className="flex-1 sm:flex-none bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold px-3.5 py-2 rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95"
+                          className="w-full sm:w-auto h-9 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold px-3.5 rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 whitespace-nowrap"
                         >
-                          <Globe className="w-4 h-4 text-slate-600" />
+                          <Globe className="w-4 h-4 text-slate-600 shrink-0" />
                           <span>URL</span>
                         </button>
                       </div>
@@ -2158,24 +2159,24 @@ export default function Home() {
                   {wordEntries.map((entry, index) => (
                     <div
                       key={entry.id}
-                      className="bg-slate-50/70 p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4"
+                      className="bg-slate-50/70 p-3.5 sm:p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4 overflow-hidden"
                     >
                       {/* Entry Card Header */}
-                      <div className="flex items-center justify-between pb-2 border-b border-slate-200">
-                        <div className="flex items-center gap-2">
-                          <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[11px] font-black flex items-center justify-center">
+                      <div className="flex items-center justify-between pb-2 border-b border-slate-200 gap-2">
+                        <div className="flex items-center gap-2 min-w-0">
+                          <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[11px] font-black flex items-center justify-center shrink-0">
                             {index + 1}
                           </span>
-                          <span className="text-xs font-bold text-slate-800">
+                          <span className="text-xs font-bold text-slate-800 shrink-0">
                             단어 등록칸 #{index + 1}
                           </span>
                           {entry.selectedMeaning && (
-                            <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full truncate max-w-[180px]">
+                            <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full truncate max-w-[120px] sm:max-w-[180px]">
                               ✓ {entry.word} ({entry.selectedMeaning})
                             </span>
                           )}
                         </div>
-                        <div className="flex items-center gap-1.5">
+                        <div className="flex items-center gap-1.5 shrink-0">
                           {/* 단어별 빠른 저장 버튼 */}
                           <button
                             type="button"
@@ -2212,7 +2213,7 @@ export default function Home() {
                           </label>
                         </div>
 
-                        <div className="flex gap-2">
+                        <div className="flex items-center gap-1.5 sm:gap-2 w-full min-w-0">
                           <input
                             type="text"
                             value={entry.word}
@@ -2280,15 +2281,15 @@ export default function Home() {
                               }
                             }}
                             placeholder="단어를 입력하세요 (예: boost, decline)"
-                            className="flex-1 px-3 py-2 text-xs bg-white text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
+                            className="flex-1 min-w-0 px-3 py-2 text-xs bg-white text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
                           />
                           <button
                             type="button"
                             onClick={() => executeSearchForEntry(entry.id)}
                             disabled={entry.isSearchingDict}
-                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3.5 py-2 text-xs rounded-xl shadow-xs transition flex items-center gap-1 shrink-0 disabled:opacity-50"
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-2.5 sm:px-3.5 py-2 text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-1 shrink-0 disabled:opacity-50 whitespace-nowrap cursor-pointer active:scale-95"
                           >
-                            <Search className="w-3.5 h-3.5" />
+                            <Search className="w-3.5 h-3.5 shrink-0" />
                             <span>{entry.isSearchingDict ? '조회중...' : '사전 조회'}</span>
                           </button>
                         </div>
