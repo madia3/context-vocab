@@ -212,7 +212,6 @@ export default function Home() {
   // 이전 사진까지 최대 2장을 보관하여 페이지 넘김/문장 잘림 자동 연결
   const [sourceImages, setSourceImages] = useState<{ base64: string; mimeType: string }[]>([]);
   const sourceImagesRef = useRef<{ base64: string; mimeType: string }[]>([]);
-  const [isPhotoChooserOpen, setIsPhotoChooserOpen] = useState(false);
 
   // Word Selection from Loaded Text State (원문에서 단어 직접 클릭 선택 및 원본 사진 대조)
   const [isWordSelectModalOpen, setIsWordSelectModalOpen] = useState(false);
@@ -2066,7 +2065,7 @@ export default function Home() {
                       <div className="grid grid-cols-4 gap-1.5 pt-1 w-full">
                         <button
                           type="button"
-                          onClick={() => setIsPhotoChooserOpen(true)}
+                          onClick={() => galleryInputRef.current?.click()}
                           className="w-full h-9 text-xs font-bold bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 rounded-xl shadow-xs flex items-center justify-center gap-1 cursor-pointer transition active:scale-95 whitespace-nowrap px-1"
                           title="카메라 촬영 또는 사진첩 선택"
                         >
@@ -2131,7 +2130,7 @@ export default function Home() {
                       <div className="grid grid-cols-2 gap-2 w-full sm:w-auto sm:flex sm:items-center shrink-0">
                         <button
                           type="button"
-                          onClick={() => setIsPhotoChooserOpen(true)}
+                          onClick={() => galleryInputRef.current?.click()}
                           className="w-full sm:w-auto h-9 bg-white hover:bg-brand-50 border border-brand-200 text-brand-700 text-xs font-bold px-3.5 rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 whitespace-nowrap"
                         >
                           <Camera className="w-4 h-4 text-brand-600 shrink-0" />
@@ -4682,65 +4681,6 @@ export default function Home() {
         </div>
       )}
 
-      {/* Camera / Gallery Picker Modal */}
-      {isPhotoChooserOpen && (
-        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-sm w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <div className="flex items-center gap-2">
-                <div className="w-9 h-9 rounded-xl bg-brand-50 text-brand-600 flex items-center justify-center">
-                  <Camera className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="font-bold text-sm text-slate-900 leading-tight">책 사진 불러오기</h3>
-                  <p className="text-[11px] text-slate-500">
-                    {sourceImages.length > 0 ? '이전 사진과 함께 최대 2장 연결' : '촬영 또는 사진첩 선택'}
-                  </p>
-                </div>
-              </div>
-              <button
-                type="button"
-                onClick={() => setIsPhotoChooserOpen(false)}
-                className="text-slate-400 hover:text-slate-600 text-lg w-7 h-7 flex items-center justify-center rounded-full hover:bg-slate-100 cursor-pointer"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-2.5">
-              <button
-                type="button"
-                onClick={() => {
-                  setIsPhotoChooserOpen(false);
-                  cameraInputRef.current?.click();
-                }}
-                className="w-full p-3.5 bg-gradient-to-r from-brand-600 to-brand-500 hover:opacity-95 text-white font-bold text-xs rounded-2xl shadow-sm transition flex items-center justify-center gap-2.5 cursor-pointer active:scale-98"
-              >
-                <Camera className="w-4 h-4 text-[#F3D372]" />
-                <span className="text-sm">카메라로 바로 촬영</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={() => {
-                  setIsPhotoChooserOpen(false);
-                  galleryInputRef.current?.click();
-                }}
-                className="w-full p-3.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-2xl transition flex items-center justify-center gap-2.5 cursor-pointer active:scale-98"
-              >
-                <ImageIcon className="w-4 h-4 text-brand-600" />
-                <span className="text-sm">사진첩 / 앨범에서 선택</span>
-              </button>
-            </div>
-
-            {sourceImages.length > 0 && (
-              <div className="p-2.5 bg-indigo-50/80 rounded-xl border border-indigo-100 text-[11px] text-indigo-900 leading-relaxed">
-                💡 <strong>연속 페이지 자동 감지:</strong> 새 사진을 찍거나 고르면 이전 사진과 함께 <strong>최대 2장</strong>을 AI가 비교하여 페이지 경계에서 잘린 문장을 자연스럽게 하나로 연결합니다.
-              </div>
-            )}
-          </div>
-        </div>
-      )}
 
       {/* Floating Animated Toast Notification */}
       {toast && (
