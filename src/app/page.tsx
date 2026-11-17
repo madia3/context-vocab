@@ -1082,45 +1082,94 @@ export default function Home() {
     }
   }
 
-  // Tesseract로 읽어 깨진 본문을 Gemini AI로 원본 사진에서 고정밀 재복원
+  // Tesseract로 읽어 깨진 본문을 Gemini AI로 원본 사진 및 문맥에서 초고속 재복원
   async function handleAiCleanPageText() {
     const activeImg = currentSourceImageRef.current || currentSourceImage;
-    if (!activeImg || !activeImg.base64) {
-      alert('분석할 원본 사진 데이터가 없습니다.');
+    if ((!activeImg || !activeImg.base64) && !pageOcrText.trim()) {
+      alert('복원할 사진이나 본문 텍스트 데이터가 없습니다.');
       return;
     }
     setIsCleaningWithAI(true);
     try {
       const apiKey = geminiApiKey || getStoredGeminiKey();
-      const res = await fetch('/api/ai/ocr', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(apiKey ? { 'x-gemini-key': apiKey } : {}),
-        },
-        body: JSON.stringify({
-          base64: activeImg.base64,
-          mimeType: activeImg.mimeType || 'image/jpeg',
-        }),
-      });
+      let restoredText = '';
+      let detectedMarked: string[] = [];
 
-      if (res.ok) {
-        const data = await res.json();
-        if (data.text && data.text.trim()) {
-          setPageOcrText(data.text.trim());
-          if (Array.isArray(data.markedWords) && data.markedWords.length > 0) {
-            setSelectedWordsFromText((prev) => Array.from(new Set([...prev, ...data.markedWords])));
-          }
-          setPickerTab('text');
-        } else {
-          alert('AI 본문 정제 결과를 가져오지 못했습니다.');
+      // 1차: Vision OCR + 서버 측 자동 텍스트 복원 폴백 통합 호출
+      try {
+        const res = await fetch('/api/ai/ocr', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(apiKey ? { 'x-gemini-key': apiKey } : {}),
+          },
+          body: JSON.stringify({
+            base64: activeImg?.base64 || '',
+            mimeType: activeImg?.mimeType || 'image/jpeg',
+            fallbackRawText: pageOcrText,
+          }),
+        });
+
+        if (res.status === 401) {
+          setIsWordSelectModalOpen(false);
+          setIsAiModalOpen(true);
+          triggerToast('Gemini API 키 설정 필요 🔑', '우측 상단 AI 연동 창에서 API 키를 먼저 등록해 주세요.');
+          return;
         }
+
+        if (res.ok) {
+          const data = await res.json();
+          if (data.text && data.text.trim()) {
+            restoredText = data.text.trim();
+            if (Array.isArray(data.markedWords)) {
+              detectedMarked = data.markedWords;
+            }
+          }
+        }
+      } catch (ocrErr) {
+        console.warn('Primary AI OCR call failed, trying fast text repair:', ocrErr);
+      }
+
+      // 2차: 만약 이미지 전송 문제 등으로 1차가 실패했다면, 가벼운 텍스트 전용 AI 문맥 복원(1.5초) 즉시 실행
+      if (!restoredText && pageOcrText.trim()) {
+        const cleanRes = await fetch('/api/ai/clean-text', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(apiKey ? { 'x-gemini-key': apiKey } : {}),
+          },
+          body: JSON.stringify({
+            rawText: pageOcrText,
+            mode: 'ocr_repair',
+          }),
+        });
+
+        if (cleanRes.ok) {
+          const cleanData = await cleanRes.json();
+          if (cleanData.cleanedText && cleanData.cleanedText.trim()) {
+            restoredText = cleanData.cleanedText.trim();
+          }
+        }
+      }
+
+      if (restoredText) {
+        setPageOcrText(restoredText);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('context_vocab_cached_page_ocr', restoredText);
+        }
+        if (detectedMarked.length > 0) {
+          setSelectedWordsFromText((prev) => Array.from(new Set([...prev, ...detectedMarked])));
+        }
+        triggerToast(
+          'AI 본문 복원 완료! ✨',
+          '깨진 OCR 글자와 오타가 자연스러운 영어 원문 문장으로 깔끔하게 복원되었습니다.'
+        );
       } else {
-        alert('AI 본문 정제에 실패했습니다. Gemini API 설정을 확인해 주세요.');
+        alert('AI 본문 복원에 실패했습니다. 우측 상단 🤖 버튼을 눌러 Gemini API 연동 상태를 확인해 주세요.');
       }
     } catch (err) {
       console.error('AI clean text error:', err);
-      alert('AI 본문 정제 중 오류가 발생했습니다.');
+      alert('AI 본문 정제 중 네트워크 오류가 발생했습니다. 다시 시도해 주세요.');
     } finally {
       setIsCleaningWithAI(false);
     }
@@ -3890,13 +3939,13 @@ export default function Home() {
                 )}
               </div>
 
-              {(currentSourceImageRef.current || currentSourceImage) && (
+              {(currentSourceImageRef.current || currentSourceImage || pageOcrText) && (
                 <button
                   type="button"
                   onClick={handleAiCleanPageText}
                   disabled={isCleaningWithAI}
                   className="text-[11px] bg-gradient-to-r from-indigo-50 to-sky-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 px-2.5 py-1.5 rounded-xl font-bold transition flex items-center gap-1 shadow-2xs cursor-pointer disabled:opacity-50"
-                  title="Tesseract 인식 오타나 깨진 글자를 Gemini AI로 깔끔하게 복원합니다"
+                  title="Tesseract 인식 오타나 깨진 글자를 Gemini AI로 1~2초 만에 깔끔하게 복원합니다"
                 >
                   <Sparkles className={`w-3 h-3 ${isCleaningWithAI ? 'animate-spin' : 'text-indigo-500'}`} />
                   <span>{isCleaningWithAI ? 'AI 복원 중...' : '✨ AI 본문 복원'}</span>
@@ -3904,36 +3953,34 @@ export default function Home() {
               )}
             </div>
 
-            {/* Modal Body: Switch between Split View, Text View, and Full Image View */}
-            <div className="flex-1 overflow-y-auto pr-1 py-1 min-h-[160px] space-y-2.5">
-              {/* 원본 사진 영역 (함께보기 또는 사진 확대 탭일 때 노출) */}
+            {/* Modal Body: Independent Split-Scroll between Pinned Photo and Text Tokens */}
+            <div className="flex-1 flex flex-col overflow-hidden pr-0.5 py-1 min-h-[180px] gap-2">
+              {/* 원본 사진 영역 (함께보기 시 상단 고정 + 독립 스크롤 / 사진 확대 시 전체 스크롤) */}
               {(pickerTab === 'image' || pickerTab === 'split') && (currentSourceImageRef.current || currentSourceImage) && (
-                <div className="space-y-1.5">
+                <div className={pickerTab === 'image' ? 'flex-1 flex flex-col min-h-0 space-y-1.5' : 'shrink-0 space-y-1'}>
                   <div
-                    className={`p-1.5 bg-slate-900/5 rounded-2xl border border-slate-200/80 flex items-center justify-center overflow-auto ${
-                      pickerTab === 'image' ? 'max-h-[48vh]' : 'max-h-[22vh]'
+                    className={`p-1.5 bg-slate-900/5 rounded-2xl border border-slate-200/80 overflow-y-auto overflow-x-auto ${
+                      pickerTab === 'image' ? 'flex-1 max-h-[52vh]' : 'max-h-[24vh]'
                     }`}
                   >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={`data:${(currentSourceImageRef.current || currentSourceImage)?.mimeType || 'image/jpeg'};base64,${(currentSourceImageRef.current || currentSourceImage)?.base64}`}
                       alt="원본 도서 페이지 사진"
-                      className={`${
-                        pickerTab === 'image' ? 'max-h-[45vh]' : 'max-h-[20vh]'
-                      } w-auto object-contain rounded-xl shadow-xs`}
+                      className="w-full h-auto block rounded-xl shadow-xs"
                     />
                   </div>
                   {pickerTab === 'image' && (
-                    <p className="text-[11px] text-slate-500 text-center leading-normal">
-                      💡 책 사진 속 단어 위치를 확인하세요. 오인식된 단어는 선택해도 <strong className="text-indigo-600">AI가 사진 문맥을 보고 원래 단어로 자동 복원</strong>하거나 아래에서 직접 수정(✏️)할 수 있습니다.
+                    <p className="text-[11px] text-slate-500 text-center leading-normal shrink-0">
+                      💡 책 사진 속 단어 위치를 위아래로 스크롤하며 확인하세요. 오인식된 단어는 선택해도 <strong className="text-indigo-600">AI가 문맥을 보고 원래 단어로 자동 복원</strong>합니다.
                     </p>
                   )}
                 </div>
               )}
 
-              {/* 텍스트 토큰 선택 영역 (텍스트만 또는 함께보기 탭일 때 노출) */}
+              {/* 텍스트 토큰 선택 영역 (독립 스크롤 영역) */}
               {pickerTab !== 'image' && (
-                <div className="p-3.5 sm:p-4 bg-slate-50/80 rounded-2xl border border-slate-200/80 text-[13px] sm:text-[14px] leading-relaxed text-slate-800 font-serif whitespace-pre-wrap select-none">
+                <div className="flex-1 overflow-y-auto p-3.5 sm:p-4 bg-slate-50/80 rounded-2xl border border-slate-200/80 text-[13px] sm:text-[14px] leading-relaxed text-slate-800 font-serif whitespace-pre-wrap select-none">
                   {textTokens.length > 0 ? (
                     textTokens.map((token, idx) => {
                       if (!token.isWord || !token.cleanWord) {

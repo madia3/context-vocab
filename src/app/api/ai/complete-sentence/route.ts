@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { callGeminiWithFallback } from '@/lib/geminiServer';
 
 export const runtime = 'nodejs';
 
@@ -19,13 +20,6 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Gemini API key is not configured' }, { status: 401 });
     }
 
-    const candidateModels = [
-      'gemini-3.5-flash-lite',
-      'gemini-3.8-flash',
-      'gemini-2.5-flash',
-      'gemini-1.5-flash',
-    ];
-
     const prompt = `You are an expert English editor and lexicographer.
 A reader took a photo of a book/article page, but the sentence was cut off across page boundaries or margin limits.
 
@@ -43,40 +37,23 @@ TASK:
 4. The target word "${word || ''}" must remain naturally inside the sentence.
 5. Return ONLY a single complete English sentence ending with a proper period (.), question mark (?), or exclamation mark (!). Do NOT return quotes or explanations.`;
 
+    const aiRes = await callGeminiWithFallback({
+      apiKey,
+      parts: [{ text: prompt }],
+      temperature: 0.2,
+      responseMimeType: 'text/plain',
+      maxOutputTokens: 250,
+    });
+
     let completedText = '';
-
-    for (const model of candidateModels) {
-      try {
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-        const res = await fetch(geminiUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          signal: AbortSignal.timeout(8000),
-          body: JSON.stringify({
-            contents: [{ parts: [{ text: prompt }] }],
-            generationConfig: {
-              temperature: 0.3,
-              maxOutputTokens: 250,
-            },
-          }),
-        });
-
-        if (res.ok) {
-          const data = await res.json();
-          const raw = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-          const cleaned = raw.replace(/^["'`]|["'`]$/g, '').trim();
-          if (cleaned.length > 5) {
-            completedText = cleaned;
-            break;
-          }
-        }
-      } catch (err) {
-        console.warn(`Model ${model} sentence completion error:`, err);
+    if (aiRes.ok && aiRes.text) {
+      const cleaned = aiRes.text.replace(/^["'`]|["'`]$/g, '').trim();
+      if (cleaned.length > 5) {
+        completedText = cleaned;
       }
     }
 
     if (!completedText) {
-      // Simple fallback if AI fails: ensure ending with period
       completedText = sentence.trim();
       if (!/[.!?]$/.test(completedText)) {
         completedText += '.';

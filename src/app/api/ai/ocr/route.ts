@@ -1,17 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { callGeminiWithFallback } from '@/lib/geminiServer';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   try {
-    const { base64, mimeType } = await req.json();
+    const { base64, mimeType, fallbackRawText } = await req.json();
 
-    if (!base64 || typeof base64 !== 'string') {
-      return NextResponse.json({ error: 'Image base64 data is required' }, { status: 400 });
+    const hasImage = Boolean(base64 && typeof base64 === 'string' && base64.length > 50);
+    const hasFallbackText = Boolean(fallbackRawText && typeof fallbackRawText === 'string' && fallbackRawText.trim().length > 5);
+
+    if (!hasImage && !hasFallbackText) {
+      return NextResponse.json({ error: 'Image base64 data or fallbackRawText is required' }, { status: 400 });
     }
 
-    if (base64.length > 12_000_000) {
+    if (hasImage && base64.length > 12_000_000) {
       return NextResponse.json({ error: 'Image payload too large' }, { status: 413 });
     }
 
@@ -22,23 +26,16 @@ export async function POST(req: NextRequest) {
 
     if (!apiKey) {
       return NextResponse.json(
-        { error: 'Gemini API Key is not configured' },
+        { error: 'Gemini API Key is not configured', code: 'NO_API_KEY' },
         { status: 401 }
       );
     }
 
-    // Google Gemini REST API 호출 (가장 빠른 gemini-3.5-flash-lite 우선 시도, 다단계 폴백)
-    const cleanBase64 = base64.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, '');
+    // 1. 원본 이미지가 있는 경우: 초고속 Vision OCR (thinkingLevel: LOW / thinkingBudget: 0 적용)
+    if (hasImage) {
+      const cleanBase64 = base64.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, '');
 
-    const candidateModels = [
-      'gemini-3.5-flash-lite',
-      'gemini-3.5-flash',
-      'gemini-3.8-flash',
-      'gemini-2.5-flash',
-      'gemini-1.5-flash',
-    ];
-
-    const prompt = `You are a high-precision OCR and document analysis AI specializing in English books, news articles, and research reports.
+      const visionPrompt = `You are a high-precision OCR and document analysis AI specializing in English books, news articles, and research reports.
 Carefully inspect the provided image.
 
 Strict Rules:
@@ -59,75 +56,100 @@ Output strictly valid JSON in this exact structure without markdown backticks:
   "markedWords": ["word1", "word2"]
 }`;
 
-    let data: any = null;
-    let lastError: string = '';
-
-    for (const model of candidateModels) {
-      try {
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-        const geminiRes = await fetch(geminiUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          signal: AbortSignal.timeout(8500),
-          body: JSON.stringify({
-            contents: [
-              {
-                parts: [
-                  { text: prompt },
-                  {
-                    inline_data: {
-                      mime_type: mimeType || 'image/jpeg',
-                      data: cleanBase64,
-                    },
-                  },
-                ],
-              },
-            ],
-            generationConfig: {
-              temperature: 0.0,
-              responseMimeType: 'application/json',
+      const visionRes = await callGeminiWithFallback({
+        apiKey,
+        parts: [
+          { text: visionPrompt },
+          {
+            inline_data: {
+              mime_type: mimeType || 'image/jpeg',
+              data: cleanBase64,
             },
-          }),
-        });
+          },
+        ],
+        temperature: 0.0,
+        responseMimeType: 'application/json',
+        candidates: [
+          { model: 'gemini-3.5-flash-lite', thinkingConfig: { thinkingLevel: 'LOW' }, timeoutMs: 4800 },
+          { model: 'gemini-3.1-flash-lite', thinkingConfig: { thinkingBudget: 0 }, timeoutMs: 4000 },
+          { model: 'gemini-flash-lite-latest', thinkingConfig: { thinkingLevel: 'LOW' }, timeoutMs: 4000 },
+        ],
+      });
 
-        if (geminiRes.ok) {
-          data = await geminiRes.json();
-          break;
-        } else {
-          lastError = await geminiRes.text();
-          console.warn(`Model ${model} failed with status ${geminiRes.status}:`, lastError);
+      if (visionRes.ok && visionRes.text) {
+        let text = visionRes.text;
+        let markedWords: string[] = [];
+
+        try {
+          const cleanJson = visionRes.text.replace(/```json/gi, '').replace(/```/g, '').trim();
+          const parsed = JSON.parse(cleanJson);
+          if (typeof parsed.text === 'string' && parsed.text.trim()) {
+            text = parsed.text.trim();
+          }
+          const detected = parsed.markedWords || parsed.underlinedWords;
+          if (Array.isArray(detected)) {
+            markedWords = detected
+              .map((w: any) => String(w || '').trim().toLowerCase().replace(/[^a-zA-Z'-]/g, ''))
+              .filter((w: string) => w.length >= 2);
+          }
+        } catch {
+          text = visionRes.text.trim();
         }
-      } catch (err: any) {
-        lastError = err?.message || String(err);
-        console.warn(`Model ${model} request error:`, err);
+
+        if (text) {
+          return NextResponse.json({ text, markedWords, method: 'vision' });
+        }
       }
     }
 
-    if (!data) {
-      return NextResponse.json(
-        { error: 'Gemini Vision API request failed', details: lastError },
-        { status: 502 }
-      );
-    }
-    const rawOutput = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    let text = rawOutput;
-    let markedWords: string[] = [];
+    // 2. 만약 Vision 호출이 타임아웃/실패했거나 텍스트만 전달된 경우: 초고속(1.5초) AI 텍스트 문맥 복원 엔진 가동
+    if (hasFallbackText) {
+      const repairPrompt = `You are an expert English book and article OCR restoration AI.
+The following text was extracted by noisy local OCR (Tesseract) from a photographed English book page.
+It contains OCR garbage symbols (e.g. "== i & |", "SSN 5 5", "2 S == S 7. 1.", "0 || r", "ag", "Ting", "Sa a:") and corrupted or split words (e.g. "CATEGOR )Eg" -> "CATEGORIES.", "Jike" -> "like", "Bleue = Ee i 5 tions" -> "these questions", "pub - SS == b WR lishing" -> "publishing", "tar get" -> "target", "SOME IN COMMON" -> "SOMETHING IN COMMON").
 
-    try {
-      const cleanJson = rawOutput.replace(/```json/gi, '').replace(/```/g, '').trim();
-      const parsed = JSON.parse(cleanJson);
-      if (typeof parsed.text === 'string') text = parsed.text;
-      const detected = parsed.markedWords || parsed.underlinedWords;
-      if (Array.isArray(detected)) {
-        markedWords = detected
-          .map((w: any) => String(w || '').trim().toLowerCase().replace(/[^a-zA-Z'-]/g, ''))
-          .filter((w: string) => w.length >= 2);
+TASK:
+1. Reconstruct and restore the clean, natural, 100% accurate English book prose.
+2. Remove all meaningless OCR symbol noise, random single-letter/number artifacts, and broken hyphenations.
+3. Restore any garbled words to their exact contextually intended English words while faithfully preserving all original sentences and paragraphs.
+4. Return ONLY valid JSON:
+{
+  "text": "Clean restored English book text..."
+}
+
+Noisy OCR Text:
+"""
+${String(fallbackRawText).slice(0, 6000)}
+"""`;
+
+      const textRes = await callGeminiWithFallback({
+        apiKey,
+        parts: [{ text: repairPrompt }],
+        temperature: 0.0,
+        responseMimeType: 'application/json',
+      });
+
+      if (textRes.ok && textRes.text) {
+        try {
+          const cleanJson = textRes.text.replace(/```json/gi, '').replace(/```/g, '').trim();
+          const parsed = JSON.parse(cleanJson);
+          const restored = (parsed.text || parsed.cleanedText || '').trim();
+          if (restored.length > 10) {
+            return NextResponse.json({ text: restored, markedWords: [], method: 'text_repair' });
+          }
+        } catch {
+          const rawTrimmed = textRes.text.trim();
+          if (rawTrimmed.length > 10) {
+            return NextResponse.json({ text: rawTrimmed, markedWords: [], method: 'text_repair' });
+          }
+        }
       }
-    } catch {
-      text = rawOutput;
     }
 
-    return NextResponse.json({ text, markedWords });
+    return NextResponse.json(
+      { error: 'Gemini OCR API request failed' },
+      { status: 502 }
+    );
   } catch (err: any) {
     console.error('OCR API Route Error:', err);
     return NextResponse.json(

@@ -1,18 +1,23 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cleanArticleTextHeuristic } from '@/lib/cleanText';
+import { cleanOcrText } from '@/lib/ocr';
+import { callGeminiWithFallback } from '@/lib/geminiServer';
 
 export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   try {
-    const { rawText } = await req.json();
+    const { rawText, mode } = await req.json();
 
     if (!rawText || typeof rawText !== 'string' || !rawText.trim()) {
       return NextResponse.json({ error: 'rawText is required' }, { status: 400 });
     }
 
-    // 1. 기본 휴리스틱 정제
-    const heuristicResult = cleanArticleTextHeuristic(rawText);
+    const isOcrRepair = mode === 'ocr_repair';
+    const heuristicResult = isOcrRepair
+      ? { cleanedText: cleanOcrText(rawText), removedCount: 1 }
+      : cleanArticleTextHeuristic(rawText);
 
     const apiKey =
       req.headers.get('x-gemini-key') ||
@@ -28,15 +33,25 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 2. Gemini AI 고정밀 광고 및 노이즈 정제
-    const candidateModels = [
-      'gemini-3.5-flash-lite',
-      'gemini-3.8-flash',
-      'gemini-2.5-flash',
-      'gemini-1.5-flash',
-    ];
+    const prompt = isOcrRepair
+      ? `You are an expert English book and article OCR restoration AI.
+The following text was extracted by noisy local OCR (Tesseract) from a photographed English book page.
+It contains OCR garbage symbols (e.g. "== i & |", "SSN 5 5", "2 S == S 7. 1.", "0 || r", "ag", "Ting", "Sa a:") and corrupted or split words (e.g. "CATEGOR )Eg" -> "CATEGORIES.", "Jike" -> "like", "Bleue = Ee i 5 tions" -> "these questions", "pub - SS == b WR lishing" -> "publishing", "tar get" -> "target", "SOME IN COMMON" -> "SOMETHING IN COMMON").
 
-    const prompt = `You are a professional news editor assistant.
+TASK:
+1. Reconstruct and restore the clean, natural, 100% accurate English book prose.
+2. Remove all meaningless OCR symbol noise, random single-letter/number artifacts, and broken hyphenations.
+3. Restore any garbled words to their exact contextually intended English words while faithfully preserving all original sentences and paragraphs.
+4. Return ONLY valid JSON:
+{
+  "cleanedText": "The clean restored English book prose..."
+}
+
+Noisy OCR Text:
+"""
+${rawText.slice(0, 8000)}
+"""`
+      : `You are a professional news editor assistant.
 The following English text was copied directly from a news article / web page (often paywalled or requiring login).
 It may contain noisy elements such as:
 - Banner/inline ads ("Advertisement", "Sponsored content", "Story continues below")
@@ -60,44 +75,29 @@ Original Text:
 ${rawText.slice(0, 8000)}
 """`;
 
-    for (const model of candidateModels) {
-      try {
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-        const geminiRes = await fetch(geminiUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          signal: AbortSignal.timeout(10000),
-          body: JSON.stringify({
-            contents: [
-              {
-                parts: [{ text: prompt }],
-              },
-            ],
-            generationConfig: {
-              temperature: 0.1,
-              responseMimeType: 'application/json',
-            },
-          }),
-        });
+    const aiRes = await callGeminiWithFallback({
+      apiKey,
+      parts: [{ text: prompt }],
+      temperature: 0.0,
+      responseMimeType: 'application/json',
+    });
 
-        if (geminiRes.ok) {
-          const data = await geminiRes.json();
-          const rawJson = data.candidates?.[0]?.content?.parts?.[0]?.text;
-          if (rawJson) {
-            const parsed = JSON.parse(rawJson);
-            if (parsed.cleanedText && parsed.cleanedText.trim().length > 20) {
-              return NextResponse.json({
-                cleanedText: parsed.cleanedText.trim(),
-                title: parsed.title || '',
-                removedCount: heuristicResult.removedCount || 1,
-                notes: parsed.removedAdNotes || '',
-                method: 'gemini',
-              });
-            }
-          }
+    if (aiRes.ok && aiRes.text) {
+      try {
+        const cleanJson = aiRes.text.replace(/```json/gi, '').replace(/```/g, '').trim();
+        const parsed = JSON.parse(cleanJson);
+        const cleaned = (parsed.cleanedText || parsed.text || '').trim();
+        if (cleaned.length > 10) {
+          return NextResponse.json({
+            cleanedText: cleaned,
+            title: parsed.title || '',
+            removedCount: heuristicResult.removedCount || 1,
+            notes: parsed.removedAdNotes || '',
+            method: 'gemini',
+          });
         }
       } catch (err) {
-        console.warn(`Clean text failed on model ${model}, trying next...`, err);
+        console.warn('Clean text JSON parse fallback:', err);
       }
     }
 

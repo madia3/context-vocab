@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { callGeminiWithFallback } from '@/lib/geminiServer';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -35,21 +36,21 @@ export async function POST(req: NextRequest) {
     const hasImage = Boolean(imageBase64 && typeof imageBase64 === 'string' && imageBase64.length > 50);
     const cleanBase64 = hasImage ? imageBase64.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, '') : '';
 
-    const prompt = `You are a strict, precise English-Korean bilingual linguist and visual document analyst.
+    const buildPrompt = (withImage: boolean) => `You are a strict, precise English-Korean bilingual linguist and visual document analyst.
 Target Word (or OCR Fragment): "${word}"
 ${contextHint ? `Tapped Context Snippet (where user clicked [[${word}]]):\n"""\n${String(contextHint).slice(0, 400)}\n"""\n` : ''}
-${hasImage ? 'PRIMARY SOURCE: Inspect the attached book/article page image directly with highest optical fidelity.' : ''}
+${withImage ? 'PRIMARY SOURCE: Inspect the attached book/article page image directly with highest optical fidelity.' : ''}
 ${pageText ? `Reference Text:\n"""\n${String(pageText).slice(0, 5000)}\n"""` : ''}
 
 Available Korean Dictionary Definitions:
 ${meaningsText}
 
 CRITICAL INSTRUCTIONS:
-1. Locate the target English word "${word}" (or its grammatical inflections: past tense, -ing, plural, comparative, irregular forms) ${hasImage ? 'directly in the IMAGE' : 'in the text'}.
+1. Locate the target English word "${word}" (or its grammatical inflections: past tense, -ing, plural, comparative, irregular forms) ${withImage ? 'directly in the IMAGE' : 'in the text'}.
 2. OCR MISREAD RECOVERY (VERY IMPORTANT):
-   - If "${word}" is a corrupted/truncated OCR fragment (e.g. "categor" -> "categories", "jike" -> "like", "lishing" -> "publishing", "ee"/"bleue"/"tions" in "As you consider [[Ee]]..." -> "questions" or "these"), inspect the Tapped Context Snippet and the original IMAGE at that exact sentence location to identify the TRUE intended English word!
+   - If "${word}" is a corrupted/truncated OCR fragment (e.g. "categor" -> "categories", "jike" -> "like", "lishing" -> "publishing", "ee"/"bleue"/"tions" in "As you consider [[Ee]]..." -> "questions" or "these"), inspect the Tapped Context Snippet ${withImage ? 'and the original IMAGE ' : ''}at that exact sentence location to identify the TRUE intended English word!
    - Set "lemma" to the restored base dictionary word (e.g. "category", "like", "publish", "question") and "matchedWord" to the exact word in the sentence.
-3. Transcribe the EXACT, COMPLETE, UNCUT original sentence containing the word with 100% optical accuracy (do NOT hallucinate, do NOT misspell, fix any hyphenated line-breaks naturally).
+3. Transcribe the EXACT, COMPLETE, UNCUT original sentence containing the word with 100% accuracy (do NOT hallucinate, fix any OCR typos or hyphenated line-breaks naturally).
 4. If the word appears multiple times in different sentences, transcribe ALL matching sentences into "allMatches".
 5. Select the best Korean definition index for this context (or provide the accurate contextual Korean meaning in "bestMeaningDef" and part-of-speech in "bestPos" if the word was recovered from an OCR typo), with a concise 1-sentence explanation in "aiExplanation".
 6. If the word does NOT appear at all, set "found": false.
@@ -69,68 +70,57 @@ Return strictly valid JSON:
   "aiExplanation": "이 문맥에서는 ~라는 의미로 쓰였습니다."
 }`;
 
-    const candidateModels = [
-      'gemini-3.5-flash-lite',
-      'gemini-3.5-flash',
-      'gemini-3.8-flash',
-      'gemini-2.5-flash',
-      'gemini-1.5-flash',
-    ];
+    let rawJsonText = '';
 
-    const contentParts: any[] = [{ text: prompt }];
+    // 1. 이미지가 있으면 초고속 Vision 모델 우선 시도 (thinkingLevel: LOW / thinkingBudget: 0)
     if (hasImage && cleanBase64) {
-      contentParts.push({
-        inline_data: {
-          mime_type: mimeType || 'image/jpeg',
-          data: cleanBase64,
-        },
-      });
-    }
-
-    let data: any = null;
-    let lastError: string = '';
-
-    for (const model of candidateModels) {
-      try {
-        const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`;
-        const geminiRes = await fetch(geminiUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          signal: AbortSignal.timeout(9000),
-          body: JSON.stringify({
-            contents: [
-              {
-                parts: contentParts,
-              },
-            ],
-            generationConfig: {
-              temperature: 0.0,
-              responseMimeType: 'application/json',
+      const visionRes = await callGeminiWithFallback({
+        apiKey,
+        parts: [
+          { text: buildPrompt(true) },
+          {
+            inline_data: {
+              mime_type: mimeType || 'image/jpeg',
+              data: cleanBase64,
             },
-          }),
-        });
+          },
+        ],
+        temperature: 0.0,
+        responseMimeType: 'application/json',
+        candidates: [
+          { model: 'gemini-3.5-flash-lite', thinkingConfig: { thinkingLevel: 'LOW' }, timeoutMs: 4500 },
+          { model: 'gemini-3.1-flash-lite', thinkingConfig: { thinkingBudget: 0 }, timeoutMs: 3800 },
+        ],
+      });
 
-        if (geminiRes.ok) {
-          data = await geminiRes.json();
-          break;
-        } else {
-          lastError = await geminiRes.text();
-        }
-      } catch (err: any) {
-        lastError = err?.message || String(err);
+      if (visionRes.ok && visionRes.text) {
+        rawJsonText = visionRes.text;
       }
     }
 
-    if (!data) {
+    // 2. Vision 호출이 실패했거나 이미지가 없는 경우: 초고속(1.2초) 텍스트 기반 문맥 복원 및 매칭 즉시 실행
+    if (!rawJsonText && pageText) {
+      const textRes = await callGeminiWithFallback({
+        apiKey,
+        parts: [{ text: buildPrompt(false) }],
+        temperature: 0.0,
+        responseMimeType: 'application/json',
+      });
+      if (textRes.ok && textRes.text) {
+        rawJsonText = textRes.text;
+      }
+    }
+
+    if (!rawJsonText) {
       return NextResponse.json(
-        { error: 'Gemini API request failed', details: lastError },
+        { error: 'Gemini API request failed' },
         { status: 502 }
       );
     }
-    const rawJsonText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
 
     try {
-      const parsed = JSON.parse(rawJsonText);
+      const cleanJson = rawJsonText.replace(/```json/gi, '').replace(/```/g, '').trim();
+      const parsed = JSON.parse(cleanJson);
       // 철저한 환각 검증: 반환된 문장 또는 본문에 실제로 단어나 형태소가 존재하는지 확인
       if (parsed.found && parsed.sentence) {
         const sentenceLower = String(parsed.sentence).toLowerCase();
