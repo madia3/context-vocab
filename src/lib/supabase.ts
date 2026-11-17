@@ -8,8 +8,12 @@ const STORAGE_ANON_KEY = 'context_vocab_supabase_anon_key';
  * Supabase 접속 정보를 안전하게 가져옵니다.
  */
 export function getStoredSupabaseConfig(): { url: string; anonKey: string; isCustom: boolean } {
-  let url = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
-  let anonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || '';
+  let url =
+    process.env.NEXT_PUBLIC_SUPABASE_URL ||
+    'https://mkclocmrpxjrowldfryd.supabase.co';
+  let anonKey =
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    'sb_publishable_J9jsy23QWH9yXeVE5pMxFg_GbC7MlFE';
   let isCustom = false;
 
   if (typeof window !== 'undefined') {
@@ -32,8 +36,8 @@ export function getStoredSupabaseConfig(): { url: string; anonKey: string; isCus
   );
 
   return {
-    url: isValid ? url : '',
-    anonKey: isValid ? anonKey : '',
+    url: isValid ? url : 'https://mkclocmrpxjrowldfryd.supabase.co',
+    anonKey: isValid ? anonKey : 'sb_publishable_J9jsy23QWH9yXeVE5pMxFg_GbC7MlFE',
     isCustom,
   };
 }
@@ -88,11 +92,7 @@ export function checkIsSupabaseConfigured(): boolean {
 }
 
 // 하위 호환성을 위한 boolean export (클라이언트/서버 최초 렌더용)
-export const isSupabaseConfigured = Boolean(
-  (process.env.NEXT_PUBLIC_SUPABASE_URL &&
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY &&
-    process.env.NEXT_PUBLIC_SUPABASE_URL !== 'https://your-project-id.supabase.co')
-);
+export const isSupabaseConfigured = true;
 
 /**
  * 언제 어디서든 getSupabaseClient()의 최신 상태로 라우팅되는 Proxy 객체입니다.
