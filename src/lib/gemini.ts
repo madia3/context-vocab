@@ -73,17 +73,22 @@ export interface MatchedSentenceItem {
   matchedWord?: string;
 }
 
-// AI로 단어의 원형/복수형/시제 변화형을 문맥에서 파악하여 해당 원문 문장(복수 문장 포함) 적출
+// AI로 단어의 원형/복수형/시제 변화형을 문맥에서 파악하여 해당 원문 문장(복수 문장 포함) 및 최적의 문맥 뜻 적출
 export async function findSentenceWithAI(
   pageText: string,
   word: string,
-  customApiKey?: string
+  customApiKey?: string,
+  meanings?: { pos: string; def: string }[]
 ): Promise<{
   found: boolean;
   sentence: string;
   matchedWord?: string;
   allMatches: MatchedSentenceItem[];
   method: 'gemini' | 'rule';
+  bestMeaningIndex?: number;
+  bestMeaningDef?: string;
+  bestPos?: string;
+  aiExplanation?: string;
 }> {
   const apiKey = customApiKey || getStoredGeminiKey();
 
@@ -94,7 +99,7 @@ export async function findSentenceWithAI(
         'Content-Type': 'application/json',
         ...(apiKey ? { 'x-gemini-key': apiKey } : {}),
       },
-      body: JSON.stringify({ pageText, word }),
+      body: JSON.stringify({ pageText, word, meanings }),
     });
 
     if (res.ok) {
@@ -114,6 +119,10 @@ export async function findSentenceWithAI(
           matchedWord: data.matchedWord,
           allMatches: matches,
           method: 'gemini',
+          bestMeaningIndex: typeof data.bestMeaningIndex === 'number' ? data.bestMeaningIndex : undefined,
+          bestMeaningDef: data.bestMeaningDef,
+          bestPos: data.bestPos,
+          aiExplanation: data.aiExplanation,
         };
       }
     }

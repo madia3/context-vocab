@@ -4,7 +4,7 @@ export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
   try {
-    const { pageText, word } = await req.json();
+    const { pageText, word, meanings } = await req.json();
 
     if (!pageText || !word) {
       return NextResponse.json({ error: 'pageText and word are required' }, { status: 400 });
@@ -24,9 +24,12 @@ export async function POST(req: NextRequest) {
 
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`;
 
-    const prompt = `You are a strict, precise English linguist assistant.
-Your task is to determine whether the target English vocabulary word "${word}" (or any of its direct grammatical inflections: e.g. "go" -> "went"/"gone"/"going"/"goes", "decline" -> "declined"/"declining"/"declines", "prevalent" -> "prevalent") appears in the provided text.
+    const hasMeanings = Array.isArray(meanings) && meanings.length > 0;
+    const meaningsText = hasMeanings
+      ? meanings.map((m: any, idx: number) => `[${idx}] (${m.pos || '품사'}) ${m.def}`).join('\n')
+      : 'None provided';
 
+    const prompt = `You are a strict, precise English-Korean bilingual linguist and lexicographer.
 Target Word: "${word}"
 
 Page Text:
@@ -34,20 +37,41 @@ Page Text:
 ${pageText}
 """
 
-CRITICAL INSTRUCTIONS:
-1. ONLY match sentences that LITERALLY contain "${word}" or its direct grammatical verb/noun/adjective inflection in the text.
-2. NEVER match completely different or unrelated words (for example, NEVER match "decline" if target word is "went").
-3. If "${word}" or its inflection does NOT appear in the page text, you MUST return:
-{"found": false, "sentence": "", "matchedWord": "", "allMatches": []}
+Available Korean Dictionary Definitions:
+${meaningsText}
 
-4. If it DOES appear, return ONLY valid JSON:
+CRITICAL INSTRUCTIONS:
+1. Determine if the target English vocabulary word "${word}" (or any of its direct grammatical inflections: e.g. "go" -> "went"/"gone"/"going", "decline" -> "declined"/"declining", "boost" -> "boosted"/"boosting"/"boosts") appears in the provided Page Text.
+2. If "${word}" or its inflection does NOT appear in the page text, you MUST return:
+{
+  "found": false,
+  "sentence": "",
+  "matchedWord": "",
+  "allMatches": [],
+  "bestMeaningIndex": 0,
+  "bestMeaningDef": "",
+  "bestPos": "",
+  "aiExplanation": ""
+}
+3. If it DOES appear:
+   - Extract the EXACT complete sentence from the text containing the word.
+   - Analyze how the word is used in that sentence grammatically and contextually.
+   - From the Available Korean Dictionary Definitions above, pick the 0-based index that BEST fits this sentence's context.
+   - If a specific definition matches best, set "bestMeaningIndex" to its index, "bestMeaningDef" to its definition text, and "bestPos" to its part of speech.
+   - Provide a concise 1-sentence Korean explanation why this meaning fits the context in "aiExplanation".
+
+Return ONLY valid JSON:
 {
   "found": true,
   "sentence": "Exact complete sentence from text",
   "matchedWord": "the exact word form found",
   "allMatches": [
     { "sentence": "Exact complete sentence 1", "matchedWord": "form1" }
-  ]
+  ],
+  "bestMeaningIndex": 0,
+  "bestMeaningDef": "가장 적절한 한국어 뜻",
+  "bestPos": "v. / n. / adj.",
+  "aiExplanation": "이 문장에서는 ~라는 의미로 쓰였습니다."
 }`;
 
     const geminiRes = await fetch(geminiUrl, {

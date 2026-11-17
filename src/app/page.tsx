@@ -181,6 +181,7 @@ export default function Home() {
   const [sourceProcessTaskName, setSourceProcessTaskName] = useState<string>('');
   const [isSavingAwaitingSource, setIsSavingAwaitingSource] = useState(false);
   const sourceTaskPromiseRef = useRef<Promise<string | null> | null>(null);
+  const wordDebounceTimersRef = useRef<{ [entryId: string]: any }>({});
 
   // Web URL Scraper State (웹페이지 URL에서 문장 가져오기)
   const [inputWebUrl, setInputWebUrl] = useState<string>('');
@@ -638,22 +639,43 @@ export default function Home() {
       const defaultExample =
         res.exampleSentence || `This is a sample sentence illustrating the word "${wordToSearch}".`;
 
-      // 2. 만약 현재 촬영해둔 페이지 텍스트가 있다면 문맥 스마트 탐색
+      // 2. 만약 현재 촬영/불러온 본문 텍스트가 있다면 문맥 스마트 탐색 + AI 최적 뜻 선정
       if (pageOcrText) {
         try {
-          const matchRes = await findSentenceWithAI(pageOcrText, wordToSearch, geminiApiKey);
+          const matchRes = await findSentenceWithAI(pageOcrText, wordToSearch, geminiApiKey, res.meanings);
           if (matchRes.found && matchRes.sentence) {
             const sentences = matchRes.allMatches.map((m) => m.sentence);
+
+            // AI가 문맥을 분석하여 선택해준 최적의 뜻 인덱스 적용
+            let bestIdx = 0;
+            if (
+              typeof matchRes.bestMeaningIndex === 'number' &&
+              matchRes.bestMeaningIndex >= 0 &&
+              matchRes.bestMeaningIndex < res.meanings.length
+            ) {
+              bestIdx = matchRes.bestMeaningIndex;
+            }
+
+            const selectedDef =
+              res.meanings[bestIdx]?.def ||
+              matchRes.bestMeaningDef ||
+              (res.meanings[0]?.def ?? '');
+            const selectedPos =
+              res.meanings[bestIdx]?.pos ||
+              matchRes.bestPos ||
+              (res.meanings[0]?.pos ?? '');
+
+            const noticeText = matchRes.aiExplanation
+              ? `✨ AI 문맥 분석: ${matchRes.aiExplanation}`
+              : `✨ 본문 문맥에 가장 적절한 뜻('${selectedDef}')이 자동 선택되었습니다!`;
+
             updateWordEntry(entryId, {
               dictResult: res,
-              selectedMeaning: res.meanings.length > 0 ? res.meanings[0].def : '',
-              selectedPos: res.meanings.length > 0 ? res.meanings[0].pos : '',
+              selectedMeaning: selectedDef,
+              selectedPos: selectedPos,
               candidateSentences: sentences,
               context: matchRes.sentence,
-              ocrDetectedNotice:
-                sentences.length > 1
-                  ? `✨ 본문 내에서 '${wordToSearch}'가 ${sentences.length}번 쓰였습니다!`
-                  : `📸 본문에서 원문 문장을 자동으로 찾았습니다!`,
+              ocrDetectedNotice: noticeText,
               isSearchingDict: false,
             });
             return;
@@ -675,7 +697,7 @@ export default function Home() {
         }
       }
 
-      // 본문이 없거나 문맥 탐색이 없는 경우 기본 예문 채우기
+      // 본문이 없거나 문맥 탐색이 없는 경우 기본 첫 번째 뜻 채우기
       updateWordEntry(entryId, {
         dictResult: res,
         selectedMeaning: res.meanings.length > 0 ? res.meanings[0].def : '',
@@ -734,47 +756,44 @@ export default function Home() {
     const wordsToAdd = [...selectedWordsFromText];
     setIsWordSelectModalOpen(false);
 
+    const newEntries = [...wordEntries];
     const entriesToSearch: { id: string; word: string }[] = [];
+    let startIdx = 0;
 
-    setWordEntries((prev) => {
-      const newEntries = [...prev];
-      let startIdx = 0;
+    // 만약 첫 번째 단어칸이 아직 비어있다면 첫 단어를 채움
+    if (newEntries.length === 1 && !newEntries[0].word.trim()) {
+      const targetId = newEntries[0].id;
+      newEntries[0] = {
+        ...newEntries[0],
+        word: wordsToAdd[0],
+        sourceMemo: loadedSourceType === 'web' && loadedWebTitle ? loadedWebTitle : '',
+      };
+      entriesToSearch.push({ id: targetId, word: wordsToAdd[0] });
+      startIdx = 1;
+    }
 
-      // 만약 첫 번째 단어칸이 아직 비어있다면 첫 단어를 채움
-      if (newEntries.length === 1 && !newEntries[0].word.trim()) {
-        const targetId = newEntries[0].id;
-        newEntries[0] = {
-          ...newEntries[0],
-          word: wordsToAdd[0],
-          sourceMemo: loadedSourceType === 'web' && loadedWebTitle ? loadedWebTitle : '',
-        };
-        entriesToSearch.push({ id: targetId, word: wordsToAdd[0] });
-        startIdx = 1;
-      }
+    // 나머지 선택된 단어들에 대해 새로운 단어 카드 생성
+    for (let i = startIdx; i < wordsToAdd.length; i++) {
+      const item = createWordEntryItem({
+        word: wordsToAdd[i],
+        sourceMemo: loadedSourceType === 'web' && loadedWebTitle ? loadedWebTitle : '',
+      });
+      newEntries.push(item);
+      entriesToSearch.push({ id: item.id, word: wordsToAdd[i] });
+    }
 
-      // 나머지 선택된 단어들에 대해 새로운 단어 카드 생성
-      for (let i = startIdx; i < wordsToAdd.length; i++) {
-        const item = createWordEntryItem({
-          word: wordsToAdd[i],
-          sourceMemo: loadedSourceType === 'web' && loadedWebTitle ? loadedWebTitle : '',
-        });
-        newEntries.push(item);
-        entriesToSearch.push({ id: item.id, word: wordsToAdd[i] });
-      }
+    setWordEntries(newEntries);
 
-      return newEntries;
-    });
-
-    // 각 단어에 대해 사전 뜻 및 원문 문맥 탐색 실행
+    // 각 단어에 대해 사전 조회 & 문맥 최적 뜻 분석 즉시 실행
     entriesToSearch.forEach(({ id, word }, idx) => {
       setTimeout(() => {
         executeSearchForEntry(id, word);
-      }, idx * 100);
+      }, idx * 120);
     });
 
     triggerToast(
       '단어 선택 완료! ✨',
-      `${wordsToAdd.length}개의 단어가 추가되어 사전 뜻과 문장을 자동으로 불러옵니다.`
+      `${wordsToAdd.length}개 단어의 사전 뜻과 문맥에 맞는 최적의 뜻을 AI가 자동 선택합니다.`
     );
   }
 
@@ -1556,6 +1575,17 @@ export default function Home() {
                                 }
                               });
 
+                              // 타이핑 디바운스: 입력 멈추면 자동으로 사전 조회 & AI 문맥 뜻 선택 실행
+                              if (wordDebounceTimersRef.current[entry.id]) {
+                                clearTimeout(wordDebounceTimersRef.current[entry.id]);
+                              }
+                              const cleanWord = val.trim();
+                              if (cleanWord.length >= 2) {
+                                wordDebounceTimersRef.current[entry.id] = setTimeout(() => {
+                                  executeSearchForEntry(entry.id, cleanWord);
+                                }, 750);
+                              }
+
                               // 사진 또는 URL 텍스트에서 단어 문장 자동 탐색
                               if (pageOcrText && val.trim().length >= 3) {
                                 const matches = findAllSentencesWithWordSmart(pageOcrText, val.trim());
@@ -1572,12 +1602,24 @@ export default function Home() {
                                 }
                               }
                             }}
+                            onBlur={() => {
+                              const cleanWord = entry.word.trim();
+                              if (cleanWord.length >= 2 && !entry.dictResult && !entry.isSearchingDict) {
+                                if (wordDebounceTimersRef.current[entry.id]) {
+                                  clearTimeout(wordDebounceTimersRef.current[entry.id]);
+                                }
+                                executeSearchForEntry(entry.id, cleanWord);
+                              }
+                            }}
                             onKeyDown={(e) => {
                               if (e.key === 'Enter') {
+                                if (wordDebounceTimersRef.current[entry.id]) {
+                                  clearTimeout(wordDebounceTimersRef.current[entry.id]);
+                                }
                                 executeSearchForEntry(entry.id);
                               }
                             }}
-                            placeholder="단어를 입력하세요 (예: tra, prev, miti)"
+                            placeholder="단어를 입력하세요 (예: boost, decline)"
                             className="flex-1 px-3 py-2 text-xs bg-white text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold"
                           />
                           <button
@@ -1713,11 +1755,19 @@ export default function Home() {
                                     }}
                                     className="mt-0.5 accent-indigo-600"
                                   />
-                                  <div className="flex-1">
-                                    <span className={`inline-block px-2 py-0.5 font-bold rounded-md text-[10px] mr-1.5 border ${getPosBadgeColor(m.pos)}`}>
-                                      {m.pos}
-                                    </span>
-                                    <span className="text-slate-900">{m.def}</span>
+                                  <div className="flex-1 flex items-center justify-between gap-1.5">
+                                    <div>
+                                      <span className={`inline-block px-2 py-0.5 font-bold rounded-md text-[10px] mr-1.5 border ${getPosBadgeColor(m.pos)}`}>
+                                        {m.pos}
+                                      </span>
+                                      <span className="text-slate-900">{m.def}</span>
+                                    </div>
+                                    {entry.selectedMeaning === m.def && (
+                                      <span className="text-[10px] text-indigo-700 bg-indigo-100/90 border border-indigo-200 px-1.5 py-0.5 rounded-full font-bold shrink-0 flex items-center gap-0.5">
+                                        <Sparkles className="w-2.5 h-2.5 text-indigo-600" />
+                                        <span>AI 추천 선택</span>
+                                      </span>
+                                    )}
                                   </div>
                                 </label>
                               ))}
