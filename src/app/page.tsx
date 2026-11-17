@@ -2115,22 +2115,26 @@ export default function Home() {
                   className="hidden"
                 />
 
-                {/* Page Photo Capture / Web URL Scanner Card */}
+                {/* Page Photo Capture / Direct Source Sentence & Paste Card */}
                 <div className="bg-gradient-to-r from-brand-50 to-brand-100/40 p-3 sm:p-3.5 rounded-xl border border-brand-200">
                   <div className="flex items-center justify-between gap-2 mb-2">
                     <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 shrink-0">
                       <BookOpen className="w-4 h-4 text-brand-600" />
-                      <span>원문 문장 불러오기</span>
+                      <span>원문 문장</span>
                     </span>
                     <div className="flex items-center gap-1 shrink-0">
                       {pageOcrText ? (
                         <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
                           <Check className="w-3 h-3" />
-                          <span>{loadedSourceType === 'web' ? '웹페이지 로드됨' : '사진 인식됨'}</span>
+                          <span>
+                            {loadedSourceType === 'web'
+                              ? (loadedWebTitle ? (loadedWebTitle.length > 15 ? loadedWebTitle.slice(0, 15) + '...' : loadedWebTitle) : '웹/본문 로드됨')
+                              : (sourceImages.length > 1 ? '연속 2장 연결됨 📄' : '사진 인식됨 📸')}
+                          </span>
                         </span>
                       ) : (
                         <span className="text-[10px] text-slate-400 font-medium">
-                          사진 촬영 or 웹 URL
+                          사진 촬영 or 원문/URL 붙여넣기
                         </span>
                       )}
                     </div>
@@ -2146,105 +2150,154 @@ export default function Home() {
                         기다리지 말고 아래 단어를 바로 입력하세요! 분석 완료 시 문장이 자동 연결됩니다.
                       </p>
                     </div>
-                  ) : pageOcrText ? (
-                    <div className="space-y-2 pt-0.5">
-                      <div className="flex items-center justify-between gap-2">
-                        <p className="text-[11px] text-slate-700 line-clamp-2 italic bg-white/90 p-2.5 rounded-lg border border-indigo-100 leading-relaxed font-serif flex-1">
-                          &quot;{pageOcrText.slice(0, 140)}...&quot;
-                        </p>
-                        {sourceImages.length > 1 && (
-                          <span className="text-[10px] bg-indigo-100 text-indigo-800 font-bold px-2 py-1 rounded-lg shrink-0 flex items-center gap-1">
-                            <span>연속 2장 연결됨 📄</span>
-                          </span>
-                        )}
-                      </div>
-                      {/* 깔끔한 4개 핵심 버튼 균등 4열 그리드 정렬: 카메라, URL, 단어선택, 지우기 */}
-                      <div className="grid grid-cols-4 gap-1.5 pt-1 w-full">
-                        <button
-                          type="button"
-                          onClick={() => galleryInputRef.current?.click()}
-                          className="w-full h-9 text-xs font-bold bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 rounded-xl shadow-xs flex items-center justify-center gap-1 cursor-pointer transition active:scale-95 whitespace-nowrap px-1"
-                          title="카메라 촬영 또는 사진첩 선택"
-                        >
-                          <Camera className="w-3.5 h-3.5 text-brand-600 shrink-0" />
-                          <span>카메라</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setUrlModalTab('url');
-                            setIsUrlModalOpen(true);
-                          }}
-                          className="w-full h-9 text-xs font-bold bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 rounded-xl shadow-xs flex items-center justify-center gap-1 cursor-pointer transition active:scale-95 whitespace-nowrap px-1"
-                          title="웹페이지 URL 입력 및 본문 글 붙여넣기"
-                        >
-                          <Globe className="w-3.5 h-3.5 text-brand-600 shrink-0" />
-                          <span>URL</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setSelectedWordsFromText([]);
-                            setIsWordSelectModalOpen(true);
-                          }}
-                          className="w-full h-9 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-xs flex items-center justify-center gap-1 transition cursor-pointer active:scale-95 whitespace-nowrap px-1"
-                          title="원문 본문 속 모르는 단어 직접 선택"
-                        >
-                          <ScanLine className="w-3.5 h-3.5 text-white shrink-0" />
-                          <span>단어 선택</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setPageOcrText('');
-                            setLoadedSourceType(null);
-                            setLoadedWebTitle('');
-                            setCurrentSourceImage(null);
-                            currentSourceImageRef.current = null;
-                            setSourceImages([]);
-                            sourceImagesRef.current = [];
-                            if (typeof window !== 'undefined') {
-                              localStorage.removeItem('context_vocab_cached_page_ocr');
-                              sessionStorage.removeItem('context_vocab_source_image');
-                              sessionStorage.removeItem('context_vocab_source_images');
-                            }
-                            triggerToast('원문 지움', '등록된 본문과 사진이 초기화되었습니다.');
-                          }}
-                          className="w-full h-9 text-xs text-slate-500 hover:text-rose-600 font-bold bg-white hover:bg-rose-50 border border-slate-200 hover:border-rose-200 rounded-xl transition cursor-pointer whitespace-nowrap flex items-center justify-center gap-1 active:scale-95 px-1"
-                          title="불러온 원문 지우기"
-                        >
-                          <Trash2 className="w-3.5 h-3.5 shrink-0" />
-                          <span>지우기</span>
-                        </button>
-                      </div>
-                    </div>
                   ) : (
-                    <div className="pt-0.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2.5">
-                      <p className="text-[11px] text-slate-500">
-                        책 사진이나 웹페이지를 불러오면 원문 문맥이 자동으로 연동됩니다.
-                      </p>
-                      {/* 깔끔한 2개 핵심 버튼: 카메라, URL */}
-                      <div className="grid grid-cols-2 gap-2 w-full sm:w-auto sm:flex sm:items-center shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => galleryInputRef.current?.click()}
-                          className="w-full sm:w-auto h-9 bg-white hover:bg-brand-50 border border-brand-200 text-brand-700 text-xs font-bold px-3.5 rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 whitespace-nowrap"
-                        >
-                          <Camera className="w-4 h-4 text-brand-600 shrink-0" />
-                          <span>카메라</span>
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setUrlModalTab('url');
-                            setIsUrlModalOpen(true);
+                    <div className="space-y-2">
+                      {/* 원문 문장 칸 (직접 붙여넣기 및 편집 가능) */}
+                      <div className="relative">
+                        <textarea
+                          rows={pageOcrText ? 3 : 2}
+                          value={pageOcrText}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setPageOcrText(val);
+                            if (typeof window !== 'undefined') {
+                              localStorage.setItem('context_vocab_cached_page_ocr', val);
+                            }
+                            // 단어장 내 단어와 실시간 매칭
+                            if (val.trim().length >= 10) {
+                              wordEntries.forEach((entry) => {
+                                const w = entry.word.trim();
+                                if (w.length >= 2 && !entry.context) {
+                                  const matches = findAllSentencesWithWordSmart(val, w);
+                                  if (matches.length > 0) {
+                                    const sentences = matches.map((m) => m.sentence);
+                                    updateWordEntry(entry.id, {
+                                      candidateSentences: sentences,
+                                      context: matches[0].sentence,
+                                      ocrDetectedNotice:
+                                        sentences.length > 1
+                                          ? `✨ 본문 내에서 이 단어가 ${sentences.length}번 쓰였습니다!`
+                                          : '✨ 본문에서 원문 문장을 자동으로 찾았습니다!',
+                                    });
+                                  }
+                                }
+                              });
+                            }
                           }}
-                          className="w-full sm:w-auto h-9 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 text-xs font-bold px-3.5 rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 whitespace-nowrap"
-                        >
-                          <Globe className="w-4 h-4 text-slate-600 shrink-0" />
-                          <span>URL</span>
-                        </button>
+                          onPaste={async (e) => {
+                            const pasteText = e.clipboardData?.getData('text') || '';
+                            const detected = detectContentType(pasteText);
+                            if (detected.type === 'url' && detected.cleanUrl) {
+                              e.preventDefault();
+                              triggerToast('🌐 웹 URL 감지됨!', '기사 본문을 자동으로 불러옵니다.');
+                              await handleScrapeUrl(detected.cleanUrl);
+                            } else if (pasteText.trim() && pasteText.trim().length > 150) {
+                              // 긴 본문 텍스트 붙여넣기 시 광고/배너 자동 정제 지원
+                              e.preventDefault();
+                              await handleApplyPastedText(pasteText);
+                            }
+                          }}
+                          placeholder="원문 문장, 기사 글, 또는 웹페이지 URL을 바로 여기에 붙여넣으세요..."
+                          className="w-full px-3 py-2 text-xs bg-white text-slate-900 border border-brand-200/90 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 font-serif leading-relaxed placeholder:text-slate-400 shadow-2xs resize-y"
+                        />
                       </div>
+
+                      {/* URL이 직접 입력된 경우 즉시 본문 불러오기 안내 버튼 */}
+                      {detectContentType(pageOcrText).type === 'url' && (
+                        <div className="p-2 bg-indigo-50 border border-indigo-200 rounded-xl flex items-center justify-between text-xs animate-fade-in">
+                          <div className="flex items-center gap-1.5 text-indigo-900 font-bold truncate">
+                            <Globe className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                            <span className="truncate">웹 URL이 입력되었습니다!</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleScrapeUrl(detectContentType(pageOcrText).cleanUrl)}
+                            className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shrink-0 text-[11px] shadow-xs cursor-pointer active:scale-95"
+                          >
+                            본문 불러오기 ➔
+                          </button>
+                        </div>
+                      )}
+
+                      {/* 핵심 액션 버튼군 (URL 버튼 제거됨) */}
+                      {pageOcrText ? (
+                        <div className="grid grid-cols-4 gap-1.5 pt-0.5 w-full">
+                          <button
+                            type="button"
+                            onClick={() => galleryInputRef.current?.click()}
+                            className="w-full h-9 text-xs font-bold bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 rounded-xl shadow-xs flex items-center justify-center gap-1 cursor-pointer transition active:scale-95 whitespace-nowrap px-1"
+                            title="카메라 촬영 또는 사진첩 선택"
+                          >
+                            <Camera className="w-3.5 h-3.5 text-brand-600 shrink-0" />
+                            <span>카메라</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleClipboardPasteSmart}
+                            className="w-full h-9 text-xs font-bold bg-white hover:bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-xl shadow-xs flex items-center justify-center gap-1 cursor-pointer transition active:scale-95 whitespace-nowrap px-1"
+                            title="클립보드 내용 새로 붙여넣기 (URL 또는 글 자동 판별)"
+                          >
+                            <ClipboardPaste className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                            <span>붙여넣기</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setSelectedWordsFromText([]);
+                              setIsWordSelectModalOpen(true);
+                            }}
+                            className="w-full h-9 text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl shadow-xs flex items-center justify-center gap-1 transition cursor-pointer active:scale-95 whitespace-nowrap px-1"
+                            title="원문 본문 속 모르는 단어 직접 선택"
+                          >
+                            <ScanLine className="w-3.5 h-3.5 text-white shrink-0" />
+                            <span>단어 선택</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPageOcrText('');
+                              setLoadedSourceType(null);
+                              setLoadedWebTitle('');
+                              setCurrentSourceImage(null);
+                              currentSourceImageRef.current = null;
+                              setSourceImages([]);
+                              sourceImagesRef.current = [];
+                              if (typeof window !== 'undefined') {
+                                localStorage.removeItem('context_vocab_cached_page_ocr');
+                                sessionStorage.removeItem('context_vocab_source_image');
+                                sessionStorage.removeItem('context_vocab_source_images');
+                              }
+                              triggerToast('원문 지움', '등록된 본문과 사진이 초기화되었습니다.');
+                            }}
+                            className="w-full h-9 text-xs text-slate-500 hover:text-rose-600 font-bold bg-white hover:bg-rose-50 border border-slate-200 hover:border-rose-200 rounded-xl transition cursor-pointer whitespace-nowrap flex items-center justify-center gap-1 active:scale-95 px-1"
+                            title="불러온 원문 지우기"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                            <span>지우기</span>
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="grid grid-cols-2 gap-2 pt-0.5 w-full">
+                          <button
+                            type="button"
+                            onClick={() => galleryInputRef.current?.click()}
+                            className="w-full h-9 bg-white hover:bg-brand-50 border border-brand-200 text-brand-700 text-xs font-bold px-3.5 rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 whitespace-nowrap"
+                            title="카메라 촬영 또는 사진첩 선택"
+                          >
+                            <Camera className="w-4 h-4 text-brand-600 shrink-0" />
+                            <span>카메라</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={handleClipboardPasteSmart}
+                            className="w-full h-9 bg-white hover:bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-bold px-3.5 rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 whitespace-nowrap"
+                            title="클립보드에서 바로 붙여넣기 (URL 또는 기사 글 자동 판별)"
+                          >
+                            <ClipboardPaste className="w-4 h-4 text-indigo-600 shrink-0" />
+                            <span>클립보드 붙여넣기</span>
+                          </button>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
