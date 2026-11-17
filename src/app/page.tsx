@@ -479,7 +479,7 @@ export default function Home() {
   function startBackgroundSourceAnalysis(
     taskName: string,
     sourceType: 'camera' | 'web',
-    processFn: () => Promise<{ text: string; title?: string; sourceUrl?: string; sentenceCount?: number }>
+    processFn: () => Promise<{ text: string; title?: string; sourceUrl?: string; sentenceCount?: number; markedWords?: string[] }>
   ) {
     setIsSourceProcessing(true);
     setSourceProcessTaskName(taskName);
@@ -500,32 +500,41 @@ export default function Home() {
           localStorage.setItem('context_vocab_cached_page_ocr', result.text);
         }
 
-        // 백그라운드 분석이 끝났을 때 작성 중인 단어칸들이 있다면 문맥 자동 매칭!
-        wordEntries.forEach((entry) => {
-          const w = (entry.word || entry.dictResult?.word || '').trim();
-          if (w && !entry.context) {
-            findSentenceWithAI(result.text, w, geminiApiKey).then((matchRes) => {
-              if (matchRes.found && matchRes.sentence) {
-                const sentences = matchRes.allMatches.map((m) => m.sentence);
-                updateWordEntry(entry.id, {
-                  context: matchRes.sentence,
-                  candidateSentences: sentences,
-                  ocrDetectedNotice:
-                    sentences.length > 1
-                      ? `✨ 본문 내에서 '${w}'가 ${sentences.length}번 쓰였습니다!`
-                      : `✨ 백그라운드 분석 완료! 원문 속 문장을 자동으로 연결했습니다.`,
-                });
-              }
-            });
-          }
-        });
+        // 🎯 사진에서 사용자가 밑줄이나 동그라미 친 단어가 감지되면 단어 등록칸에 자동 등록!
+        if (result.markedWords && result.markedWords.length > 0) {
+          enrollWordsToForm(result.markedWords);
+          triggerToast(
+            `📸 밑줄/동그라미 단어 ${result.markedWords.length}개 자동 등록! ✨`,
+            `사진 속 '${result.markedWords.join(', ')}' 단어를 감지하여 사전 조회 및 최적 뜻을 자동 선택했습니다!`
+          );
+        } else {
+          // 백그라운드 분석이 끝났을 때 작성 중인 단어칸들이 있다면 문맥 자동 매칭!
+          wordEntries.forEach((entry) => {
+            const w = (entry.word || entry.dictResult?.word || '').trim();
+            if (w && !entry.context) {
+              findSentenceWithAI(result.text, w, geminiApiKey).then((matchRes) => {
+                if (matchRes.found && matchRes.sentence) {
+                  const sentences = matchRes.allMatches.map((m) => m.sentence);
+                  updateWordEntry(entry.id, {
+                    context: matchRes.sentence,
+                    candidateSentences: sentences,
+                    ocrDetectedNotice:
+                      sentences.length > 1
+                        ? `✨ 본문 내에서 '${w}'가 ${sentences.length}번 쓰였습니다!`
+                        : `✨ 백그라운드 분석 완료! 원문 속 문장을 자동으로 연결했습니다.`,
+                  });
+                }
+              });
+            }
+          });
 
-        triggerToast(
-          `${taskName} 완료! ✅`,
-          sourceType === 'web'
-            ? `"${result.title || '웹 기사'}" 본문 문장들이 준비되었습니다. 이제 단어를 등록해 보세요!`
-            : `책 페이지 글자 인식이 완료되어 원문 문장이 준비되었습니다.`
-        );
+          triggerToast(
+            `${taskName} 완료! ✅`,
+            sourceType === 'web'
+              ? `"${result.title || '웹 기사'}" 본문 문장들이 준비되었습니다. 이제 단어를 등록해 보세요!`
+              : `책 페이지 글자 인식이 완료되어 원문 문장이 준비되었습니다.`
+          );
+        }
 
         return result.text;
       } catch (err: any) {
@@ -553,13 +562,13 @@ export default function Home() {
     setIsOcrProcessing(true);
     setOcrProgress(30);
 
-    triggerToast('사진 분석 시작! 📸', '백그라운드에서 글자를 읽는 동안 단어를 먼저 입력하고 뜻을 고르세요.');
+    triggerToast('사진 분석 시작! 📸', '표/그래프를 제외한 본문 글자와 밑줄/동그라미 친 단어를 감지합니다.');
 
     startBackgroundSourceAnalysis('책 사진 분석', 'camera', async () => {
       setOcrProgress(60);
-      const { text: extractedText } = await extractTextWithAI(file, geminiApiKey);
+      const { text: extractedText, markedWords } = await extractTextWithAI(file, geminiApiKey);
       setOcrProgress(100);
-      return { text: extractedText };
+      return { text: extractedText, markedWords };
     });
   }
 
@@ -845,50 +854,70 @@ export default function Home() {
     );
   }
 
+  // 단어 목록(배열)을 받아 단어 등록칸에 일괄 추가하고 사전 조회 및 문맥 최적 뜻 분석을 자동 실행하는 공통 함수
+  function enrollWordsToForm(wordsToAdd: string[], customTitle?: string) {
+    if (!wordsToAdd || wordsToAdd.length === 0) return;
+
+    // 중복 제거 및 유효 영어 단어 필터링
+    const uniqueWords = Array.from(
+      new Set(
+        wordsToAdd
+          .map((w) => w.trim().toLowerCase())
+          .filter((w) => w.length >= 2)
+      )
+    );
+    if (uniqueWords.length === 0) return;
+
+    const currentMemo = customTitle || (loadedSourceType === 'web' && loadedWebTitle ? loadedWebTitle : '');
+
+    setWordEntries((prev) => {
+      const newEntries = [...prev];
+      const entriesToSearch: { id: string; word: string }[] = [];
+      let startIdx = 0;
+
+      // 만약 첫 번째 단어칸이 아직 비어있다면 거기에 첫 단어를 채움
+      if (newEntries.length === 1 && !newEntries[0].word.trim() && !newEntries[0].dictResult) {
+        const targetId = newEntries[0].id;
+        const rawW = uniqueWords[0];
+        const lemma = extractLemmaCandidate(rawW);
+        newEntries[0] = {
+          ...newEntries[0],
+          word: lemma,
+          sourceMemo: currentMemo,
+        };
+        entriesToSearch.push({ id: targetId, word: rawW });
+        startIdx = 1;
+      }
+
+      // 나머지 단어들에 대해 새로운 단어 카드 생성
+      for (let i = startIdx; i < uniqueWords.length; i++) {
+        const rawW = uniqueWords[i];
+        const lemma = extractLemmaCandidate(rawW);
+        const item = createWordEntryItem({
+          word: lemma,
+          sourceMemo: currentMemo,
+        });
+        newEntries.push(item);
+        entriesToSearch.push({ id: item.id, word: rawW });
+      }
+
+      // 각 단어에 대해 사전 조회 & 문맥 최적 뜻 분석 즉시 실행
+      entriesToSearch.forEach(({ id, word }, idx) => {
+        setTimeout(() => {
+          executeSearchForEntry(id, word);
+        }, idx * 100);
+      });
+
+      return newEntries;
+    });
+  }
+
   function handleApplySelectedWords() {
     if (selectedWordsFromText.length === 0) return;
 
     const wordsToAdd = [...selectedWordsFromText];
     setIsWordSelectModalOpen(false);
-
-    const newEntries = [...wordEntries];
-    const entriesToSearch: { id: string; word: string }[] = [];
-    let startIdx = 0;
-
-    // 만약 첫 번째 단어칸이 아직 비어있다면 첫 단어를 채움
-    if (newEntries.length === 1 && !newEntries[0].word.trim()) {
-      const targetId = newEntries[0].id;
-      const rawW = wordsToAdd[0];
-      const lemma = extractLemmaCandidate(rawW);
-      newEntries[0] = {
-        ...newEntries[0],
-        word: lemma,
-        sourceMemo: loadedSourceType === 'web' && loadedWebTitle ? loadedWebTitle : '',
-      };
-      entriesToSearch.push({ id: targetId, word: rawW });
-      startIdx = 1;
-    }
-
-    // 나머지 선택된 단어들에 대해 새로운 단어 카드 생성
-    for (let i = startIdx; i < wordsToAdd.length; i++) {
-      const rawW = wordsToAdd[i];
-      const lemma = extractLemmaCandidate(rawW);
-      const item = createWordEntryItem({
-        word: lemma,
-        sourceMemo: loadedSourceType === 'web' && loadedWebTitle ? loadedWebTitle : '',
-      });
-      newEntries.push(item);
-      entriesToSearch.push({ id: item.id, word: rawW });
-    }
-
-    setWordEntries(newEntries);
-
-    // 각 단어에 대해 사전 조회 & 문맥 최적 뜻 분석 즉시 실행
-    entriesToSearch.forEach(({ id, word }, idx) => {
-      setTimeout(() => {
-        executeSearchForEntry(id, word);
-      }, idx * 120);
-    });
+    enrollWordsToForm(wordsToAdd);
 
     triggerToast(
       '단어 선택 완료! ✨',

@@ -33,11 +33,11 @@ export function fileToBase64(file: File | Blob): Promise<{ base64: string; mimeT
   });
 }
 
-// AI Vision으로 책 페이지 문장 고정밀 인식 (오타 자동 수정 및 문장 단위 정제)
+// AI Vision으로 책 페이지 문장 고정밀 인식 & 밑줄/동그라미 친 단어 시각적 감지
 export async function extractTextWithAI(
   file: File | Blob,
   customApiKey?: string
-): Promise<{ text: string; method: 'gemini' | 'tesseract' }> {
+): Promise<{ text: string; method: 'gemini' | 'tesseract'; markedWords: string[] }> {
   const apiKey = customApiKey || getStoredGeminiKey();
 
   const { base64, mimeType } = await fileToBase64(file);
@@ -55,7 +55,9 @@ export async function extractTextWithAI(
     if (res.ok) {
       const data = await res.json();
       if (data.text && data.text.trim()) {
-        return { text: data.text.trim(), method: 'gemini' };
+        const detected = data.markedWords || data.underlinedWords;
+        const markedWords: string[] = Array.isArray(detected) ? detected : [];
+        return { text: data.text.trim(), method: 'gemini', markedWords };
       }
     }
   } catch (err) {
@@ -65,7 +67,7 @@ export async function extractTextWithAI(
   // AI 실패 또는 키 미등록 시 Tesseract fallback
   const { extractTextFromPageImage } = await import('./ocr');
   const fallbackText = await extractTextFromPageImage(file);
-  return { text: fallbackText, method: 'tesseract' };
+  return { text: fallbackText, method: 'tesseract', markedWords: [] };
 }
 
 export interface MatchedSentenceItem {

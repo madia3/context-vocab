@@ -27,13 +27,26 @@ export async function POST(req: NextRequest) {
 
     const geminiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${apiKey}`;
 
-    const prompt = `You are a high-precision OCR and document layout restoration AI for English books.
-Carefully read the photographed English book page and transcribe all text.
-Follow these strict rules:
-1. Fix all OCR misreads, split words across hyphenated line breaks (e.g. "con- / dition" -> "condition"), and typo noise.
-2. Ignore page numbers, running headers, and running footers.
-3. Keep the natural sentences and paragraphs in proper order.
-4. Output ONLY the extracted clean English text with standard punctuation. Do NOT include markdown code blocks, conversational comments, or explanations.`;
+    const prompt = `You are a high-precision OCR and document analysis AI specializing in English books, news articles, and research reports.
+Carefully inspect the provided image.
+
+Strict Rules:
+1. EXCLUDE CHARTS, GRAPHS, PLOTS & TABLES:
+   - Completely IGNORE and DO NOT transcribe any charts, bar graphs, plots, diagrams, percentages or years along graph axes (e.g. "40% 30% 20% 0% -20%", "1990 1995 2000 2025"), tick marks, legends, and footnote citations like "Source: Datastream, Goldman Sachs".
+   - Transcribe ONLY the readable reading prose sentences, paragraphs, and article headings.
+   - Fix all hyphenated word breaks across lines (e.g. "con- / dition" -> "condition") and OCR typos.
+
+2. DETECT CIRCLED OR UNDERLINED WORDS (VERY IMPORTANT):
+   - Readers often mark words with a pen or pencil. Identify any English words that have a HANDWRITTEN UNDERLINE, a CIRCLE, or an OVAL around or under them (for example, in the image: "earnings" is underlined, "grow" is circled).
+   - Accurately restore the clean original English word, ignoring the pen marks (e.g. recognize "grow", NOT "tcGrow)1").
+   - Put all such marked words into the "markedWords" array as clean lowercase words (e.g. ["earnings", "grow"]).
+   - If there are no underlines or circles, return an empty array [].
+
+Output strictly valid JSON in this exact structure without markdown backticks:
+{
+  "text": "Clean transcribed article/prose text without any charts or graphs...",
+  "markedWords": ["word1", "word2"]
+}`;
 
     const geminiRes = await fetch(geminiUrl, {
       method: 'POST',
@@ -54,7 +67,8 @@ Follow these strict rules:
         ],
         generationConfig: {
           temperature: 0.1,
-          maxOutputTokens: 2048,
+          maxOutputTokens: 2500,
+          responseMimeType: 'application/json',
         },
       }),
     });
@@ -69,9 +83,25 @@ Follow these strict rules:
     }
 
     const data = await geminiRes.json();
-    const transcribedText = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    const rawOutput = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    let text = rawOutput;
+    let markedWords: string[] = [];
 
-    return NextResponse.json({ text: transcribedText });
+    try {
+      const cleanJson = rawOutput.replace(/```json/gi, '').replace(/```/g, '').trim();
+      const parsed = JSON.parse(cleanJson);
+      if (typeof parsed.text === 'string') text = parsed.text;
+      const detected = parsed.markedWords || parsed.underlinedWords;
+      if (Array.isArray(detected)) {
+        markedWords = detected
+          .map((w: any) => String(w || '').trim().toLowerCase().replace(/[^a-zA-Z'-]/g, ''))
+          .filter((w: string) => w.length >= 2);
+      }
+    } catch {
+      text = rawOutput;
+    }
+
+    return NextResponse.json({ text, markedWords });
   } catch (err: any) {
     console.error('OCR API Route Error:', err);
     return NextResponse.json(
