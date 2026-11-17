@@ -190,6 +190,10 @@ export default function Home() {
   const [loadedSourceType, setLoadedSourceType] = useState<'camera' | 'web' | null>(null);
   const [loadedWebTitle, setLoadedWebTitle] = useState<string>('');
 
+  // Word Selection from Loaded Text State (원문에서 단어 직접 클릭 선택)
+  const [isWordSelectModalOpen, setIsWordSelectModalOpen] = useState(false);
+  const [selectedWordsFromText, setSelectedWordsFromText] = useState<string[]>([]);
+
   // Filter & Grouping State
   const [selectedBookFilter, setSelectedBookFilter] = useState<string>('all');
 
@@ -613,8 +617,7 @@ export default function Home() {
 
   async function executeSearchForEntry(entryId: string, targetWord?: string) {
     const entry = wordEntries.find((e) => e.id === entryId);
-    if (!entry) return;
-    const wordToSearch = (targetWord || entry.word).trim();
+    const wordToSearch = (targetWord || entry?.word || '').trim();
     if (!wordToSearch) {
       alert('조회할 영어 단어를 입력해 주세요!');
       return;
@@ -677,7 +680,7 @@ export default function Home() {
         dictResult: res,
         selectedMeaning: res.meanings.length > 0 ? res.meanings[0].def : '',
         selectedPos: res.meanings.length > 0 ? res.meanings[0].pos : '',
-        context: entry.context || defaultExample,
+        context: entry?.context || defaultExample,
         candidateSentences: [],
         ocrDetectedNotice: null,
         isSearchingDict: false,
@@ -691,6 +694,88 @@ export default function Home() {
   function handleSelectCandidateForEntry(entryId: string, word: string) {
     updateWordEntry(entryId, { word });
     executeSearchForEntry(entryId, word);
+  }
+
+  // 원문(사진 OCR / 웹 기사) 텍스트를 단어 및 구두점으로 분리하여 인터랙티브 토큰 배열 생성
+  const textTokens = useMemo(() => {
+    if (!pageOcrText) return [];
+    const tokens: { raw: string; cleanWord?: string; isWord: boolean }[] = [];
+    const regex = /([a-zA-Z]+(?:['’-][a-zA-Z]+)*)|([^a-zA-Z]+)/g;
+    let match;
+    while ((match = regex.exec(pageOcrText)) !== null) {
+      if (match[1]) {
+        const raw = match[1];
+        tokens.push({
+          raw,
+          cleanWord: raw.toLowerCase(),
+          isWord: raw.length >= 2,
+        });
+      } else if (match[2]) {
+        tokens.push({
+          raw: match[2],
+          isWord: false,
+        });
+      }
+    }
+    return tokens;
+  }, [pageOcrText]);
+
+  function handleToggleWordFromText(word: string) {
+    const clean = word.toLowerCase().trim();
+    if (!clean) return;
+    setSelectedWordsFromText((prev) =>
+      prev.includes(clean) ? prev.filter((w) => w !== clean) : [...prev, clean]
+    );
+  }
+
+  function handleApplySelectedWords() {
+    if (selectedWordsFromText.length === 0) return;
+
+    const wordsToAdd = [...selectedWordsFromText];
+    setIsWordSelectModalOpen(false);
+
+    const entriesToSearch: { id: string; word: string }[] = [];
+
+    setWordEntries((prev) => {
+      const newEntries = [...prev];
+      let startIdx = 0;
+
+      // 만약 첫 번째 단어칸이 아직 비어있다면 첫 단어를 채움
+      if (newEntries.length === 1 && !newEntries[0].word.trim()) {
+        const targetId = newEntries[0].id;
+        newEntries[0] = {
+          ...newEntries[0],
+          word: wordsToAdd[0],
+          sourceMemo: loadedSourceType === 'web' && loadedWebTitle ? loadedWebTitle : '',
+        };
+        entriesToSearch.push({ id: targetId, word: wordsToAdd[0] });
+        startIdx = 1;
+      }
+
+      // 나머지 선택된 단어들에 대해 새로운 단어 카드 생성
+      for (let i = startIdx; i < wordsToAdd.length; i++) {
+        const item = createWordEntryItem({
+          word: wordsToAdd[i],
+          sourceMemo: loadedSourceType === 'web' && loadedWebTitle ? loadedWebTitle : '',
+        });
+        newEntries.push(item);
+        entriesToSearch.push({ id: item.id, word: wordsToAdd[i] });
+      }
+
+      return newEntries;
+    });
+
+    // 각 단어에 대해 사전 뜻 및 원문 문맥 탐색 실행
+    entriesToSearch.forEach(({ id, word }, idx) => {
+      setTimeout(() => {
+        executeSearchForEntry(id, word);
+      }, idx * 100);
+    });
+
+    triggerToast(
+      '단어 선택 완료! ✨',
+      `${wordsToAdd.length}개의 단어가 추가되어 사전 뜻과 문장을 자동으로 불러옵니다.`
+    );
   }
 
   // Save All Words to Vocabulary
@@ -1338,34 +1423,45 @@ export default function Home() {
                       </p>
                       <div className="flex items-center justify-end gap-1.5 pt-0.5">
                         <button
-                            type="button"
-                            onClick={() => fileInputRef.current?.click()}
-                            className="text-[11px] font-bold bg-white border border-slate-200 hover:border-indigo-400 text-indigo-600 px-2 py-1 rounded-md shadow-xs flex items-center gap-1"
-                          >
-                            <Camera className="w-3 h-3" />
-                            <span>새 사진</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => setIsUrlModalOpen(true)}
-                            className="text-[11px] font-bold bg-white border border-slate-200 hover:border-indigo-400 text-indigo-600 px-2 py-1 rounded-md shadow-xs flex items-center gap-1"
-                          >
-                            <Globe className="w-3 h-3" />
-                            <span>새 URL</span>
-                          </button>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              setPageOcrText('');
-                              setLoadedSourceType(null);
-                              setLoadedWebTitle('');
-                              if (typeof window !== 'undefined') localStorage.removeItem('context_vocab_cached_page_ocr');
-                            }}
-                            className="text-[11px] text-slate-400 hover:text-rose-500 px-1 py-1"
-                          >
-                            지우기
-                          </button>
-                        </div>
+                          type="button"
+                          onClick={() => fileInputRef.current?.click()}
+                          className="text-[11px] font-bold bg-white border border-slate-200 hover:border-indigo-400 text-indigo-600 px-2 py-1 rounded-md shadow-xs flex items-center gap-1"
+                        >
+                          <Camera className="w-3 h-3" />
+                          <span>새 사진</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setIsUrlModalOpen(true)}
+                          className="text-[11px] font-bold bg-white border border-slate-200 hover:border-indigo-400 text-indigo-600 px-2 py-1 rounded-md shadow-xs flex items-center gap-1"
+                        >
+                          <Globe className="w-3 h-3" />
+                          <span>새 URL</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSelectedWordsFromText([]);
+                            setIsWordSelectModalOpen(true);
+                          }}
+                          className="text-[11px] font-bold bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-700 px-2 py-1 rounded-md shadow-xs flex items-center gap-1 transition"
+                        >
+                          <ScanLine className="w-3 h-3 text-indigo-600" />
+                          <span>단어 선택</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setPageOcrText('');
+                            setLoadedSourceType(null);
+                            setLoadedWebTitle('');
+                            if (typeof window !== 'undefined') localStorage.removeItem('context_vocab_cached_page_ocr');
+                          }}
+                          className="text-[11px] text-slate-400 hover:text-rose-500 px-1 py-1"
+                        >
+                          지우기
+                        </button>
+                      </div>
                       </div>
                     ) : (
                     <div className="pt-0.5 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -2636,6 +2732,152 @@ export default function Home() {
                   </>
                 )}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Word Selection from Loaded Text Modal (원문에서 단어 직접 클릭 선택 모달) */}
+      {isWordSelectModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-5 sm:p-6 shadow-2xl border border-indigo-100 flex flex-col max-h-[85vh]">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-3 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="w-9 h-9 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center shadow-xs">
+                  <ScanLine className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-sm sm:text-base text-slate-900 leading-tight">
+                    원문에서 모르는 단어 선택
+                  </h3>
+                  <p className="text-[11px] text-slate-500">
+                    본문 속 단어를 터치하여 고른 뒤 단어장에 담으세요
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsWordSelectModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg font-bold w-8 h-8 flex items-center justify-center rounded-full hover:bg-slate-100 transition cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Scrollable Text Body */}
+            <div className="flex-1 overflow-y-auto pr-1 py-1 min-h-[160px]">
+              <div className="p-3.5 sm:p-4 bg-slate-50/80 rounded-2xl border border-slate-200/80 text-[13px] sm:text-[14px] leading-relaxed text-slate-700 font-serif whitespace-pre-wrap select-none">
+                {textTokens.length > 0 ? (
+                  textTokens.map((token, idx) => {
+                    if (!token.isWord || !token.cleanWord) {
+                      return <span key={idx}>{token.raw}</span>;
+                    }
+
+                    const clean = token.cleanWord;
+                    const isSelected = selectedWordsFromText.includes(clean);
+                    const isAlreadyAdded = wordEntries.some(
+                      (e) => e.word.trim().toLowerCase() === clean
+                    );
+
+                    return (
+                      <button
+                        key={idx}
+                        type="button"
+                        onClick={() => handleToggleWordFromText(clean)}
+                        className={`inline-block font-sans rounded px-1.5 py-0.5 mx-0.5 my-0.5 text-xs transition duration-150 cursor-pointer ${
+                          isSelected
+                            ? 'bg-indigo-600 text-white font-bold shadow-xs scale-105 ring-2 ring-indigo-300'
+                            : isAlreadyAdded
+                            ? 'bg-emerald-100 text-emerald-800 border border-emerald-300 font-medium'
+                            : 'hover:bg-indigo-100 hover:text-indigo-900 active:scale-95 text-slate-800 underline decoration-indigo-200 decoration-1 underline-offset-2'
+                        }`}
+                        title={isAlreadyAdded ? '이미 단어칸에 등록됨' : '클릭하여 선택'}
+                      >
+                        {token.raw}
+                      </button>
+                    );
+                  })
+                ) : (
+                  <p className="text-center text-slate-400 py-8">
+                    불러온 본문 텍스트가 없습니다. 사진이나 URL을 먼저 불러와 주세요.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            {/* Bottom Actions / Selected Words Chips */}
+            <div className="pt-3 border-t border-slate-100 mt-3 space-y-2.5 shrink-0">
+              {/* Selected Words Chips Bar */}
+              <div className="flex items-center justify-between text-xs">
+                <span className="font-bold text-slate-700 flex items-center gap-1.5">
+                  <span>선택한 단어</span>
+                  <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded-full text-[10px] font-black">
+                    {selectedWordsFromText.length}
+                  </span>
+                </span>
+                {selectedWordsFromText.length > 0 && (
+                  <button
+                    type="button"
+                    onClick={() => setSelectedWordsFromText([])}
+                    className="text-[11px] text-slate-400 hover:text-rose-500 font-medium transition cursor-pointer"
+                  >
+                    전체 해제
+                  </button>
+                )}
+              </div>
+
+              {selectedWordsFromText.length > 0 ? (
+                <div className="flex flex-wrap gap-1.5 max-h-20 overflow-y-auto p-2 bg-slate-50 rounded-xl border border-slate-100">
+                  {selectedWordsFromText.map((word) => (
+                    <span
+                      key={word}
+                      className="inline-flex items-center gap-1 px-2.5 py-1 bg-white border border-indigo-200 text-indigo-700 rounded-lg text-xs font-semibold shadow-2xs"
+                    >
+                      <span>{word}</span>
+                      <button
+                        type="button"
+                        onClick={() => handleToggleWordFromText(word)}
+                        className="text-indigo-400 hover:text-rose-500 text-[10px] font-bold cursor-pointer"
+                      >
+                        ✕
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              ) : (
+                <p className="text-[11px] text-slate-400 italic">
+                  위 본문에서 외우고 싶은 영단어를 탭하세요.
+                </p>
+              )}
+
+              {/* Action Buttons */}
+              <div className="flex items-center gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setIsWordSelectModalOpen(false)}
+                  className="flex-1 py-2.5 px-3 rounded-xl border border-slate-200 text-slate-600 hover:bg-slate-50 text-xs font-bold transition cursor-pointer"
+                >
+                  닫기
+                </button>
+                <button
+                  type="button"
+                  disabled={selectedWordsFromText.length === 0}
+                  onClick={handleApplySelectedWords}
+                  className={`flex-[2] py-2.5 px-4 rounded-xl text-xs font-black transition shadow-sm flex items-center justify-center gap-1.5 ${
+                    selectedWordsFromText.length > 0
+                      ? 'bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer active:scale-[0.98]'
+                      : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                  }`}
+                >
+                  <Plus className="w-3.5 h-3.5" />
+                  <span>
+                    {selectedWordsFromText.length > 0
+                      ? `선택한 단어 ${selectedWordsFromText.length}개 담기`
+                      : '단어를 터치해 선택하세요'}
+                  </span>
+                </button>
+              </div>
             </div>
           </div>
         </div>
