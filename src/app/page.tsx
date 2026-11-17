@@ -1103,54 +1103,13 @@ export default function Home() {
       </header>
 
       {/* Main Container */}
-      <main className="max-w-5xl mx-auto w-full px-3.5 sm:px-4 py-4 sm:py-5 flex-1 overflow-x-hidden">
-        {/* Status Banner */}
-        <div className="mb-4 bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200/80 rounded-xl px-3 py-2 flex items-center justify-between text-xs text-emerald-950 gap-2">
-          <div className="flex items-center gap-1.5 truncate">
-            <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0 animate-pulse"></span>
-            <span className="truncate font-semibold text-[11px] sm:text-xs">
-              {currentUser ? (
-                <span>
-                  <strong className="text-emerald-800">{currentUser.user_metadata?.full_name || currentUser.email?.split('@')[0]}</strong>님의 개인 클라우드 단어장
-                </span>
-              ) : (
-                <span>
-                  원서 단어장 & 5지선다 퀴즈 • <span className="text-emerald-700 font-bold">개인별 클라우드 보관 지원</span>
-                </span>
-              )}
-            </span>
-          </div>
-          <div className="shrink-0 flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => setIsSupabaseModalOpen(true)}
-              className={`text-[10px] px-2 py-0.5 rounded-full font-bold flex items-center gap-1 transition cursor-pointer ${
-                isSupabaseReady
-                  ? 'bg-emerald-100 hover:bg-emerald-200 text-emerald-800'
-                  : 'bg-amber-100 hover:bg-amber-200 text-amber-800'
-              }`}
-            >
-              <Database className="w-2.5 h-2.5" />
-              <span>{isSupabaseReady ? (currentUser ? '개인 클라우드 ☁️' : 'Supabase 연결됨') : '로컬 보관 (연동 ⚙️)'}</span>
-            </button>
-          </div>
-        </div>
+      <main className="max-w-5xl mx-auto w-full px-3.5 sm:px-4 py-3 sm:py-4 flex-1 overflow-x-hidden">
 
         {/* ========================================= */}
         {/* TAB 1: ADD WORD & CONTEXT */}
         {/* ========================================= */}
         {activeTab === 'add' && (
-          <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5 sm:p-6 space-y-5">
-            <div>
-              <h2 className="text-base font-bold text-slate-900 mb-1 flex items-center gap-2">
-                <Sparkles className="w-4 h-4 text-indigo-600" />
-                <span>모르는 단어와 원문 문장 입력하기</span>
-              </h2>
-              <p className="text-xs text-slate-500">
-                원서나 논문에서 읽던 문맥 그대로 입력하면, 퀴즈를 풀 때 그 문장과 원어민 발음이 함께 복습됩니다.
-              </p>
-            </div>
-
+          <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6 space-y-4">
             <div className="max-w-2xl mx-auto space-y-4">
                 {/* Book Title Selection / Input */}
                 <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
@@ -1197,30 +1156,6 @@ export default function Home() {
                         className="w-full px-3 py-2 text-xs bg-white text-slate-900 border-2 border-indigo-500 rounded-lg focus:outline-none font-bold"
                         autoFocus
                       />
-                    </div>
-                  )}
-
-                  {/* Previous Book Title Chips */}
-                  {availableBookTitles.length > 0 && (
-                    <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
-                      <span className="text-[10px] text-slate-400 font-medium">빠른 선택:</span>
-                      {availableBookTitles.map((title) => (
-                        <button
-                          key={title}
-                          type="button"
-                          onClick={() => {
-                            setIsCustomBook(false);
-                            setInputBookTitle(title);
-                          }}
-                          className={`text-[10px] px-2 py-0.5 rounded-md border transition ${
-                            !isCustomBook && inputBookTitle === title
-                              ? 'bg-indigo-600 text-white border-indigo-600 font-bold shadow-xs'
-                              : 'bg-white text-slate-600 border-slate-200 hover:border-indigo-300'
-                          }`}
-                        >
-                          {title}
-                        </button>
-                      ))}
                     </div>
                   )}
                 </div>
