@@ -620,30 +620,66 @@ export default function Home() {
       return;
     }
 
-    // 만약 현재 촬영해둔 페이지 텍스트가 있다면 문맥 스마트 탐색
-    if (pageOcrText) {
-      findSentenceWithAI(pageOcrText, wordToSearch, geminiApiKey).then((matchRes) => {
-        if (matchRes.found && matchRes.sentence) {
-          const sentences = matchRes.allMatches.map((m) => m.sentence);
-          updateWordEntry(entryId, {
-            candidateSentences: sentences,
-            context: matchRes.sentence,
-            ocrDetectedNotice:
-              sentences.length > 1
-                ? `✨ 본문 내에서 '${wordToSearch}'가 ${sentences.length}번 쓰였습니다!`
-                : `📸 본문에서 원문 문장을 자동으로 찾았습니다!`,
-          });
-        }
-      });
-    }
+    // 이전 검색 결과 및 문맥 초기화 & 로딩 표시
+    updateWordEntry(entryId, {
+      isSearchingDict: true,
+      dictResult: null,
+      selectedMeaning: '',
+      selectedPos: '',
+      ocrDetectedNotice: null,
+    });
 
-    updateWordEntry(entryId, { isSearchingDict: true });
     try {
+      // 1. 영한 사전 조회 (기본 예문 포함)
       const res = await lookupDictionary(wordToSearch);
+      const defaultExample =
+        res.exampleSentence || `This is a sample sentence illustrating the word "${wordToSearch}".`;
+
+      // 2. 만약 현재 촬영해둔 페이지 텍스트가 있다면 문맥 스마트 탐색
+      if (pageOcrText) {
+        try {
+          const matchRes = await findSentenceWithAI(pageOcrText, wordToSearch, geminiApiKey);
+          if (matchRes.found && matchRes.sentence) {
+            const sentences = matchRes.allMatches.map((m) => m.sentence);
+            updateWordEntry(entryId, {
+              dictResult: res,
+              selectedMeaning: res.meanings.length > 0 ? res.meanings[0].def : '',
+              selectedPos: res.meanings.length > 0 ? res.meanings[0].pos : '',
+              candidateSentences: sentences,
+              context: matchRes.sentence,
+              ocrDetectedNotice:
+                sentences.length > 1
+                  ? `✨ 본문 내에서 '${wordToSearch}'가 ${sentences.length}번 쓰였습니다!`
+                  : `📸 본문에서 원문 문장을 자동으로 찾았습니다!`,
+              isSearchingDict: false,
+            });
+            return;
+          } else {
+            // 본문에 해당 단어가 없는 경우! 사용자 요청: 해당 단어가 없다고 알리고 기본 예문 입력
+            updateWordEntry(entryId, {
+              dictResult: res,
+              selectedMeaning: res.meanings.length > 0 ? res.meanings[0].def : '',
+              selectedPos: res.meanings.length > 0 ? res.meanings[0].pos : '',
+              candidateSentences: [],
+              context: defaultExample,
+              ocrDetectedNotice: `⚠️ 현재 본문(사진/기사)에 '${wordToSearch}' 단어가 없어 기본 예문이 입력되었습니다.`,
+              isSearchingDict: false,
+            });
+            return;
+          }
+        } catch (mErr) {
+          console.warn('Sentence match error:', mErr);
+        }
+      }
+
+      // 본문이 없거나 문맥 탐색이 없는 경우 기본 예문 채우기
       updateWordEntry(entryId, {
         dictResult: res,
         selectedMeaning: res.meanings.length > 0 ? res.meanings[0].def : '',
         selectedPos: res.meanings.length > 0 ? res.meanings[0].pos : '',
+        context: entry.context || defaultExample,
+        candidateSentences: [],
+        ocrDetectedNotice: null,
         isSearchingDict: false,
       });
     } catch (e) {
@@ -1434,6 +1470,7 @@ export default function Home() {
                                 dictResult: null,
                                 selectedMeaning: '',
                                 selectedPos: '',
+                                ocrDetectedNotice: null,
                               });
 
                               // 실시간 자동완성 추천
@@ -1448,7 +1485,7 @@ export default function Home() {
                               // 사진 또는 URL 텍스트에서 단어 문장 자동 탐색
                               if (pageOcrText && val.trim().length >= 3) {
                                 const matches = findAllSentencesWithWordSmart(pageOcrText, val.trim());
-                                if (matches.length > 0 && !entry.context) {
+                                if (matches.length > 0) {
                                   const sentences = matches.map((m) => m.sentence);
                                   updateWordEntry(entry.id, {
                                     candidateSentences: sentences,
@@ -1650,7 +1687,11 @@ export default function Home() {
                           <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
                             <BookOpen className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
                             <span>원문 문장 및 상세 메모</span>
-                            {entry.context ? (
+                            {entry.ocrDetectedNotice?.includes('⚠️') ? (
+                              <span className="text-[10px] bg-amber-100 text-amber-800 font-bold px-1.5 py-0.2 rounded-full flex items-center gap-0.5">
+                                ⚠️ 기본 예문 적용됨
+                              </span>
+                            ) : entry.context ? (
                               <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded-full flex items-center gap-0.5">
                                 ✓ 문장 연결됨
                               </span>
@@ -1687,7 +1728,13 @@ export default function Home() {
                                 원서 / 레포트 원문 문장 <span className="text-slate-400 font-normal">(권장)</span>
                               </label>
                               {entry.ocrDetectedNotice && (
-                                <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded animate-fade-in">
+                                <span
+                                  className={`text-[10px] font-bold px-2 py-0.5 rounded animate-fade-in ${
+                                    entry.ocrDetectedNotice.includes('⚠️')
+                                      ? 'text-amber-800 bg-amber-50 border border-amber-200'
+                                      : 'text-emerald-700 bg-emerald-50 border border-emerald-200'
+                                  }`}
+                                >
                                   {entry.ocrDetectedNotice}
                                 </span>
                               )}

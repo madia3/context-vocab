@@ -26,8 +26,9 @@ export async function GET(request: NextRequest) {
   let phonetic = `/${word}/`;
   const meanings: { pos: string; def: string }[] = [];
 
-  // 1. 발음기호 및 영어 사전 품사 탐색 (Free Dictionary API)
+  // 1. 발음기호 및 영어 사전 품사, 기본 예문 탐색 (Free Dictionary API)
   let fallbackPos = '명사';
+  let exampleSentence = '';
   try {
     const pRes = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`, {
       next: { revalidate: 86400 },
@@ -43,9 +44,45 @@ export async function GET(request: NextRequest) {
         const pEn = pData[0].meanings[0].partOfSpeech.toLowerCase();
         fallbackPos = POS_MAP[pEn] || pEn;
       }
+
+      // 단어가 포함된 실제 예문(Example sentence) 탐색
+      if (Array.isArray(pData)) {
+        for (const entry of pData) {
+          if (entry.meanings && Array.isArray(entry.meanings)) {
+            for (const m of entry.meanings) {
+              if (m.definitions && Array.isArray(m.definitions)) {
+                for (const def of m.definitions) {
+                  if (def.example && typeof def.example === 'string' && def.example.trim()) {
+                    const ex = def.example.trim();
+                    if (ex.toLowerCase().includes(word)) {
+                      exampleSentence = ex;
+                      break;
+                    } else if (!exampleSentence) {
+                      exampleSentence = ex;
+                    }
+                  }
+                }
+              }
+              if (exampleSentence && exampleSentence.toLowerCase().includes(word)) break;
+            }
+          }
+          if (exampleSentence && exampleSentence.toLowerCase().includes(word)) break;
+        }
+      }
     }
   } catch (e) {
-    console.warn('Phonetics fetch warning:', e);
+    console.warn('Phonetics & Example fetch warning:', e);
+  }
+
+  // 예문이 없으면 품사에 맞는 자연스러운 기본 예문 템플릿 제공
+  if (!exampleSentence) {
+    if (fallbackPos === '동사') {
+      exampleSentence = `She ${word} to the station early this morning.`;
+    } else if (fallbackPos === '형용사') {
+      exampleSentence = `This is a very ${word} approach to the problem.`;
+    } else {
+      exampleSentence = `Here is a sample sentence illustrating the word "${word}".`;
+    }
   }
 
   // 2. Google Translate GTX API 호출 (서버 사이드 호출이므로 CORS 없음)
@@ -127,6 +164,7 @@ export async function GET(request: NextRequest) {
       word,
       phonetic,
       meanings,
+      exampleSentence,
       sourceName: '표준 영한 사전',
     });
   }
@@ -136,6 +174,7 @@ export async function GET(request: NextRequest) {
       word,
       phonetic,
       meanings: [{ pos: '직접입력', def: '한국어 뜻을 직접 입력해 주세요.' }],
+      exampleSentence,
       sourceName: '수동 입력 모드',
     },
     { status: 200 }

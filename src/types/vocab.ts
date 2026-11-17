@@ -29,4 +29,5 @@ export interface DictSearchResult {
   phonetic: string;
   meanings: MeaningOption[];
   sourceName: string;
+  exampleSentence?: string;
 }
