@@ -204,6 +204,7 @@ export default function Home() {
   const [loadedSourceType, setLoadedSourceType] = useState<'camera' | 'web' | null>(null);
   const [loadedWebTitle, setLoadedWebTitle] = useState<string>('');
   const [currentSourceImage, setCurrentSourceImage] = useState<{ base64: string; mimeType: string } | null>(null);
+  const currentSourceImageRef = useRef<{ base64: string; mimeType: string } | null>(null);
 
   // Word Selection from Loaded Text State (원문에서 단어 직접 클릭 선택)
   const [isWordSelectModalOpen, setIsWordSelectModalOpen] = useState(false);
@@ -518,7 +519,13 @@ export default function Home() {
           const w = (entry.word || entry.dictResult?.word || '').trim();
           const needsRealSentence = !entry.context || (entry.candidateSentences && entry.candidateSentences.length === 0);
           if (w && needsRealSentence) {
-            findSentenceWithAI(result.text, w, geminiApiKey, entry.dictResult?.meanings, currentSourceImage).then((matchRes) => {
+            findSentenceWithAI(
+              result.text,
+              w,
+              geminiApiKey,
+              entry.dictResult?.meanings,
+              currentSourceImageRef.current || currentSourceImage
+            ).then((matchRes) => {
               if (matchRes.found && matchRes.sentence) {
                 const sentences = matchRes.allMatches.map((m) => m.sentence);
                 let bestDef = entry.selectedMeaning;
@@ -633,6 +640,7 @@ export default function Home() {
     // 단어 선택 시 사진 원본을 직접 보고 100% 무결점으로 문장을 읽어오기 위해 이미지 원본 저장
     fileToBase64(file).then((imgData) => {
       if (imgData.base64) {
+        currentSourceImageRef.current = imgData;
         setCurrentSourceImage(imgData);
       }
     });
@@ -838,12 +846,13 @@ export default function Home() {
       if (pageOcrText) {
         try {
           // 본문 및 원본 이미지 속 검색: 원본 이미지가 있으면 이미지를 직접 보고 100% 무결점 정밀 판독!
+          const activeImage = currentSourceImageRef.current || currentSourceImage;
           const matchRes = await findSentenceWithAI(
             pageOcrText,
             wordToSearch,
             geminiApiKey,
             res.meanings,
-            currentSourceImage
+            activeImage
           );
           if (matchRes.found && matchRes.sentence) {
             const sentences = matchRes.allMatches.map((m) => m.sentence);
@@ -1861,6 +1870,8 @@ export default function Home() {
                             setPageOcrText('');
                             setLoadedSourceType(null);
                             setLoadedWebTitle('');
+                            setCurrentSourceImage(null);
+                            currentSourceImageRef.current = null;
                             if (typeof window !== 'undefined') localStorage.removeItem('context_vocab_cached_page_ocr');
                           }}
                           className="text-[11px] text-slate-400 hover:text-rose-500 px-1 py-1"
