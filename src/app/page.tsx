@@ -1574,89 +1574,127 @@ export default function Home() {
                         )}
                       </div>
 
-                      {/* 3. 원서 / 레포트 원문 문장 */}
-                      <div>
-                        <div className="flex items-center justify-between mb-1.5">
-                          <label className="block text-xs font-bold text-slate-700">
-                            원서 / 레포트 원문 문장 <span className="text-slate-400 font-normal">(권장)</span>
-                          </label>
-                          {entry.ocrDetectedNotice && (
-                            <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded animate-fade-in">
-                              {entry.ocrDetectedNotice}
-                            </span>
-                          )}
-                        </div>
-
-                        {/* 복수 문장 발견 시 선택 리스트 */}
-                        {entry.candidateSentences.length > 1 && (
-                          <div className="bg-indigo-50/80 p-2.5 rounded-xl border border-indigo-200 space-y-1.5 mb-2">
-                            <div className="text-[11px] font-bold text-indigo-950 flex items-center gap-1">
-                              <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-                              <span>본문 내 {entry.candidateSentences.length}개 문장 중 대표 문맥 선택:</span>
-                            </div>
-                            <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
-                              {entry.candidateSentences.map((sent, sIdx) => {
-                                const isChosen = entry.context.trim() === sent.trim();
-                                return (
-                                  <button
-                                    key={sIdx}
-                                    type="button"
-                                    onClick={() => updateWordEntry(entry.id, { context: sent })}
-                                    className={`w-full text-left p-2 rounded-lg border text-xs transition flex items-start gap-2 cursor-pointer ${
-                                      isChosen
-                                        ? 'bg-white border-indigo-600 ring-2 ring-indigo-200 font-bold text-slate-900 shadow-xs'
-                                        : 'bg-white/80 border-slate-200 text-slate-600 hover:border-indigo-300 hover:bg-white'
-                                    }`}
-                                  >
-                                    <span
-                                      className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 mt-0.5 ${
-                                        isChosen ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-600'
-                                      }`}
-                                    >
-                                      {sIdx + 1}
-                                    </span>
-                                    <span className="flex-1 font-serif leading-relaxed line-clamp-2">
-                                      &quot;{sent}&quot;
-                                    </span>
-                                    {isChosen && (
-                                      <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.2 rounded font-bold shrink-0">
-                                        선택됨 ✓
-                                      </span>
-                                    )}
-                                  </button>
-                                );
-                              })}
-                            </div>
+                      {/* 3 & 4. 원서 문장 & 상세 메모 (접이식 아코디언) */}
+                      <details className="group bg-white rounded-xl border border-slate-200 p-3 transition">
+                        <summary className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 cursor-pointer list-none select-none">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
+                            <BookOpen className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                            <span>원문 문장 및 상세 메모</span>
+                            {entry.context ? (
+                              <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded-full flex items-center gap-0.5">
+                                ✓ 문장 연결됨
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-slate-400 font-normal">
+                                (선택 사항)
+                              </span>
+                            )}
+                            {entry.sourceMemo && (
+                              <span className="text-[10px] bg-indigo-50 text-indigo-700 font-medium px-1.5 py-0.2 rounded-full">
+                                메모 있음
+                              </span>
+                            )}
                           </div>
+                          <div className="flex items-center gap-1 text-[11px] text-slate-400 group-open:text-indigo-600 font-medium">
+                            <span className="group-open:hidden text-indigo-600 font-semibold">클릭하여 펼치기 ▾</span>
+                            <span className="hidden group-open:inline">접기 ▴</span>
+                          </div>
+                        </summary>
+
+                        {/* 접혀있을 때 미리보기 문장 */}
+                        {entry.context && (
+                          <p className="text-[11px] text-slate-500 italic truncate mt-1.5 pt-1 border-t border-slate-100 font-serif group-open:hidden">
+                            &quot;{entry.context}&quot;
+                          </p>
                         )}
 
-                        <textarea
-                          rows={2}
-                          value={entry.context}
-                          onChange={(e) => {
-                            updateWordEntry(entry.id, {
-                              context: e.target.value,
-                              ocrDetectedNotice: null,
-                            });
-                          }}
-                          placeholder="예: It was an unspeakable tragedy that shook the entire nation. (사진이나 웹 URL을 넣으면 자동 입력됩니다)"
-                          className="w-full px-3 py-2 text-xs bg-white text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 leading-relaxed"
-                        />
-                      </div>
+                        {/* 펼쳤을 때 나타나는 문장 및 메모 입력란 */}
+                        <div className="pt-3 mt-2.5 border-t border-slate-100 space-y-3">
+                          {/* 원서 / 레포트 원문 문장 */}
+                          <div>
+                            <div className="flex items-center justify-between mb-1.5">
+                              <label className="block text-xs font-bold text-slate-700">
+                                원서 / 레포트 원문 문장 <span className="text-slate-400 font-normal">(권장)</span>
+                              </label>
+                              {entry.ocrDetectedNotice && (
+                                <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded animate-fade-in">
+                                  {entry.ocrDetectedNotice}
+                                </span>
+                              )}
+                            </div>
 
-                      {/* 4. 메모 */}
-                      <div>
-                        <label className="block text-xs font-bold text-slate-700 mb-1">
-                          상세 메모 / 페이지 <span className="text-slate-400 font-normal">(선택)</span>
-                        </label>
-                        <input
-                          type="text"
-                          value={entry.sourceMemo}
-                          onChange={(e) => updateWordEntry(entry.id, { sourceMemo: e.target.value })}
-                          placeholder="예: 3막 1장 45페이지, 서론 2문단"
-                          className="w-full px-3 py-1.5 text-xs bg-white text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                        />
-                      </div>
+                            {/* 복수 문장 발견 시 선택 리스트 */}
+                            {entry.candidateSentences.length > 1 && (
+                              <div className="bg-indigo-50/80 p-2.5 rounded-xl border border-indigo-200 space-y-1.5 mb-2">
+                                <div className="text-[11px] font-bold text-indigo-950 flex items-center gap-1">
+                                  <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                                  <span>본문 내 {entry.candidateSentences.length}개 문장 중 대표 문맥 선택:</span>
+                                </div>
+                                <div className="space-y-1 max-h-36 overflow-y-auto pr-1">
+                                  {entry.candidateSentences.map((sent, sIdx) => {
+                                    const isChosen = entry.context.trim() === sent.trim();
+                                    return (
+                                      <button
+                                        key={sIdx}
+                                        type="button"
+                                        onClick={() => updateWordEntry(entry.id, { context: sent })}
+                                        className={`w-full text-left p-2 rounded-lg border text-xs transition flex items-start gap-2 cursor-pointer ${
+                                          isChosen
+                                            ? 'bg-white border-indigo-600 ring-2 ring-indigo-200 font-bold text-slate-900 shadow-xs'
+                                            : 'bg-white/80 border-slate-200 text-slate-600 hover:border-indigo-300 hover:bg-white'
+                                        }`}
+                                      >
+                                        <span
+                                          className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 mt-0.5 ${
+                                            isChosen ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-600'
+                                          }`}
+                                        >
+                                          {sIdx + 1}
+                                        </span>
+                                        <span className="flex-1 font-serif leading-relaxed line-clamp-2">
+                                          &quot;{sent}&quot;
+                                        </span>
+                                        {isChosen && (
+                                          <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.2 rounded font-bold shrink-0">
+                                            선택됨 ✓
+                                          </span>
+                                        )}
+                                      </button>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            <textarea
+                              rows={2}
+                              value={entry.context}
+                              onChange={(e) => {
+                                updateWordEntry(entry.id, {
+                                  context: e.target.value,
+                                  ocrDetectedNotice: null,
+                                });
+                              }}
+                              placeholder="예: It was an unspeakable tragedy that shook the entire nation. (사진이나 웹 URL을 넣으면 자동 입력됩니다)"
+                              className="w-full px-3 py-2 text-xs bg-white text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 leading-relaxed"
+                            />
+                          </div>
+
+                          {/* 상세 메모 */}
+                          <div>
+                            <label className="block text-xs font-bold text-slate-700 mb-1">
+                              상세 메모 / 페이지 <span className="text-slate-400 font-normal">(선택)</span>
+                            </label>
+                            <input
+                              type="text"
+                              value={entry.sourceMemo}
+                              onChange={(e) => updateWordEntry(entry.id, { sourceMemo: e.target.value })}
+                              placeholder="예: 3막 1장 45페이지, 서론 2문단"
+                              className="w-full px-3 py-1.5 text-xs bg-white text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            />
+                          </div>
+                        </div>
+                      </details>
                     </div>
                   ))}
 
