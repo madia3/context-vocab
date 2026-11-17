@@ -87,38 +87,45 @@ function fallbackFileReader(file: File | Blob, resolve: (val: { base64: string; 
 // AI Vision으로 책 페이지 문장 고정밀 인식 & 밑줄/동그라미 친 단어 시각적 감지
 export async function extractTextWithAI(
   file: File | Blob,
-  customApiKey?: string
+  customApiKey?: string,
+  precompressedData?: { base64: string; mimeType: string } | null
 ): Promise<{ text: string; method: 'gemini' | 'tesseract'; markedWords: string[] }> {
   const apiKey = customApiKey || getStoredGeminiKey();
 
-  const { base64, mimeType } = await fileToBase64(file);
+  const { base64, mimeType } =
+    precompressedData && precompressedData.base64
+      ? precompressedData
+      : await fileToBase64(file);
 
-  try {
-    const res = await fetch('/api/ai/ocr', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(apiKey ? { 'x-gemini-key': apiKey } : {}),
-      },
-      body: JSON.stringify({ base64, mimeType }),
-    });
+  // 최대 2회 시도 (일시적 모바일 네트워크 끊김 대비)
+  for (let attempt = 0; attempt < 2; attempt++) {
+    try {
+      const res = await fetch('/api/ai/ocr', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(apiKey ? { 'x-gemini-key': apiKey } : {}),
+        },
+        body: JSON.stringify({ base64, mimeType }),
+      });
 
-    if (res.ok) {
-      const data = await res.json();
-      if (data.text && data.text.trim()) {
-        const detected = data.markedWords || data.underlinedWords;
-        const markedWords: string[] = Array.isArray(detected) ? detected : [];
-        return { text: data.text.trim(), method: 'gemini', markedWords };
+      if (res.ok) {
+        const data = await res.json();
+        if (data.text && data.text.trim()) {
+          const detected = data.markedWords || data.underlinedWords;
+          const markedWords: string[] = Array.isArray(detected) ? detected : [];
+          return { text: data.text.trim(), method: 'gemini', markedWords };
+        }
       }
+    } catch (err) {
+      console.warn(`AI Vision OCR 호출 시도(${attempt + 1}) 실패:`, err);
     }
-  } catch (err) {
-    console.warn('AI Vision OCR 호출 실패, 로컬 Tesseract로 자동 전환합니다:', err);
   }
 
   // AI 실패 또는 키 미등록 시 Tesseract fallback
-  const { extractTextFromPageImage } = await import('./ocr');
+  const { extractTextFromPageImage, cleanOcrText } = await import('./ocr');
   const fallbackText = await extractTextFromPageImage(file);
-  return { text: fallbackText, method: 'tesseract', markedWords: [] };
+  return { text: cleanOcrText(fallbackText), method: 'tesseract', markedWords: [] };
 }
 
 export interface MatchedSentenceItem {
@@ -133,7 +140,8 @@ export async function findSentenceWithAI(
   word: string,
   customApiKey?: string,
   meanings?: { pos: string; def: string }[],
-  imageSource?: { base64: string; mimeType: string } | null
+  imageSource?: { base64: string; mimeType: string } | null,
+  contextHint?: string
 ): Promise<{
   found: boolean;
   sentence: string;
@@ -161,6 +169,7 @@ export async function findSentenceWithAI(
         meanings,
         imageBase64: imageSource?.base64,
         mimeType: imageSource?.mimeType,
+        contextHint,
       }),
     });
 

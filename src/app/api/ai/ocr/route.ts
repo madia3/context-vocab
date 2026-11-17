@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   try {
     const { base64, mimeType } = await req.json();
 
-    if (!base64) {
+    if (!base64 || typeof base64 !== 'string') {
       return NextResponse.json({ error: 'Image base64 data is required' }, { status: 400 });
+    }
+
+    if (base64.length > 12_000_000) {
+      return NextResponse.json({ error: 'Image payload too large' }, { status: 413 });
     }
 
     const apiKey =
@@ -22,11 +27,12 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Google Gemini REST API 호출 (가장 빠른 gemini-3.5-flash-lite 우선 시도, 실패 시 gemini-3.8-flash 폴백)
+    // Google Gemini REST API 호출 (가장 빠른 gemini-3.5-flash-lite 우선 시도, 다단계 폴백)
     const cleanBase64 = base64.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, '');
 
     const candidateModels = [
       'gemini-3.5-flash-lite',
+      'gemini-3.5-flash',
       'gemini-3.8-flash',
       'gemini-2.5-flash',
       'gemini-1.5-flash',
@@ -39,11 +45,11 @@ Strict Rules:
 1. EXCLUDE CHARTS, GRAPHS, PLOTS & TABLES:
    - Completely IGNORE and DO NOT transcribe any charts, bar graphs, plots, diagrams, percentages or years along graph axes (e.g. "40% 30% 20% 0% -20%", "1990 1995 2000 2025"), tick marks, legends, and footnote citations like "Source: Datastream, Goldman Sachs".
    - Transcribe ONLY the readable reading prose sentences, paragraphs, and article headings.
-   - Fix all hyphenated word breaks across lines (e.g. "con- / dition" -> "condition") and OCR typos.
+   - Fix all hyphenated word breaks across lines (e.g. "con- / dition" -> "condition", "pub- / lishing" -> "publishing") and OCR typos.
 
 2. DETECT CIRCLED OR UNDERLINED WORDS (VERY IMPORTANT):
-   - Readers often mark words with a pen or pencil. Identify any English words that have a HANDWRITTEN UNDERLINE, a CIRCLE, or an OVAL around or under them (for example, in the image: "earnings" is underlined, "grow" is circled).
-   - Accurately restore the clean original English word, ignoring the pen marks (e.g. recognize "grow", NOT "tcGrow)1").
+   - Readers often mark words with a pen or pencil. Identify any English words that have a HANDWRITTEN UNDERLINE, a CIRCLE, or an OVAL around or under them (for example, in the image: "earnings" is underlined, "grow" is circled, "categories" is circled).
+   - Accurately restore the clean original English word, ignoring the pen marks (e.g. recognize "grow", NOT "tcGrow)1"; recognize "categories", NOT "CATEGOR )Eg").
    - Put all such marked words into the "markedWords" array as clean lowercase words (e.g. ["earnings", "grow"]).
    - If there are no underlines or circles, return an empty array [].
 
@@ -62,7 +68,7 @@ Output strictly valid JSON in this exact structure without markdown backticks:
         const geminiRes = await fetch(geminiUrl, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          signal: AbortSignal.timeout(12000),
+          signal: AbortSignal.timeout(8500),
           body: JSON.stringify({
             contents: [
               {
@@ -78,8 +84,7 @@ Output strictly valid JSON in this exact structure without markdown backticks:
               },
             ],
             generationConfig: {
-              temperature: 0.1,
-              maxOutputTokens: 2500,
+              temperature: 0.0,
               responseMimeType: 'application/json',
             },
           }),

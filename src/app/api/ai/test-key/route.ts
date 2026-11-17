@@ -16,23 +16,38 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ ok: false, error: 'API 키가 전달되지 않았습니다.' }, { status: 400 });
     }
 
-    const testUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash:generateContent?key=${keyToTest}`;
+    const candidateModels = [
+      'gemini-3.5-flash-lite',
+      'gemini-3.5-flash',
+      'gemini-3.8-flash',
+      'gemini-2.5-flash',
+      'gemini-1.5-flash',
+    ];
 
-    const res = await fetch(testUrl, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: 'Hello' }] }],
-        generationConfig: { maxOutputTokens: 5 },
-      }),
-    });
+    let lastErr = '';
+    for (const model of candidateModels) {
+      try {
+        const testUrl = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${keyToTest}`;
+        const res = await fetch(testUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          signal: AbortSignal.timeout(6000),
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: 'Hi' }] }],
+          }),
+        });
 
-    if (!res.ok) {
-      const errText = await res.text();
-      return NextResponse.json({ ok: false, error: '유효하지 않은 API 키입니다.', details: errText }, { status: 400 });
+        if (res.ok) {
+          return NextResponse.json({ ok: true, message: `Google Gemini AI 연동 성공! (${model})` });
+        } else {
+          lastErr = await res.text();
+        }
+      } catch (e: any) {
+        lastErr = e?.message || String(e);
+      }
     }
 
-    return NextResponse.json({ ok: true, message: 'Google Gemini AI 연동 성공!' });
+    return NextResponse.json({ ok: false, error: '유효하지 않은 API 키이거나 모델 호출에 실패했습니다.', details: lastErr }, { status: 400 });
   } catch (err: any) {
     return NextResponse.json({ ok: false, error: err.message || '네트워크 연결 오류' }, { status: 500 });
   }

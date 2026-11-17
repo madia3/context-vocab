@@ -28,6 +28,7 @@ import {
   findAllSentencesWithWordSmart,
   extractLemmaCandidate,
   generateWordVariants,
+  cleanOcrText,
 } from '@/lib/ocr';
 import {
   extractTextWithAI,
@@ -212,11 +213,12 @@ export default function Home() {
   // Word Selection from Loaded Text State (원문에서 단어 직접 클릭 선택 및 원본 사진 대조)
   const [isWordSelectModalOpen, setIsWordSelectModalOpen] = useState(false);
   const [selectedWordsFromText, setSelectedWordsFromText] = useState<string[]>([]);
-  const [pickerTab, setPickerTab] = useState<'text' | 'image'>('text');
+  const [pickerTab, setPickerTab] = useState<'text' | 'split' | 'image'>('split');
   const [editingWordIdx, setEditingWordIdx] = useState<number | null>(null);
   const [editingWordVal, setEditingWordVal] = useState<string>('');
   const [manualWordInput, setManualWordInput] = useState<string>('');
   const [isCleaningWithAI, setIsCleaningWithAI] = useState<boolean>(false);
+  const selectedWordContextMapRef = useRef<Record<string, string>>({});
 
   // Filter & Grouping State
   const [selectedBookFilter, setSelectedBookFilter] = useState<string>('all');
@@ -387,7 +389,26 @@ export default function Home() {
       if (lastBook) setInputBookTitle(lastBook);
 
       const savedPageOcr = localStorage.getItem('context_vocab_cached_page_ocr');
-      if (savedPageOcr) setPageOcrText(savedPageOcr);
+      if (savedPageOcr) {
+        const cleaned = cleanOcrText(savedPageOcr);
+        setPageOcrText(cleaned);
+        if (cleaned !== savedPageOcr) {
+          localStorage.setItem('context_vocab_cached_page_ocr', cleaned);
+        }
+      }
+
+      try {
+        const savedImg = sessionStorage.getItem('context_vocab_source_image');
+        if (savedImg) {
+          const parsedImg = JSON.parse(savedImg);
+          if (parsedImg && parsedImg.base64) {
+            currentSourceImageRef.current = parsedImg;
+            setCurrentSourceImage(parsedImg);
+          }
+        }
+      } catch {
+        // ignore storage parse error
+      }
 
       const savedGeminiKey = getStoredGeminiKey();
       if (savedGeminiKey) {
@@ -652,20 +673,23 @@ export default function Home() {
         : '표/그래프를 제외한 본문 글자와 밑줄/동그라미 친 단어를 감지합니다.'
     );
 
-    // 단어 선택 시 사진 원본을 직접 보고 100% 무결점으로 문장을 읽어오기 위해 이미지 원본 저장
-    fileToBase64(file).then((imgData) => {
-      if (imgData.base64) {
-        currentSourceImageRef.current = imgData;
-        setCurrentSourceImage(imgData);
-      }
-    });
-
     startBackgroundSourceAnalysis(
       isAppend ? '다음 페이지 이어붙이기' : '책 사진 분석',
       'camera',
       async () => {
-        setOcrProgress(60);
-        const { text: extractedText, markedWords } = await extractTextWithAI(file, geminiApiKey);
+        setOcrProgress(45);
+        const imgData = await fileToBase64(file);
+        if (imgData.base64) {
+          currentSourceImageRef.current = imgData;
+          setCurrentSourceImage(imgData);
+          try {
+            sessionStorage.setItem('context_vocab_source_image', JSON.stringify(imgData));
+          } catch {
+            // ignore quota limit
+          }
+        }
+        setOcrProgress(70);
+        const { text: extractedText, markedWords } = await extractTextWithAI(file, geminiApiKey, imgData);
         setOcrProgress(100);
 
         // 이어붙이기 모드인 경우 기존 텍스트와 자연스럽게 연결
@@ -858,16 +882,18 @@ export default function Home() {
       });
 
       // 3. 만약 현재 촬영/불러온 본문 텍스트가 있다면 비동기(백그라운드)로 문맥 탐색 & AI 최적 뜻 매칭
-      if (pageOcrText) {
+      if (pageOcrText || currentSourceImageRef.current || currentSourceImage) {
         try {
           // 본문 및 원본 이미지 속 검색: 원본 이미지가 있으면 이미지를 직접 보고 100% 무결점 정밀 판독!
           const activeImage = currentSourceImageRef.current || currentSourceImage;
+          const contextHint = selectedWordContextMapRef.current[wordToSearch.toLowerCase()];
           const matchRes = await findSentenceWithAI(
             pageOcrText,
             wordToSearch,
             geminiApiKey,
             res.meanings,
-            activeImage
+            activeImage,
+            contextHint
           );
           if (matchRes.found && matchRes.sentence) {
             const uniqueSentences = Array.from(
@@ -878,40 +904,67 @@ export default function Home() {
               )
             );
 
-            // AI가 확정한 원형(Lemma)이 있으면 최종 표제어로 확정
+            // AI가 확정한 원형(Lemma)이 있으면 최종 표제어로 확정 (OCR 오타 자동 복원 포함!)
             const finalLemma = (matchRes.lemma || lemmaCandidate).trim().toLowerCase();
 
-            // AI가 문맥을 분석하여 선택해준 최적의 뜻 인덱스 적용
+            // 만약 OCR 오인식 조각(예: categor -> category, jike -> like, ee -> question)이 복원되었다면 사전 재조회!
+            let activeDict = res;
+            if (finalLemma && finalLemma !== lemmaCandidate) {
+              const refreshed = await lookupDictionary(finalLemma);
+              if (refreshed && refreshed.meanings && refreshed.meanings.length > 0) {
+                activeDict = refreshed;
+              }
+            }
+
+            // AI가 문맥을 분석하여 선택해준 최적의 뜻 인덱스 또는 뜻 적용
             let bestIdx = 0;
             if (
               typeof matchRes.bestMeaningIndex === 'number' &&
               matchRes.bestMeaningIndex >= 0 &&
-              matchRes.bestMeaningIndex < res.meanings.length
+              matchRes.bestMeaningIndex < activeDict.meanings.length
             ) {
               bestIdx = matchRes.bestMeaningIndex;
             }
 
-            const selectedDef =
-              res.meanings[bestIdx]?.def ||
+            let selectedDef =
               matchRes.bestMeaningDef ||
+              activeDict.meanings[bestIdx]?.def ||
               initialDef;
-            const selectedPos =
-              res.meanings[bestIdx]?.pos ||
+            let selectedPos =
               matchRes.bestPos ||
+              activeDict.meanings[bestIdx]?.pos ||
               initialPos;
+
+            // 만약 AI가 추천한 뜻이 사전 목록에 없다면 맨 위에 추가하여 선택 가능하게 보장
+            if (
+              matchRes.bestMeaningDef &&
+              !activeDict.meanings.some((m) => m.def === matchRes.bestMeaningDef)
+            ) {
+              activeDict = {
+                ...activeDict,
+                meanings: [
+                  { pos: selectedPos || '문맥뜻', def: matchRes.bestMeaningDef },
+                  ...activeDict.meanings,
+                ],
+              };
+            } else if (activeDict.meanings[bestIdx]) {
+              selectedDef = activeDict.meanings[bestIdx].def;
+              selectedPos = activeDict.meanings[bestIdx].pos;
+            }
 
             const isFormChanged = wordToSearch.toLowerCase() !== finalLemma;
             const formChangeMsg = isFormChanged
               ? `(원문 '${wordToSearch}' ➔ 표제어 '${finalLemma}') `
               : '';
 
-            const sourcePrefix = currentSourceImage ? '📸 사진 원본 정밀 판독: ' : '✨ ';
+            const sourcePrefix = activeImage ? '📸 사진 원본 정밀 판독: ' : '✨ ';
             const noticeText = matchRes.aiExplanation
               ? `${sourcePrefix}${formChangeMsg}${matchRes.aiExplanation}`
               : `${sourcePrefix}${formChangeMsg}원문 문맥에 가장 적절한 뜻('${selectedDef}')이 자동 선택되었습니다!`;
 
             updateWordEntry(entryId, {
               word: finalLemma,
+              dictResult: activeDict,
               selectedMeaning: selectedDef,
               selectedPos: selectedPos,
               foundCandidateSentences: uniqueSentences,
@@ -950,16 +1003,34 @@ export default function Home() {
   // 원문(사진 OCR / 웹 기사) 텍스트를 단어 및 구두점으로 분리하여 인터랙티브 토큰 배열 생성
   const textTokens = useMemo(() => {
     if (!pageOcrText) return [];
-    const tokens: { raw: string; cleanWord?: string; isWord: boolean }[] = [];
+    const VALID_TWO_LETTER = new Set([
+      'in', 'on', 'at', 'to', 'by', 'of', 'or', 'as', 'is', 'it', 'be', 'do', 'go',
+      'up', 'so', 'no', 'if', 'we', 'he', 'me', 'my', 'us', 'an', 'am', 'ox', 'ad',
+    ]);
+    const OCR_NOISE_TOKENS = new Set(['ss', 'xn', 'ns', 'wr', 'ee', 'aa', 'ag', 'eg', 'sa', 'ow', 'ssn']);
+
+    const tokens: { raw: string; cleanWord?: string; isWord: boolean; contextSnippet?: string }[] = [];
     const regex = /([a-zA-Z]+(?:['’-][a-zA-Z]+)*)|([^a-zA-Z]+)/g;
     let match;
     while ((match = regex.exec(pageOcrText)) !== null) {
       if (match[1]) {
         const raw = match[1];
+        const lower = raw.toLowerCase();
+        const isNoise =
+          OCR_NOISE_TOKENS.has(lower) ||
+          (raw.length === 2 && !VALID_TWO_LETTER.has(lower));
+        const start = Math.max(0, match.index - 70);
+        const end = Math.min(pageOcrText.length, match.index + raw.length + 70);
+        const snippet =
+          pageOcrText.slice(start, match.index) +
+          `[[${raw}]]` +
+          pageOcrText.slice(match.index + raw.length, end);
+
         tokens.push({
           raw,
-          cleanWord: raw.toLowerCase(),
-          isWord: raw.length >= 2,
+          cleanWord: lower,
+          isWord: raw.length >= 2 && !isNoise,
+          contextSnippet: snippet,
         });
       } else if (match[2]) {
         tokens.push({
@@ -971,9 +1042,12 @@ export default function Home() {
     return tokens;
   }, [pageOcrText]);
 
-  function handleToggleWordFromText(word: string) {
+  function handleToggleWordFromText(word: string, contextSnippet?: string) {
     const clean = word.toLowerCase().trim();
     if (!clean) return;
+    if (contextSnippet) {
+      selectedWordContextMapRef.current[clean] = contextSnippet;
+    }
     setSelectedWordsFromText((prev) =>
       prev.includes(clean) ? prev.filter((w) => w !== clean) : [...prev, clean]
     );
@@ -2406,20 +2480,20 @@ export default function Home() {
                         <div className="pt-3 mt-2.5 border-t border-slate-100 space-y-3">
                           {/* 원서 / 레포트 원문 문장 */}
                           <div>
-                            <div className="flex items-center justify-between mb-1.5">
+                            <div className="flex flex-col gap-1.5 mb-2">
                               <label className="block text-xs font-bold text-slate-700">
                                 원서 / 레포트 원문 문장 <span className="text-slate-400 font-normal">(권장)</span>
                               </label>
                               {entry.ocrDetectedNotice && (
-                                <span
-                                  className={`text-[10px] font-bold px-2 py-0.5 rounded animate-fade-in ${
+                                <div
+                                  className={`text-[11px] font-semibold px-2.5 py-1.5 rounded-lg leading-relaxed animate-fade-in ${
                                     entry.ocrDetectedNotice.includes('⚠️')
                                       ? 'text-amber-800 bg-amber-50 border border-amber-200'
-                                      : 'text-emerald-700 bg-emerald-50 border border-emerald-200'
+                                      : 'text-emerald-800 bg-emerald-50/90 border border-emerald-200'
                                   }`}
                                 >
                                   {entry.ocrDetectedNotice}
-                                </span>
+                                </div>
                               )}
                             </div>
 
@@ -3774,32 +3848,44 @@ export default function Home() {
               </button>
             </div>
 
-            {/* Top Toolbar: Tabs (Text vs Image) & AI Clean Button */}
+            {/* Top Toolbar: Tabs (Split vs Text vs Image) & AI Clean Button */}
             <div className="flex flex-wrap items-center justify-between gap-2 pb-2.5 mb-1 shrink-0 border-b border-slate-100/80">
-              <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-xl text-xs font-bold">
+              <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-xl text-[11px] font-bold">
+                {(currentSourceImageRef.current || currentSourceImage) && (
+                  <button
+                    type="button"
+                    onClick={() => setPickerTab('split')}
+                    className={`px-2.5 py-1.5 rounded-lg transition flex items-center gap-1 cursor-pointer ${
+                      pickerTab === 'split'
+                        ? 'bg-white text-indigo-700 shadow-2xs'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    <span>📷+📝 함께보기</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={() => setPickerTab('text')}
-                  className={`px-3 py-1.5 rounded-lg transition cursor-pointer ${
-                    pickerTab === 'text'
+                  className={`px-2.5 py-1.5 rounded-lg transition cursor-pointer ${
+                    pickerTab === 'text' || (!(currentSourceImageRef.current || currentSourceImage) && pickerTab === 'split')
                       ? 'bg-white text-indigo-700 shadow-2xs'
                       : 'text-slate-500 hover:text-slate-800'
                   }`}
                 >
-                  📝 텍스트로 선택
+                  📝 텍스트만
                 </button>
                 {(currentSourceImageRef.current || currentSourceImage) && (
                   <button
                     type="button"
                     onClick={() => setPickerTab('image')}
-                    className={`px-3 py-1.5 rounded-lg transition flex items-center gap-1 cursor-pointer ${
+                    className={`px-2.5 py-1.5 rounded-lg transition flex items-center gap-1 cursor-pointer ${
                       pickerTab === 'image'
                         ? 'bg-white text-indigo-700 shadow-2xs'
                         : 'text-slate-500 hover:text-slate-800'
                     }`}
                   >
-                    <span>📷 원본 사진 보기</span>
-                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                    <span>🔍 사진 확대</span>
                   </button>
                 )}
               </div>
@@ -3813,28 +3899,40 @@ export default function Home() {
                   title="Tesseract 인식 오타나 깨진 글자를 Gemini AI로 깔끔하게 복원합니다"
                 >
                   <Sparkles className={`w-3 h-3 ${isCleaningWithAI ? 'animate-spin' : 'text-indigo-500'}`} />
-                  <span>{isCleaningWithAI ? 'AI 본문 복원 중...' : '✨ AI로 텍스트 깨끗하게 복원'}</span>
+                  <span>{isCleaningWithAI ? 'AI 복원 중...' : '✨ AI 본문 복원'}</span>
                 </button>
               )}
             </div>
 
-            {/* Modal Body: Switch between Text View and Image View */}
-            <div className="flex-1 overflow-y-auto pr-1 py-1 min-h-[160px]">
-              {pickerTab === 'image' && (currentSourceImageRef.current || currentSourceImage) ? (
-                <div className="space-y-2">
-                  <div className="p-2 bg-slate-900/5 rounded-2xl border border-slate-200/80 flex items-center justify-center max-h-[48vh] overflow-auto">
+            {/* Modal Body: Switch between Split View, Text View, and Full Image View */}
+            <div className="flex-1 overflow-y-auto pr-1 py-1 min-h-[160px] space-y-2.5">
+              {/* 원본 사진 영역 (함께보기 또는 사진 확대 탭일 때 노출) */}
+              {(pickerTab === 'image' || pickerTab === 'split') && (currentSourceImageRef.current || currentSourceImage) && (
+                <div className="space-y-1.5">
+                  <div
+                    className={`p-1.5 bg-slate-900/5 rounded-2xl border border-slate-200/80 flex items-center justify-center overflow-auto ${
+                      pickerTab === 'image' ? 'max-h-[48vh]' : 'max-h-[22vh]'
+                    }`}
+                  >
                     {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img
                       src={`data:${(currentSourceImageRef.current || currentSourceImage)?.mimeType || 'image/jpeg'};base64,${(currentSourceImageRef.current || currentSourceImage)?.base64}`}
                       alt="원본 도서 페이지 사진"
-                      className="max-h-[44vh] w-auto object-contain rounded-xl shadow-xs"
+                      className={`${
+                        pickerTab === 'image' ? 'max-h-[45vh]' : 'max-h-[20vh]'
+                      } w-auto object-contain rounded-xl shadow-xs`}
                     />
                   </div>
-                  <p className="text-[11px] text-slate-500 text-center leading-normal">
-                    💡 책 사진 속 단어 위치를 확인하세요. 이상하게 읽힌 단어는 아래에서 바로 <strong className="text-indigo-600">수정(✏️)</strong>하거나 <strong className="text-indigo-600">직접 입력</strong>할 수 있습니다.
-                  </p>
+                  {pickerTab === 'image' && (
+                    <p className="text-[11px] text-slate-500 text-center leading-normal">
+                      💡 책 사진 속 단어 위치를 확인하세요. 오인식된 단어는 선택해도 <strong className="text-indigo-600">AI가 사진 문맥을 보고 원래 단어로 자동 복원</strong>하거나 아래에서 직접 수정(✏️)할 수 있습니다.
+                    </p>
+                  )}
                 </div>
-              ) : (
+              )}
+
+              {/* 텍스트 토큰 선택 영역 (텍스트만 또는 함께보기 탭일 때 노출) */}
+              {pickerTab !== 'image' && (
                 <div className="p-3.5 sm:p-4 bg-slate-50/80 rounded-2xl border border-slate-200/80 text-[13px] sm:text-[14px] leading-relaxed text-slate-800 font-serif whitespace-pre-wrap select-none">
                   {textTokens.length > 0 ? (
                     textTokens.map((token, idx) => {
@@ -3852,7 +3950,7 @@ export default function Home() {
                         <button
                           key={idx}
                           type="button"
-                          onClick={() => handleToggleWordFromText(clean)}
+                          onClick={() => handleToggleWordFromText(clean, token.contextSnippet)}
                           className={`inline font-sans rounded px-0.5 py-0 text-xs sm:text-[13px] transition cursor-pointer ${
                             isSelected
                               ? 'bg-indigo-600 text-white font-bold px-1 py-0.5 shadow-xs'
@@ -3860,7 +3958,7 @@ export default function Home() {
                               ? 'bg-emerald-100 text-emerald-800 font-medium px-1 py-0.5'
                               : 'text-slate-900 underline decoration-indigo-300 decoration-1 underline-offset-2 hover:bg-indigo-50 hover:text-indigo-700'
                           }`}
-                          title={isAlreadyAdded ? '이미 단어칸에 등록됨' : '클릭하여 선택'}
+                          title={isAlreadyAdded ? '이미 단어칸에 등록됨' : '클릭하여 선택 (깨진 글자도 AI가 문맥으로 자동 복원합니다)'}
                         >
                           {token.raw}
                         </button>

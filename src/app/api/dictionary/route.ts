@@ -140,6 +140,110 @@ const BUILTIN_CORE_DICT: Record<
     ],
     exampleSentence: 'Here is the summary of the report.',
   },
+  nominal: {
+    phonetic: '/ˈnɒm.ɪ.nəl/',
+    meanings: [
+      { pos: '형용사', def: '명목상의, 액면의 (실질 대비)' },
+      { pos: '형용사', def: '아주 적은, 상징적인 (명목뿐인)' },
+      { pos: '형용사', def: '이름만의, 명의상의' },
+    ],
+    exampleSentence: 'Our analysts expect nominal global AI investment to rise next year.',
+  },
+  category: {
+    phonetic: '/ˈkæt.ə.ɡri/',
+    meanings: [
+      { pos: '명사', def: '범주, 카테고리, 부문' },
+      { pos: '명사', def: '분류, 종류, 계층' },
+    ],
+    exampleSentence: 'The products are divided into three main categories.',
+  },
+  demographic: {
+    phonetic: '/ˌdem.əˈɡræf.ɪk/',
+    meanings: [
+      { pos: '명사', def: '인구 통계학적 집단 (연령·소득·성별 등 고객층)' },
+      { pos: '형용사', def: '인구 통계학의, 인구학적인' },
+    ],
+    exampleSentence: 'It may help to fit your ideal customers into traditional demographics.',
+  },
+  demographics: {
+    phonetic: '/ˌdem.əˈɡræf.ɪks/',
+    meanings: [
+      { pos: '명사', def: '인구 통계, 고객층 특성 (연령·성별·소득 등)' },
+      { pos: '명사', def: '인구 동태 데이터' },
+    ],
+    exampleSentence: 'It may help to fit your ideal customers into traditional demographics.',
+  },
+  opportunity: {
+    phonetic: '/ˌɒp.əˈtjuː.nə.ti/',
+    meanings: [
+      { pos: '명사', def: '기회, 호기' },
+      { pos: '명사', def: '가능성, 여지' },
+    ],
+    exampleSentence: 'Business opportunities are like buses; there is always another one coming.',
+  },
+  frequent: {
+    phonetic: '/ˈfriː.kwənt/',
+    meanings: [
+      { pos: '형용사', def: '빈번한, 잦은, 흔한' },
+      { pos: '동사', def: '(장소에) 자주 가다, 상시 출입하다' },
+    ],
+    exampleSentence: 'Frequent references to customers lead to an important question.',
+  },
+  reference: {
+    phonetic: '/ˈref.ər.əns/',
+    meanings: [
+      { pos: '명사', def: '언급, 지칭, 참조' },
+      { pos: '명사', def: '참고 문헌, 추천서' },
+      { pos: '동사', def: '참고하다, 인용하다' },
+    ],
+    exampleSentence: 'The article makes several references to recent economic trends.',
+  },
+  forecast: {
+    phonetic: '/ˈfɔː.kɑːst/',
+    meanings: [
+      { pos: '명사', def: '예측, 전망, 예보' },
+      { pos: '동사', def: '예측하다, 전망하다' },
+    ],
+    exampleSentence: 'The risks to the economic forecast are tilted to the downside.',
+  },
+  deficit: {
+    phonetic: '/ˈdef.ɪ.sɪt/',
+    meanings: [
+      { pos: '명사', def: '적자, 부족액, 결손' },
+      { pos: '명사', def: '결핍, 부족' },
+    ],
+    exampleSentence: 'Fiscal deficits could result in slower global GDP growth.',
+  },
+  fiscal: {
+    phonetic: '/ˈfɪs.kəl/',
+    meanings: [
+      { pos: '형용사', def: '재정의, 국가 재정상의, 회계의' },
+    ],
+    exampleSentence: 'The government announced new fiscal policies to reduce the deficit.',
+  },
+  capex: {
+    phonetic: '/ˈkæp.eks/',
+    meanings: [
+      { pos: '명사', def: '자본적 지출, 설비 투자 (Capital Expenditure)' },
+    ],
+    exampleSentence: 'Lower-than-expected AI capex could result in slower growth.',
+  },
+  downside: {
+    phonetic: '/ˈdaʊn.saɪd/',
+    meanings: [
+      { pos: '명사', def: '하방 위험, 하락 가능성, 단점' },
+      { pos: '형용사', def: '하락세의, 불리한 면의' },
+    ],
+    exampleSentence: 'The risks to the forecast are tilted to the downside.',
+  },
+  tilt: {
+    phonetic: '/tɪlt/',
+    meanings: [
+      { pos: '동사', def: '기울다, 기울이다, 편향되다' },
+      { pos: '명사', def: '기울기, 경사, 편향' },
+    ],
+    exampleSentence: 'The balance of risks is tilted toward the downside.',
+  },
 };
 
 // 한국어 번역 뜻 정제 및 노이즈 필터링 함수
@@ -168,14 +272,15 @@ function isValidKoreanDefinition(def: string): boolean {
 // In-memory cache for ultra-fast (0ms) repeat queries
 const dictCache = new Map<string, { data: any; timestamp: number }>();
 const CACHE_TTL_MS = 1000 * 60 * 60 * 24; // 24 hours
+const MAX_CACHE_ENTRIES = 2000;
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const rawWord = searchParams.get('word') || '';
-  const word = rawWord.trim().toLowerCase();
+  const word = rawWord.trim().toLowerCase().replace(/[^a-z'-]/g, '');
 
-  if (!word) {
-    return NextResponse.json({ error: 'Word parameter is required' }, { status: 400 });
+  if (!word || word.length > 60) {
+    return NextResponse.json({ error: 'Valid word parameter is required' }, { status: 400 });
   }
 
   // 1. 필수 기초 어휘 내장 사전 우선 확인 (0ms 즉시 반환)
@@ -186,7 +291,7 @@ export async function GET(request: NextRequest) {
       phonetic: builtin.phonetic,
       meanings: builtin.meanings,
       exampleSentence: builtin.exampleSentence,
-      sourceName: '표준 영한 사전 (기본 어휘)',
+      sourceName: '표준 영한 사전 (핵심 어휘)',
     });
   }
 
@@ -232,7 +337,7 @@ export async function GET(request: NextRequest) {
   const phoneticsPromise = (async () => {
     try {
       const pRes = await fetch(`https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(word)}`, {
-        signal: AbortSignal.timeout(1500),
+        signal: AbortSignal.timeout(2500),
         next: { revalidate: 86400 },
       });
       if (pRes.ok) {
@@ -382,7 +487,11 @@ export async function GET(request: NextRequest) {
           sourceName: '수동 입력 모드',
         };
 
-  // Cache in server memory
+  // Cache in server memory (with LRU-like size guard)
+  if (dictCache.size >= MAX_CACHE_ENTRIES) {
+    const oldestKey = dictCache.keys().next().value;
+    if (oldestKey) dictCache.delete(oldestKey);
+  }
   dictCache.set(word, { data: result, timestamp: Date.now() });
 
   return NextResponse.json(result, {

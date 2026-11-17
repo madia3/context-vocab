@@ -24,10 +24,16 @@ export async function extractTextFromPageImage(
   }
 }
 
-// OCR 텍스트 정제 (개행을 공백으로 합치되 문단 구분은 유지)
+// OCR 텍스트 정제 (개행을 공백으로 합치되 문단 구분은 유지, 밑줄/기호 노이즈 제거)
 export function cleanOcrText(text: string): string {
   return text
     .replace(/\r\n/g, '\n')
+    // 밑줄/도표 등으로 인해 Tesseract가 만들어내는 기호 쓰레기 제거 (예: "== S 7. 1.", "= SS == b WR", ")Eg. \"0 || r\"")
+    .replace(/[=|~_]{2,}[\s\w.|&0-9-]*/g, ' ')
+    .replace(/\b(?:SS|XN|NS|WR|oR|Ee|Aa|SSN)\b/g, ' ')
+    // 하이픈 사이 노이즈가 낀 단어 복구 (예: "pub - lishing" -> "publishing")
+    .replace(/([a-zA-Z]{2,})\s*-\s*([a-z]{3,})/g, '$1$2')
+    .replace(/([a-zA-Z]+)-\s*\n\s*([a-zA-Z]+)/g, '$1$2')
     .replace(/([a-zA-Z0-9,;])\n([a-zA-Z0-9])/g, '$1 $2') // 단어 중간 개행 연결
     .replace(/\s+/g, ' ')
     .trim();
@@ -135,11 +141,11 @@ export function splitIntoSentences(text: string): string[] {
     .replace(/\b(Mr|Mrs|Ms|Dr|Prof|Gen|Rep|Sen|St|etc|e\.g|i\.e|vs)\./gi, '$1{{DOT}}')
     .replace(/(\d+)\.(\d+)/g, '$1{{DOT}}$2'); // 소수점 보호
 
-  // 3. 문장 종결 부호(. ! ?) 뒤 공백 또는 따옴표 분리
-  const rawParts = normalized.split(/(?<=[.!?]["'”’]?)\s+(?=[A-Z0-9"“'‘])/);
+  // 3. 문장 종결 부호(. ! ?) 뒤 공백, 따옴표, 또는 불릿 기호(-, •, *) 분리
+  const rawParts = normalized.split(/(?<=[.!?]["'”’]?)\s+(?:[-•*]\s+)?(?=[A-Z0-9"“'‘])/);
 
   return rawParts
-    .map((s) => s.replace(/\{\{DOT\}\}/g, '.').trim())
+    .map((s) => s.replace(/\{\{DOT\}\}/g, '.').replace(/^[-•*]\s+/, '').trim())
     .filter((s) => s.length > 5);
 }
 
@@ -350,38 +356,37 @@ export function extractLemmaCandidate(rawWord: string): string {
     return w.slice(0, -2);
   }
 
-  // 6. 진행형 / 동명사 -ing (growing -> grow, running -> run, declining -> decline)
+  // 6. 진행형 / 동명사 -ing (growing -> grow, running -> run, declining -> decline, publishing -> publish)
   if (w.endsWith('ing') && w.length > 4) {
     const stem = w.slice(0, -3);
     // 자음 중복 (running -> run, stopping -> stop, swimming -> swim, getting -> get)
     if (
       stem.length >= 3 &&
       stem[stem.length - 1] === stem[stem.length - 2] &&
-      /[bcdfghjklmnpqrstvwxyz]/.test(stem[stem.length - 1])
+      /[bcdfghjklmnpqrstvwxyz]/.test(stem[stem.length - 1]) &&
+      !['ll', 'ss', 'ff', 'zz'].includes(stem.slice(-2))
     ) {
       return stem.slice(0, -1);
     }
-    // declining -> decline, making -> make, writing -> write, taking -> take
+    // v, c, g, z로 끝나거나 대표적 VCe(단모음+단자음+e) 어간인 경우에만 e 복원
     if (
-      /[bcdfghjklmnpqrstvwxyz]$/.test(stem) &&
-      !/[aeiou]{2}[bcdfghjklmnpqrstvwxyz]$/.test(stem) &&
-      !stem.endsWith('y') &&
-      !stem.endsWith('w') &&
-      !stem.endsWith('x')
+      /[vcz]$/.test(stem) ||
+      /(?:mak|tak|writ|driv|rid|ris|smil|lik|lov|hat|hop|us|abus|choos|los|clos|caus|paus|increas|decreas|releas|declin|defin|combin|imagin|determin|examin|sharin|car|stori|prepar|compar|declar|requir|acquir|inspir|retir|desir|provid|decid|divid|includ|conclud|excl|produc|reduc|introduc|indu|creat|relat|operat|indicat|estimat|participat|investigat|generat|separat|celebrat|communicat|illustrat|demonstrat|translat|negoti|appreci|associ|eval|continu|argu|val|issu|rescu|pursu|chang|manag|encourag|damag|averag|challeng|arrang|judg|acknowledg|emerg|merg|charg|larg|forc|sourc|notic|practic|servic|advic|balanc|danc|instanc|distanc|influenc|experienc|announc|pronounc|convinc|produc)$/.test(stem)
     ) {
       return stem + 'e';
     }
     return stem;
   }
 
-  // 7. 과거형 / 분사 -ed (declined -> decline, boosted -> boost, stopped -> stop)
+  // 7. 과거형 / 분사 -ed (declined -> decline, boosted -> boost, stopped -> stop, looked -> look)
   if (w.endsWith('ed') && w.length > 4) {
     const stem = w.slice(0, -2);
     // 자음 중복 (stopped -> stop, planned -> plan, begged -> beg)
     if (
       stem.length >= 3 &&
       stem[stem.length - 1] === stem[stem.length - 2] &&
-      /[bcdfghjklmnpqrstvwxyz]/.test(stem[stem.length - 1])
+      /[bcdfghjklmnpqrstvwxyz]/.test(stem[stem.length - 1]) &&
+      !['ll', 'ss', 'ff', 'zz'].includes(stem.slice(-2))
     ) {
       return stem.slice(0, -1);
     }
@@ -391,26 +396,40 @@ export function extractLemmaCandidate(rawWord: string): string {
     if (stem.endsWith('e')) {
       return stem;
     }
-    // boost -> boosted, walk -> walked, adapt -> adapted
-    if (/[bcdfghjklmnpqrstvwxyz]{2}$/.test(stem)) {
-      return stem;
+    // v, c, g, z로 끝나거나 대표적 VCe 어간인 경우에만 e 복원
+    if (
+      /[vcz]$/.test(stem) ||
+      /(?:lik|lov|hat|hop|us|abus|clos|caus|paus|increas|decreas|releas|declin|defin|combin|imagin|determin|examin|shar|car|prepar|compar|declar|requir|acquir|inspir|retir|desir|provid|decid|divid|includ|conclud|produc|reduc|introduc|creat|relat|operat|indicat|estimat|participat|investigat|generat|separat|celebrat|communicat|illustrat|demonstrat|translat|negoti|appreci|associ|evaluat|continu|argu|valu|issu|rescu|pursu|chang|manag|encourag|damag|averag|challeng|arrang|judg|acknowledg|emerg|merg|charg|forc|sourc|notic|practic|servic|balanc|danc|influenc|experienc|announc|pronounc|convinc|motiv|achiev|believ|receiv|perceiv|observ|preserv|reserv|deserv|serv|solv|involv|evolv|resolv|improv|approv|remov|mov|prov|liv|surv|arriv|deriv)$/.test(stem)
+    ) {
+      return stem + 'e';
     }
-    // decline -> declined, like -> liked, close -> closed
-    return stem + 'e';
+    return stem;
   }
 
-  // 8. 단순 복수형 / 3인칭 단수 -s (prices -> price, books -> book, cats -> cat, forecasts -> forecast)
+  // 8. 원래 s로 끝나는 단어(단수 명사/부사/전치사) 보호 목록
+  const WORDS_NATURALLY_ENDING_IN_S = new Set([
+    'always', 'sometimes', 'perhaps', 'towards', 'besides', 'nowadays', 'whereas', 'downstairs', 'upstairs', 'outdoors', 'indoors', 'overseas', 'nonetheless', 'nevertheless',
+    'series', 'species', 'news', 'means', 'goods', 'economics', 'politics', 'physics', 'mathematics', 'statistics', 'ethics', 'genetics', 'linguistics', 'logistics', 'athletics',
+    'focus', 'status', 'consensus', 'census', 'campus', 'virus', 'bonus', 'genius', 'corpus', 'surplus', 'apparatus', 'stimulus', 'syllabus',
+    'lens', 'chaos', 'bias', 'canvas', 'atlas', 'alias', 'gas', 'bus', 'plus', 'thus',
+  ]);
+  if (WORDS_NATURALLY_ENDING_IN_S.has(w)) {
+    return w;
+  }
+
+  // 9. 단순 복수형 / 3인칭 단수 -s (prices -> price, books -> book, cats -> cat, forecasts -> forecast)
   if (
     w.endsWith('s') &&
     !w.endsWith('ss') &&
     !w.endsWith('us') &&
     !w.endsWith('is') &&
+    !w.endsWith('os') &&
     w.length > 3
   ) {
     return w.slice(0, -1);
   }
 
-  // 9. 비교급 -ier -> -y, -iest -> -y (easier -> easy, easiest -> easy)
+  // 10. 비교급 -ier -> -y, -iest -> -y (easier -> easy, easiest -> easy)
   if (w.endsWith('ier') && w.length > 4) {
     return w.slice(0, -3) + 'y';
   }

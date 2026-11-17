@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 export const runtime = 'nodejs';
+export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   try {
-    const { pageText, word, meanings, imageBase64, mimeType } = await req.json();
+    const { pageText, word, meanings, imageBase64, mimeType, contextHint } = await req.json();
 
-    if ((!pageText && !imageBase64) || !word) {
+    if ((!pageText && !imageBase64) || !word || typeof word !== 'string') {
       return NextResponse.json({ error: 'pageText or imageBase64 and word are required' }, { status: 400 });
+    }
+
+    if (imageBase64 && typeof imageBase64 === 'string' && imageBase64.length > 12_000_000) {
+      return NextResponse.json({ error: 'Image payload too large' }, { status: 413 });
     }
 
     const apiKey =
@@ -31,21 +36,23 @@ export async function POST(req: NextRequest) {
     const cleanBase64 = hasImage ? imageBase64.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, '') : '';
 
     const prompt = `You are a strict, precise English-Korean bilingual linguist and visual document analyst.
-Target Word: "${word}"
-
+Target Word (or OCR Fragment): "${word}"
+${contextHint ? `Tapped Context Snippet (where user clicked [[${word}]]):\n"""\n${String(contextHint).slice(0, 400)}\n"""\n` : ''}
 ${hasImage ? 'PRIMARY SOURCE: Inspect the attached book/article page image directly with highest optical fidelity.' : ''}
-${pageText ? `Reference Text:\n"""\n${pageText.slice(0, 5000)}\n"""` : ''}
+${pageText ? `Reference Text:\n"""\n${String(pageText).slice(0, 5000)}\n"""` : ''}
 
 Available Korean Dictionary Definitions:
 ${meaningsText}
 
 CRITICAL INSTRUCTIONS:
 1. Locate the target English word "${word}" (or its grammatical inflections: past tense, -ing, plural, comparative, irregular forms) ${hasImage ? 'directly in the IMAGE' : 'in the text'}.
-2. If found, transcribe the EXACT, COMPLETE, UNCUT original sentence containing "${word}" with 100% optical accuracy (do NOT hallucinate, do NOT misspell, fix any hyphenated line-breaks naturally).
-3. If "${word}" appears multiple times in different sentences, transcribe ALL matching sentences into "allMatches".
-4. Determine the root base dictionary lemma (e.g. "prices" -> "price", "declined" -> "decline", "growing" -> "grow", "went" -> "go").
-5. From the Available Korean Dictionary Definitions, select the best index for this context, with a concise 1-sentence explanation.
-6. If the word does NOT appear, set "found": false.
+2. OCR MISREAD RECOVERY (VERY IMPORTANT):
+   - If "${word}" is a corrupted/truncated OCR fragment (e.g. "categor" -> "categories", "jike" -> "like", "lishing" -> "publishing", "ee"/"bleue"/"tions" in "As you consider [[Ee]]..." -> "questions" or "these"), inspect the Tapped Context Snippet and the original IMAGE at that exact sentence location to identify the TRUE intended English word!
+   - Set "lemma" to the restored base dictionary word (e.g. "category", "like", "publish", "question") and "matchedWord" to the exact word in the sentence.
+3. Transcribe the EXACT, COMPLETE, UNCUT original sentence containing the word with 100% optical accuracy (do NOT hallucinate, do NOT misspell, fix any hyphenated line-breaks naturally).
+4. If the word appears multiple times in different sentences, transcribe ALL matching sentences into "allMatches".
+5. Select the best Korean definition index for this context (or provide the accurate contextual Korean meaning in "bestMeaningDef" and part-of-speech in "bestPos" if the word was recovered from an OCR typo), with a concise 1-sentence explanation in "aiExplanation".
+6. If the word does NOT appear at all, set "found": false.
 
 Return strictly valid JSON:
 {
@@ -64,6 +71,7 @@ Return strictly valid JSON:
 
     const candidateModels = [
       'gemini-3.5-flash-lite',
+      'gemini-3.5-flash',
       'gemini-3.8-flash',
       'gemini-2.5-flash',
       'gemini-1.5-flash',
@@ -128,11 +136,13 @@ Return strictly valid JSON:
         const sentenceLower = String(parsed.sentence).toLowerCase();
         const wordLower = word.toLowerCase();
         const matchedLower = String(parsed.matchedWord || '').toLowerCase();
+        const lemmaLower = String(parsed.lemma || '').toLowerCase();
 
-        // 문장 안에 targetWord 또는 matchedWord가 최소한 포함되어 있어야 유효!
+        // 문장 안에 targetWord, matchedWord, 또는 복원된 lemma가 포함되어 있어야 유효!
         const isValid =
           sentenceLower.includes(wordLower) ||
-          (matchedLower && sentenceLower.includes(matchedLower));
+          (matchedLower && sentenceLower.includes(matchedLower)) ||
+          (lemmaLower && sentenceLower.includes(lemmaLower));
 
         if (!isValid) {
           console.warn(`AI Hallucination blocked: "${word}" matched unrelated sentence: "${parsed.sentence}"`);
