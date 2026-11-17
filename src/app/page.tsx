@@ -121,6 +121,22 @@ function getPosBadgeColor(pos?: string): string {
   return 'bg-brand-50 text-brand-700 border-brand-200';
 }
 
+function isValidMeaningDef(def?: string): boolean {
+  if (!def || typeof def !== 'string') return false;
+  const t = def.trim();
+  if (!t) return false;
+  if (
+    t.includes('직접 입력') ||
+    t.includes('직접입력') ||
+    t.includes('입력해 주세요') ||
+    t.includes('한국어 뜻을')
+  ) {
+    return false;
+  }
+  return true;
+}
+
+
 interface WordEntryItem {
   id: string;
   word: string;
@@ -1078,13 +1094,17 @@ export default function Home() {
       const defaultExample =
         res.exampleSentence || `This is a sample sentence illustrating the word "${lemmaCandidate}".`;
 
-      const initialDef = res.meanings.length > 0 ? res.meanings[0].def : '';
-      const initialPos = res.meanings.length > 0 ? res.meanings[0].pos : '';
+      const validMeanings = (res.meanings || []).filter((m) => isValidMeaningDef(m.def));
+      const initialDef = validMeanings.length > 0 ? validMeanings[0].def : '';
+      const initialPos = validMeanings.length > 0 ? validMeanings[0].pos : '';
 
       // ⚡️ 즉시 사전 결과 화면에 노출 & 로딩 스피너 즉시 해제! (체감 대기시간 0초대 달성)
       updateWordEntry(entryId, {
         word: lemmaCandidate,
-        dictResult: res,
+        dictResult: {
+          ...res,
+          meanings: validMeanings,
+        },
         selectedMeaning: initialDef,
         selectedPos: initialPos,
         isSearchingDict: false, // 💡 사전 로딩 완료! 즉시 뜻 목록 선택 가능
@@ -1154,16 +1174,18 @@ export default function Home() {
             // 만약 AI가 추천한 뜻이 사전 목록에 없다면 맨 위에 추가하여 선택 가능하게 보장
             if (
               matchRes.bestMeaningDef &&
+              isValidMeaningDef(matchRes.bestMeaningDef) &&
               !activeDict.meanings.some((m) => m.def === matchRes.bestMeaningDef)
             ) {
+              const cleanExisting = activeDict.meanings.filter((m) => isValidMeaningDef(m.def));
               activeDict = {
                 ...activeDict,
                 meanings: [
                   { pos: selectedPos || '문맥뜻', def: matchRes.bestMeaningDef },
-                  ...activeDict.meanings,
+                  ...cleanExisting,
                 ],
               };
-            } else if (activeDict.meanings[bestIdx]) {
+            } else if (activeDict.meanings[bestIdx] && isValidMeaningDef(activeDict.meanings[bestIdx].def)) {
               selectedDef = activeDict.meanings[bestIdx].def;
               selectedPos = activeDict.meanings[bestIdx].pos;
             }
@@ -1472,11 +1494,11 @@ export default function Home() {
   // Save All Words to Vocabulary
   async function handleSaveAllWords() {
     const validEntries = wordEntries.filter(
-      (e) => (e.dictResult?.word || e.word.trim()) && e.selectedMeaning
+      (e) => (e.dictResult?.word || e.word.trim()) && isValidMeaningDef(e.selectedMeaning)
     );
 
     if (validEntries.length === 0) {
-      alert('저장할 단어의 뜻을 먼저 선택해 주세요!');
+      alert('저장할 단어의 올바른 한국어 뜻을 먼저 선택하거나 직접 입력해 주세요!');
       return;
     }
 
@@ -1546,15 +1568,16 @@ export default function Home() {
       return;
     }
 
-    // 한국어 뜻 확인: 선택된 뜻이 없으면 첫 번째 사전 뜻 자동 채택
+    // 한국어 뜻 확인: 선택된 뜻이 유효하지 않으면 첫 번째 유효 사전 뜻 자동 채택
     let selectedDef = entry.selectedMeaning;
     let selectedPos = entry.selectedPos;
-    if (!selectedDef) {
-      if (entry.dictResult && entry.dictResult.meanings.length > 0) {
-        selectedDef = entry.dictResult.meanings[0].def;
-        selectedPos = entry.dictResult.meanings[0].pos;
+    if (!isValidMeaningDef(selectedDef)) {
+      const valid = (entry.dictResult?.meanings || []).filter((m) => isValidMeaningDef(m.def));
+      if (valid.length > 0) {
+        selectedDef = valid[0].def;
+        selectedPos = valid[0].pos;
       } else {
-        alert(`'${finalWord}'의 한국어 뜻을 먼저 선택해 주세요!`);
+        alert(`'${finalWord}'의 올바른 한국어 뜻을 먼저 직접 입력하거나 선택해 주세요!`);
         return;
       }
     }
@@ -2447,7 +2470,7 @@ export default function Home() {
                           <span className="text-xs font-bold text-slate-800 shrink-0">
                             단어 등록칸 #{index + 1}
                           </span>
-                          {entry.selectedMeaning && (
+                          {isValidMeaningDef(entry.selectedMeaning) && (
                             <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full truncate max-w-[120px] sm:max-w-[180px]">
                               ✓ {entry.word} ({entry.selectedMeaning})
                             </span>
@@ -2458,9 +2481,9 @@ export default function Home() {
                           <button
                             type="button"
                             onClick={() => handleSaveSingleWordEntry(entry.id)}
-                            disabled={!((entry.dictResult?.word || entry.word.trim()) && (entry.selectedMeaning || (entry.dictResult?.meanings && entry.dictResult.meanings.length > 0)))}
+                            disabled={!((entry.dictResult?.word || entry.word.trim()) && isValidMeaningDef(entry.selectedMeaning))}
                             className={`text-xs font-bold px-2.5 sm:px-3 py-1 rounded-xl shadow-2xs transition flex items-center gap-1 cursor-pointer ${
-                              (entry.dictResult?.word || entry.word.trim()) && (entry.selectedMeaning || (entry.dictResult?.meanings && entry.dictResult.meanings.length > 0))
+                              (entry.dictResult?.word || entry.word.trim()) && isValidMeaningDef(entry.selectedMeaning)
                                 ? 'bg-[#5090B3] hover:bg-[#417897] text-white active:scale-95'
                                 : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                             }`}
@@ -2661,86 +2684,143 @@ export default function Home() {
                               </button>
                             </div>
 
-                            <div className="text-[11px] text-slate-500 font-medium">
-                              💡 원문 문맥에 가장 어울리는 한국어 뜻을 골라주세요:
-                            </div>
+                            {(() => {
+                              const validMeanings = (entry.dictResult.meanings || []).filter(
+                                (m) => isValidMeaningDef(m.def)
+                              );
 
-                            <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                              {entry.dictResult.meanings.map((m, idx) => (
-                                <label
-                                  key={idx}
-                                  onClick={() => {
-                                    updateWordEntry(entry.id, {
-                                      selectedMeaning: m.def,
-                                      selectedPos: m.pos,
-                                    });
-                                  }}
-                                  className={`flex items-start gap-2.5 p-2 rounded-lg border cursor-pointer transition text-xs shadow-2xs ${
-                                    entry.selectedMeaning === m.def
-                                      ? 'border-indigo-600 bg-indigo-50/60 font-bold'
-                                      : 'border-slate-200 bg-white hover:border-indigo-300'
-                                  }`}
-                                >
-                                  <input
-                                    type="radio"
-                                    name={`meaningRadio_${entry.id}`}
-                                    checked={entry.selectedMeaning === m.def}
-                                    onChange={() => {
-                                      updateWordEntry(entry.id, {
-                                        selectedMeaning: m.def,
-                                        selectedPos: m.pos,
-                                      });
-                                    }}
-                                    className="mt-0.5 accent-indigo-600"
-                                  />
-                                  <div className="flex-1 flex items-center justify-between gap-1.5">
-                                    <div>
-                                      <span className={`inline-block px-2 py-0.5 font-bold rounded-md text-[10px] mr-1.5 border ${getPosBadgeColor(m.pos)}`}>
-                                        {m.pos}
-                                      </span>
-                                      <span className="text-slate-900">{m.def}</span>
+                              if (validMeanings.length === 0) {
+                                return (
+                                  <div className="p-3 bg-amber-50/80 border border-amber-200 rounded-xl text-xs space-y-2">
+                                    <div className="flex items-center gap-1.5 text-amber-900 font-semibold">
+                                      <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                                      <span>사전 뜻을 찾지 못했습니다. 아래에 한국어 뜻을 직접 입력해 주세요:</span>
                                     </div>
-                                    {entry.selectedMeaning === m.def &&
-                                      m.pos !== '직접입력' &&
-                                      !m.def.includes('직접 입력') && (
-                                        <span className="text-[10px] text-indigo-700 bg-indigo-100/90 border border-indigo-200 px-1.5 py-0.5 rounded-full font-bold shrink-0 flex items-center gap-0.5">
-                                          <Sparkles className="w-2.5 h-2.5 text-indigo-600" />
-                                          <span>AI 추천 선택</span>
-                                        </span>
-                                      )}
+                                    <div className="flex gap-1.5 pt-0.5">
+                                      <input
+                                        type="text"
+                                        value={entry.customMeaning || ''}
+                                        onChange={(e) => updateWordEntry(entry.id, { customMeaning: e.target.value })}
+                                        placeholder="직접 한국어 뜻 입력 (예: 기대치, 예상)"
+                                        className="flex-1 px-3 py-1.5 text-xs bg-white text-slate-900 border border-amber-300 rounded-lg outline-none focus:ring-2 focus:ring-amber-200"
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter' && entry.customMeaning?.trim()) {
+                                            updateWordEntry(entry.id, {
+                                              selectedMeaning: entry.customMeaning.trim(),
+                                              selectedPos: '직접입력',
+                                            });
+                                          }
+                                        }}
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (!entry.customMeaning?.trim()) return;
+                                          updateWordEntry(entry.id, {
+                                            selectedMeaning: entry.customMeaning.trim(),
+                                            selectedPos: '직접입력',
+                                          });
+                                        }}
+                                        className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white text-xs font-bold rounded-lg shrink-0 cursor-pointer transition shadow-xs"
+                                      >
+                                        적용
+                                      </button>
+                                    </div>
                                   </div>
-                                </label>
-                              ))}
-                            </div>
+                                );
+                              }
 
-                            {/* 직접 입력 */}
-                            <details className="text-xs text-slate-600 cursor-pointer pt-1">
-                              <summary className="font-semibold text-indigo-600 hover:underline text-[11px]">
-                                원하는 뜻이 없나요? 직접 입력하기
-                              </summary>
-                              <div className="mt-1.5 flex gap-1.5">
-                                <input
-                                  type="text"
-                                  value={entry.customMeaning}
-                                  onChange={(e) => updateWordEntry(entry.id, { customMeaning: e.target.value })}
-                                  placeholder="직접 한국어 뜻 입력"
-                                  className="flex-1 px-2 py-1 text-xs bg-white text-slate-900 border border-slate-300 rounded-lg"
-                                />
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    if (!entry.customMeaning.trim()) return;
-                                    updateWordEntry(entry.id, {
-                                      selectedMeaning: entry.customMeaning.trim(),
-                                      selectedPos: '직접입력',
-                                    });
-                                  }}
-                                  className="px-2.5 py-1 bg-slate-800 text-white text-xs font-bold rounded-lg shrink-0"
-                                >
-                                  적용
-                                </button>
-                              </div>
-                            </details>
+                              return (
+                                <>
+                                  <div className="text-[11px] text-slate-500 font-medium">
+                                    💡 원문 문맥에 가장 어울리는 한국어 뜻을 골라주세요:
+                                  </div>
+
+                                  <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                                    {validMeanings.map((m, idx) => (
+                                      <label
+                                        key={idx}
+                                        onClick={() => {
+                                          updateWordEntry(entry.id, {
+                                            selectedMeaning: m.def,
+                                            selectedPos: m.pos,
+                                          });
+                                        }}
+                                        className={`flex items-start gap-2.5 p-2 rounded-lg border cursor-pointer transition text-xs shadow-2xs ${
+                                          entry.selectedMeaning === m.def
+                                            ? 'border-indigo-600 bg-indigo-50/60 font-bold'
+                                            : 'border-slate-200 bg-white hover:border-indigo-300'
+                                        }`}
+                                      >
+                                        <input
+                                          type="radio"
+                                          name={`meaningRadio_${entry.id}`}
+                                          checked={entry.selectedMeaning === m.def}
+                                          onChange={() => {
+                                            updateWordEntry(entry.id, {
+                                              selectedMeaning: m.def,
+                                              selectedPos: m.pos,
+                                            });
+                                          }}
+                                          className="mt-0.5 accent-indigo-600"
+                                        />
+                                        <div className="flex-1 flex items-center justify-between gap-1.5">
+                                          <div>
+                                            <span className={`inline-block px-2 py-0.5 font-bold rounded-md text-[10px] mr-1.5 border ${getPosBadgeColor(m.pos)}`}>
+                                              {m.pos}
+                                            </span>
+                                            <span className="text-slate-900">{m.def}</span>
+                                          </div>
+                                          {entry.selectedMeaning === m.def && (
+                                            <span className="text-[10px] text-indigo-700 bg-indigo-100/90 border border-indigo-200 px-1.5 py-0.5 rounded-full font-bold shrink-0 flex items-center gap-0.5">
+                                              <Sparkles className="w-2.5 h-2.5 text-indigo-600" />
+                                              <span>AI 추천 선택</span>
+                                            </span>
+                                          )}
+                                        </div>
+                                      </label>
+                                    ))}
+                                  </div>
+
+                                  {/* 원하는 뜻이 없을 때 직접 입력 */}
+                                  <details className="text-xs text-slate-600 cursor-pointer pt-1">
+                                    <summary className="font-semibold text-indigo-600 hover:underline text-[11px]">
+                                      원하는 뜻이 없나요? 직접 입력하기
+                                    </summary>
+                                    <div className="mt-1.5 flex gap-1.5">
+                                      <input
+                                        type="text"
+                                        value={entry.customMeaning || ''}
+                                        onChange={(e) => updateWordEntry(entry.id, { customMeaning: e.target.value })}
+                                        placeholder="직접 한국어 뜻 입력"
+                                        className="flex-1 px-2 py-1 text-xs bg-white text-slate-900 border border-slate-300 rounded-lg outline-none focus:ring-2 focus:ring-indigo-100"
+                                        onKeyDown={(e) => {
+                                          if (e.key === 'Enter' && entry.customMeaning?.trim()) {
+                                            updateWordEntry(entry.id, {
+                                              selectedMeaning: entry.customMeaning.trim(),
+                                              selectedPos: '직접입력',
+                                            });
+                                          }
+                                        }}
+                                      />
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          if (!entry.customMeaning?.trim()) return;
+                                          updateWordEntry(entry.id, {
+                                            selectedMeaning: entry.customMeaning.trim(),
+                                            selectedPos: '직접입력',
+                                          });
+                                        }}
+                                        className="px-2.5 py-1 bg-slate-800 hover:bg-slate-900 text-white text-xs font-bold rounded-lg shrink-0 cursor-pointer transition"
+                                      >
+                                        적용
+                                      </button>
+                                    </div>
+                                  </details>
+                                </>
+                              );
+                            })()}
                           </div>
                         )}
                       </div>
@@ -3017,21 +3097,21 @@ export default function Home() {
                       {/* 단어 카드 하단 개별 저장 액션 바 */}
                       <div className="pt-3 border-t border-slate-200/90 flex flex-col sm:flex-row items-center justify-between gap-2.5">
                         <div className="text-[11px] text-slate-500 w-full sm:w-auto truncate">
-                          {entry.selectedMeaning ? (
+                          {isValidMeaningDef(entry.selectedMeaning) ? (
                             <span className="text-emerald-700 font-bold flex items-center gap-1.5">
                               <Check className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
                               <span>선택된 뜻: <strong>{entry.selectedMeaning}</strong> ({entry.selectedPos || '단어'})</span>
                             </span>
                           ) : (
-                            <span className="text-slate-400">💡 한국어 뜻을 선택하면 단어장에 즉시 저장할 수 있습니다.</span>
+                            <span className="text-slate-400">💡 한국어 뜻을 선택하거나 직접 입력하면 단어장에 즉시 저장할 수 있습니다.</span>
                           )}
                         </div>
                         <button
                           type="button"
                           onClick={() => handleSaveSingleWordEntry(entry.id)}
-                          disabled={!((entry.dictResult?.word || entry.word.trim()) && (entry.selectedMeaning || (entry.dictResult?.meanings && entry.dictResult.meanings.length > 0)))}
+                          disabled={!((entry.dictResult?.word || entry.word.trim()) && isValidMeaningDef(entry.selectedMeaning))}
                           className={`w-full sm:w-auto font-bold px-4 py-2 text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 shrink-0 ${
-                            (entry.dictResult?.word || entry.word.trim()) && (entry.selectedMeaning || (entry.dictResult?.meanings && entry.dictResult.meanings.length > 0))
+                            (entry.dictResult?.word || entry.word.trim()) && isValidMeaningDef(entry.selectedMeaning)
                               ? 'bg-[#5090B3] hover:bg-[#417897] text-white cursor-pointer active:scale-95'
                               : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                           }`}

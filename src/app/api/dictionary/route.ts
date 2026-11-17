@@ -435,6 +435,20 @@ const BUILTIN_CORE_DICT: Record<
     ],
     exampleSentence: 'There are several viable alternatives to consider.',
   },
+  expectation: {
+    phonetic: '/ˌek.spekˈteɪ.ʃən/',
+    meanings: [
+      { pos: '명사', def: '기대, 예상, 기대치' },
+    ],
+    exampleSentence: 'The results exceeded our expectations.',
+  },
+  expectations: {
+    phonetic: '/ˌek.spekˈteɪ.ʃənz/',
+    meanings: [
+      { pos: '명사', def: '기대, 예상, 기대치' },
+    ],
+    exampleSentence: 'The results exceeded our expectations.',
+  },
 };
 
 // 한국어 번역 뜻 정제 및 노이즈 필터링 함수

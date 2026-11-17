@@ -253,6 +253,18 @@ export const BUILTIN_KOREAN_DICT: Record<string, { phonetic: string; meanings: M
       { pos: "명사", def: "대안들, 선택지" },
     ],
   },
+  expectation: {
+    phonetic: "/ˌek.spekˈteɪ.ʃən/",
+    meanings: [
+      { pos: "명사", def: "기대, 예상, 기대치" },
+    ],
+  },
+  expectations: {
+    phonetic: "/ˌek.spekˈteɪ.ʃənz/",
+    meanings: [
+      { pos: "명사", def: "기대, 예상, 기대치" },
+    ],
+  },
 };
 
 export const DISTRACTOR_POOL_KOREAN = [
@@ -417,7 +429,7 @@ export async function lookupDictionary(rawWord: string): Promise<DictSearchResul
   const fallbackResult: DictSearchResult = {
     word,
     phonetic,
-    meanings: [{ pos: '직접 입력', def: '한국어 뜻을 직접 입력해 주세요.' }],
+    meanings: [],
     sourceName: '수동 입력 모드',
   };
   clientDictCache.set(word, fallbackResult);
