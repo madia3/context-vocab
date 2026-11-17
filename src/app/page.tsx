@@ -1151,9 +1151,7 @@ export default function Home() {
               </p>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              {/* Left Column: Form with Autocomplete and Book Title */}
-              <div className="space-y-4">
+            <div className="max-w-2xl mx-auto space-y-4">
                 {/* Book Title Selection / Input */}
                 <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
                   <div className="flex items-center justify-between mb-1.5">
@@ -1349,6 +1347,7 @@ export default function Home() {
                   )}
                 </div>
 
+
                 {/* Word Input */}
                 <div>
                   <div className="flex items-center justify-between mb-1.5">
@@ -1403,96 +1402,9 @@ export default function Home() {
                   </div>
                 </div>
 
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="block text-xs font-bold text-slate-700">
-                      원서 / 레포트 원문 문장 <span className="text-slate-400 font-normal">(권장)</span>
-                    </label>
-                    {ocrDetectedNotice && (
-                      <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded animate-fade-in">
-                        {ocrDetectedNotice}
-                      </span>
-                    )}
-                  </div>
 
-                  {/* 페이지 내 복수 문장 발견 시 대표 문맥 선택 리스트 */}
-                  {detectedCandidateSentences.length > 1 && (
-                    <div className="bg-gradient-to-r from-indigo-50/90 to-purple-50/90 p-3 rounded-xl border border-indigo-200 space-y-2 mb-2.5">
-                      <div className="flex items-center justify-between text-xs font-bold text-indigo-950">
-                        <span className="flex items-center gap-1.5">
-                          <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
-                          <span>페이지 내 {detectedCandidateSentences.length}개 문장 발견 (대표 문맥 선택)</span>
-                        </span>
-                        <span className="text-[10px] text-slate-500 font-normal">선택 안 된 문장도 함께 자동 보관</span>
-                      </div>
-                      <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                        {detectedCandidateSentences.map((sent, sIdx) => {
-                          const isChosen = inputContext.trim() === sent.trim();
-                          return (
-                            <button
-                              key={sIdx}
-                              type="button"
-                              onClick={() => setInputContext(sent)}
-                              className={`w-full text-left p-2.5 rounded-lg border text-xs transition flex items-start gap-2.5 cursor-pointer ${
-                                isChosen
-                                  ? 'bg-white border-indigo-600 ring-2 ring-indigo-200 font-bold text-slate-900 shadow-xs'
-                                  : 'bg-white/80 border-slate-200 text-slate-600 hover:border-indigo-300 hover:bg-white'
-                              }`}
-                            >
-                              <span
-                                className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 mt-0.5 ${
-                                  isChosen ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-600'
-                                }`}
-                              >
-                                {sIdx + 1}
-                              </span>
-                              <span className="flex-1 font-serif leading-relaxed line-clamp-3">
-                                &quot;{sent}&quot;
-                              </span>
-                              {isChosen && (
-                                <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-bold shrink-0">
-                                  선택됨 ✓
-                                </span>
-                              )}
-                            </button>
-                          );
-                        })}
-                      </div>
-                    </div>
-                  )}
-
-                  <textarea
-                    rows={3}
-                    value={inputContext}
-                    onChange={(e) => {
-                      setInputContext(e.target.value);
-                      setOcrDetectedNotice(null);
-                    }}
-                    placeholder="예: It was an unspeakable tragedy that shook the entire nation. (페이지 사진을 찍으면 자동 입력됩니다)"
-                    className="w-full px-3.5 py-2.5 text-xs bg-white text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 leading-relaxed"
-                  />
-                  <p className="text-[11px] text-slate-400 mt-1">
-                    ※ 퀴즈 정답 시 이 문맥 속 단어가 형광펜으로 강조되며, 원어민 음성(TTS)으로 읽어줍니다.
-                  </p>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                    상세 메모 / 페이지 <span className="text-slate-400 font-normal">(선택)</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={inputSource}
-                    onChange={(e) => setInputSource(e.target.value)}
-                    placeholder="예: 3막 1장 45페이지, 서론 2문단"
-                    className="w-full px-3 py-2 text-xs bg-white text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
-                </div>
-              </div>
-
-              {/* Right Column: Dictionary Result */}
-              <div className="bg-slate-50 rounded-xl border border-slate-200 p-4 flex flex-col justify-between">
-                <div>
+              {/* 2. 사전단어뜻 (영한 사전 검색 결과 & 한국어 뜻 선택) */}
+              <div className="bg-slate-50 rounded-2xl border border-slate-200 p-4 space-y-3">
                   <div className="flex items-center justify-between pb-2 mb-3 border-b border-slate-200">
                     <h3 className="text-xs font-bold text-slate-700">
                       영한 사전 검색 결과 <span className="font-normal text-slate-500">(한국어 뜻 선택)</span>
@@ -1732,9 +1644,96 @@ export default function Home() {
                       })()}
                     </div>
                   )}
+
+              </div>
+
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="block text-xs font-bold text-slate-700">
+                      원서 / 레포트 원문 문장 <span className="text-slate-400 font-normal">(권장)</span>
+                    </label>
+                    {ocrDetectedNotice && (
+                      <span className="text-[10px] text-emerald-600 font-bold bg-emerald-50 px-2 py-0.5 rounded animate-fade-in">
+                        {ocrDetectedNotice}
+                      </span>
+                    )}
+                  </div>
+
+                  {/* 페이지 내 복수 문장 발견 시 대표 문맥 선택 리스트 */}
+                  {detectedCandidateSentences.length > 1 && (
+                    <div className="bg-gradient-to-r from-indigo-50/90 to-purple-50/90 p-3 rounded-xl border border-indigo-200 space-y-2 mb-2.5">
+                      <div className="flex items-center justify-between text-xs font-bold text-indigo-950">
+                        <span className="flex items-center gap-1.5">
+                          <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+                          <span>페이지 내 {detectedCandidateSentences.length}개 문장 발견 (대표 문맥 선택)</span>
+                        </span>
+                        <span className="text-[10px] text-slate-500 font-normal">선택 안 된 문장도 함께 자동 보관</span>
+                      </div>
+                      <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                        {detectedCandidateSentences.map((sent, sIdx) => {
+                          const isChosen = inputContext.trim() === sent.trim();
+                          return (
+                            <button
+                              key={sIdx}
+                              type="button"
+                              onClick={() => setInputContext(sent)}
+                              className={`w-full text-left p-2.5 rounded-lg border text-xs transition flex items-start gap-2.5 cursor-pointer ${
+                                isChosen
+                                  ? 'bg-white border-indigo-600 ring-2 ring-indigo-200 font-bold text-slate-900 shadow-xs'
+                                  : 'bg-white/80 border-slate-200 text-slate-600 hover:border-indigo-300 hover:bg-white'
+                              }`}
+                            >
+                              <span
+                                className={`w-4 h-4 rounded-full flex items-center justify-center text-[10px] font-black shrink-0 mt-0.5 ${
+                                  isChosen ? 'bg-indigo-600 text-white' : 'bg-slate-200 text-slate-600'
+                                }`}
+                              >
+                                {sIdx + 1}
+                              </span>
+                              <span className="flex-1 font-serif leading-relaxed line-clamp-3">
+                                &quot;{sent}&quot;
+                              </span>
+                              {isChosen && (
+                                <span className="text-[10px] bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded font-bold shrink-0">
+                                  선택됨 ✓
+                                </span>
+                              )}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  )}
+
+                  <textarea
+                    rows={3}
+                    value={inputContext}
+                    onChange={(e) => {
+                      setInputContext(e.target.value);
+                      setOcrDetectedNotice(null);
+                    }}
+                    placeholder="예: It was an unspeakable tragedy that shook the entire nation. (페이지 사진을 찍으면 자동 입력됩니다)"
+                    className="w-full px-3.5 py-2.5 text-xs bg-white text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 leading-relaxed"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    ※ 퀴즈 정답 시 이 문맥 속 단어가 형광펜으로 강조되며, 원어민 음성(TTS)으로 읽어줍니다.
+                  </p>
                 </div>
 
-                {/* Save Action Button */}
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    상세 메모 / 페이지 <span className="text-slate-400 font-normal">(선택)</span>
+                  </label>
+                  <input
+                    type="text"
+                    value={inputSource}
+                    onChange={(e) => setInputSource(e.target.value)}
+                    placeholder="예: 3막 1장 45페이지, 서론 2문단"
+                    className="w-full px-3 py-2 text-xs bg-white text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
+
                 <div className="pt-3 mt-3 border-t border-slate-200 flex justify-end">
                   <button
                     onClick={handleSaveWord}
@@ -1757,7 +1756,6 @@ export default function Home() {
                     )}
                   </button>
                 </div>
-              </div>
             </div>
           </section>
         )}
