@@ -115,6 +115,7 @@ import {
   Play,
   RotateCcw,
   Info,
+  Scissors,
 } from 'lucide-react';
 import { isUserAdmin } from '@/lib/admin';
 import {
@@ -208,6 +209,18 @@ interface WordEntryItem {
   foundCandidateSentences?: string[];
   candidateSentences: string[];
   ocrDetectedNotice: string | null;
+  isTrailingCutOff?: boolean; // ✂️ 다음 페이지로 문장이 이어져 잘린 상태 감지 플래그
+}
+
+function isSentenceCutOff(text?: string | null): boolean {
+  if (!text || typeof text !== 'string') return false;
+  const trimmed = text.trim();
+  if (trimmed.length < 10) return false;
+  const startsCutOff = /^[a-z]/.test(trimmed);
+  const endsCutOff = !/[.!?]["'”’]?$/.test(trimmed);
+  const endsWithHyphen = /-$/.test(trimmed);
+  const endsWithDangling = /\b(and|or|but|that|which|with|for|of|in|on|at|to|by|from|as|because|the|a|an)\s*$/i.test(trimmed);
+  return startsCutOff || endsCutOff || endsWithHyphen || endsWithDangling;
 }
 
 function createWordEntryItem(init?: Partial<WordEntryItem>): WordEntryItem {
@@ -227,6 +240,7 @@ function createWordEntryItem(init?: Partial<WordEntryItem>): WordEntryItem {
     foundCandidateSentences: [],
     candidateSentences: [],
     ocrDetectedNotice: null,
+    isTrailingCutOff: false,
     ...init,
   };
 }
@@ -249,6 +263,10 @@ export default function Home() {
 
   // Multi-Word Form State: 한 번에 여러 단어를 추가/등록할 수 있는 단어 등록칸 목록
   const [wordEntries, setWordEntries] = useState<WordEntryItem[]>([createWordEntryItem()]);
+  const wordEntriesRef = useRef<WordEntryItem[]>(wordEntries);
+  useEffect(() => {
+    wordEntriesRef.current = wordEntries;
+  }, [wordEntries]);
   const [inputBookTitle, setInputBookTitle] = useState('원서 첫걸음: 어린 왕자');
   // 단어 등록 시 복수 단어장 동시 저장 지원
   const [selectedTargetBooks, setSelectedTargetBooks] = useState<string[]>(['원서 첫걸음: 어린 왕자']);
@@ -1571,7 +1589,7 @@ export default function Home() {
     return taskPromise;
   }
 
-  // 잘린 문장 AI 자동 완성 핸들러
+  // 잘린 문장 AI 자동 완성 핸들러 (수동 버튼 클릭 시 단일 보정)
   async function handleCompleteSentence(entryId: string, sentence: string, word: string) {
     if (!sentence || !sentence.trim()) return;
     setCompletingSentenceId(entryId);
@@ -1589,15 +1607,71 @@ export default function Home() {
         if (data.completedSentence) {
           updateWordEntry(entryId, {
             context: data.completedSentence,
+            sentenceTranslation: data.sentenceTranslation || undefined,
+            isTrailingCutOff: false,
             ocrDetectedNotice: '✨ AI가 잘린 문장을 자연스럽게 완성/보정했습니다.',
           });
-          // 💡 보정된 문장 한글 해석 자동 생성
-          handleTranslateContextSentence(entryId, data.completedSentence, true);
+          if (!data.sentenceTranslation) {
+            handleTranslateContextSentence(entryId, data.completedSentence, true);
+          }
           triggerToast('문장 완성 완료! ✨', '페이지 경계로 잘려 있던 문맥을 자연스럽게 보정했습니다.');
         }
       }
     } catch (err) {
       console.warn('Sentence completion error:', err);
+    } finally {
+      setCompletingSentenceId(null);
+    }
+  }
+
+  // 다음 페이지 사진 업로드 시 등록 대기 중이던 잘린 문장과 자동 이어붙이기
+  async function stitchSeveredSentenceWithNextPage(
+    entryId: string,
+    sentence: string,
+    word: string,
+    nextPageText: string
+  ) {
+    if (!sentence || !sentence.trim() || !nextPageText || !nextPageText.trim()) return;
+    setCompletingSentenceId(entryId);
+    try {
+      const res = await fetch('/api/ai/complete-sentence', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(geminiApiKey ? { 'x-gemini-key': geminiApiKey } : {}),
+        },
+        body: JSON.stringify({
+          sentence,
+          word,
+          nextPageText: nextPageText.slice(0, 800),
+        }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.completedSentence) {
+          updateWordEntry(entryId, {
+            context: data.completedSentence,
+            sentenceTranslation: data.sentenceTranslation || undefined,
+            isTrailingCutOff: false,
+            ocrDetectedNotice: data.didStitchNextPage
+              ? '✨ 다음 페이지 첫 문장과 연결되어 완전한 원문 문장으로 복원되었습니다!'
+              : '✨ AI가 잘린 문장을 자연스럽게 완성/보정했습니다.',
+          });
+          if (data.didStitchNextPage) {
+            triggerToast(
+              '✨ 다음 페이지와 문장 연결 완료!',
+              `'${word || '단어'}'의 잘린 문장을 다음 장과 매끄럽게 연결했습니다.`
+            );
+          } else {
+            triggerToast(
+              '문장 완성 완료! ✨',
+              '페이지 경계로 잘려 있던 문맥을 자연스럽게 보정했습니다.'
+            );
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('Sentence stitch error:', err);
     } finally {
       setCompletingSentenceId(null);
     }
@@ -1686,6 +1760,27 @@ export default function Home() {
 
         // 현재 단어장별 스토리지에 최신 2장 사진과 추출 텍스트 영구 보관
         saveBookSourceData(inputBookTitle, updatedImages, ocrRes.text);
+
+        // 💡 새 페이지 인식 완료 시, 등록 대기 중이던 단어 카드 중 문장이 잘려 있던 항목들과 다음 페이지 첫 문장 자동 연결!
+        if (ocrRes.text && ocrRes.text.trim()) {
+          const newText = ocrRes.text.trim();
+          const currentEntries = wordEntriesRef.current || [];
+          const severed = currentEntries.filter((e) => {
+            const ctx = (e.context || '').trim();
+            return ctx && (e.isTrailingCutOff || isSentenceCutOff(ctx));
+          });
+
+          if (severed.length > 0) {
+            severed.forEach((e) => {
+              stitchSeveredSentenceWithNextPage(
+                e.id,
+                e.context,
+                e.word || e.dictResult?.word || '',
+                newText
+              );
+            });
+          }
+        }
 
         return {
           text: ocrRes.text,
@@ -2095,6 +2190,7 @@ export default function Home() {
 
             const matchedFinalSentence = matchRes.sentence || uniqueSentences[0] || '';
             const matchedFinalTranslation = matchRes.sentenceTranslation || '';
+            const isCutOff = isSentenceCutOff(matchedFinalSentence);
 
             updateWordEntry(entryId, {
               word: finalLemma,
@@ -2107,6 +2203,7 @@ export default function Home() {
               sentenceTranslation: matchedFinalTranslation || undefined,
               ocrDetectedNotice: noticeText,
               isAnalyzingContext: false,
+              isTrailingCutOff: isCutOff,
             });
 
             // 💡 문장 매칭 시 함께 생성된 AI 한글 해석이 없는 경우에만 보조 번역 호출
@@ -4951,16 +5048,17 @@ export default function Home() {
                               );
                             })()}
 
-                            {/* 잘린 문장 감지 및 AI 자연스러운 완성 버튼 */}
+                            {/* 잘린 문장 감지 및 다음 페이지 자동 연결 안내 / 즉시 AI 완성 버튼 */}
                             {entry.context && (
-                              <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1">
-                                <span className="text-[10px] text-slate-400">
-                                  {(!/[.!?]["'”’]?$/.test(entry.context.trim()) || /^[a-z]/.test(entry.context.trim())) && (
-                                    <span className="text-amber-600 font-bold bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
-                                      ⚠️ 페이지 경계로 문장이 잘린 것 같습니다
+                              <div className="flex items-center justify-between mb-1.5 flex-wrap gap-1.5">
+                                <div className="flex items-center gap-1 min-w-0">
+                                  {(entry.isTrailingCutOff || isSentenceCutOff(entry.context)) && (
+                                    <span className="flex items-center gap-1.5 text-[11px] text-amber-900 font-bold bg-amber-50 px-2 py-0.5 rounded-lg border border-amber-200 shadow-2xs">
+                                      <Scissors className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                                      <span>문장이 잘린 것 같습니다 (다음 페이지 사진을 올리면 첫 문장과 자동 연결 📄)</span>
                                     </span>
                                   )}
-                                </span>
+                                </div>
                                 <button
                                   type="button"
                                   onClick={() =>
@@ -4971,8 +5069,8 @@ export default function Home() {
                                     )
                                   }
                                   disabled={completingSentenceId === entry.id}
-                                  className="text-[10px] bg-slate-100 border border-slate-300 text-slate-800 hover:bg-slate-900 hover:text-white px-2 py-0.5 rounded-md font-bold flex items-center gap-1 transition cursor-pointer ml-auto shadow-2xs disabled:opacity-50"
-                                  title="페이지 경계나 여백으로 잘린 문장을 AI가 자연스러운 완전한 문장으로 복원합니다"
+                                  className="text-[10px] bg-slate-100 border border-slate-300 text-slate-800 hover:bg-slate-900 hover:text-white px-2 py-0.5 rounded-md font-bold flex items-center gap-1 transition cursor-pointer ml-auto shadow-2xs disabled:opacity-50 shrink-0"
+                                  title="다음 장 사진 없이 지금 AI로 가상 문장을 완성합니다"
                                 >
                                   {completingSentenceId === entry.id ? (
                                     <>
@@ -4982,7 +5080,7 @@ export default function Home() {
                                   ) : (
                                     <>
                                       <Sparkles className="w-2.5 h-2.5 text-slate-700" />
-                                      <span>잘린 문장 AI 완성 ✨</span>
+                                      <span>지금 AI 완성 ✨</span>
                                     </>
                                   )}
                                 </button>
@@ -4993,9 +5091,11 @@ export default function Home() {
                               rows={2}
                               value={entry.context}
                               onChange={(e) => {
+                                const val = e.target.value;
                                 updateWordEntry(entry.id, {
-                                  context: e.target.value,
+                                  context: val,
                                   ocrDetectedNotice: null,
+                                  isTrailingCutOff: isSentenceCutOff(val),
                                 });
                               }}
                               onBlur={(e) => {
