@@ -486,7 +486,7 @@ export default function Home() {
   const [isTestingKey, setIsTestingKey] = useState(false);
   const [keyTestStatus, setKeyTestStatus] = useState<{ ok: boolean; message: string } | null>(null);
   const [ttsVoice, setTtsVoice] = useState('en-US');
-  const [ttsRate, setTtsRate] = useState<number>(1.0);
+  const [ttsRate, setTtsRate] = useState<number>(1.25);
   const [geminiApiKey, setGeminiApiKey] = useState('');
   const [geminiKeyInput, setGeminiKeyInput] = useState('');
 
@@ -776,6 +776,9 @@ export default function Home() {
           setTtsRate(parsed);
           setTtsPlaybackRate(parsed);
         }
+      } else {
+        setTtsRate(1.25);
+        setTtsPlaybackRate(1.25);
       }
 
       const lastBook = localStorage.getItem('context_vocab_last_book_title');
@@ -6445,7 +6448,7 @@ export default function Home() {
                           <span>읽기 속도 조절</span>
                           <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-mono">
                             {ttsRate.toFixed(2)}x
-                            {ttsRate === 1.0 ? ' (보통)' : ttsRate < 1.0 ? ' (느리게)' : ' (빠르게)'}
+                            {ttsRate === 1.25 ? ' (기본값)' : ttsRate === 1.0 ? ' (보통)' : ttsRate < 1.0 ? ' (느리게)' : ' (빠르게)'}
                           </span>
                         </label>
                         <button
@@ -6465,22 +6468,22 @@ export default function Home() {
                         <input
                           type="range"
                           min="0.6"
-                          max="1.4"
+                          max="1.6"
                           step="0.05"
                           value={ttsRate}
                           onChange={(e) => handleTtsRateChange(parseFloat(e.target.value))}
                           className="flex-1 h-2 bg-slate-200 rounded-lg appearance-none cursor-pointer accent-indigo-600"
                         />
-                        <span className="text-[11px] font-bold text-slate-400 font-mono">1.4x</span>
+                        <span className="text-[11px] font-bold text-slate-400 font-mono">1.6x</span>
                       </div>
 
                       {/* Preset Chips */}
                       <div className="flex items-center gap-1.5 mt-2.5">
                         {[
-                          { label: '0.75x', rate: 0.75 },
-                          { label: '0.9x', rate: 0.9 },
-                          { label: '1.0x (표준)', rate: 1.0 },
-                          { label: '1.15x', rate: 1.15 },
+                          { label: '0.8x', rate: 0.8 },
+                          { label: '1.0x', rate: 1.0 },
+                          { label: '1.25x (기본값)', rate: 1.25 },
+                          { label: '1.4x', rate: 1.4 },
                         ].map((preset) => (
                           <button
                             key={preset.rate}

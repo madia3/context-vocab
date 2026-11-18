@@ -2,10 +2,10 @@
 
 let currentAudio: HTMLAudioElement | null = null;
 let cachedVoices: SpeechSynthesisVoice[] = [];
-let currentTtsRate: number = 1.0;
+let currentTtsRate: number = 1.25;
 
 export function setTtsPlaybackRate(rate: number) {
-  const clamped = Math.max(0.5, Math.min(2.0, Number(rate) || 1.0));
+  const clamped = Math.max(0.5, Math.min(2.0, Number(rate) || 1.25));
   currentTtsRate = Math.round(clamped * 100) / 100;
   if (typeof window !== 'undefined') {
     localStorage.setItem('context_vocab_tts_rate', String(currentTtsRate));
@@ -19,6 +19,7 @@ export function getTtsPlaybackRate(): number {
       const parsed = parseFloat(saved);
       if (!isNaN(parsed) && parsed >= 0.5 && parsed <= 2.0) {
         currentTtsRate = parsed;
+        return currentTtsRate;
       }
     }
   }
