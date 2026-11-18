@@ -87,6 +87,7 @@ import {
   ChevronDown,
   Image as ImageIcon,
   ClipboardPaste,
+  Shuffle,
   Mail,
   Lock,
   FolderInput,
