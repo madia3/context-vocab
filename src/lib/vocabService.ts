@@ -14,6 +14,7 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     selectedMeaning: "본질적인, 극히 중요한",
     allMeanings: ["본질적인, 극히 중요한", "필수적인", "가장 중요한"],
     contextSentence: "What is essential is invisible to the eye.",
+    sentenceTranslation: "가장 중요한 것은 눈에 보이지 않는다.",
     sourceMemo: "어린 왕자 제21장",
     bookTitle: "원서 첫걸음: 어린 왕자",
     quizCount: 2,
@@ -31,6 +32,7 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     selectedMeaning: "길들이다, 친숙하게 만들다",
     allMeanings: ["길들이다, 다스리다", "친숙하게 만들다"],
     contextSentence: "If you tame me, then we shall need each other. To me, you will be unique in all the world.",
+    sentenceTranslation: "네가 나를 길들인다면, 우리는 서로를 필요로 하게 될 거야. 나에게 넌 세상에 하나뿐인 존재가 될 테니까.",
     sourceMemo: "어린 왕자 제21장",
     bookTitle: "원서 첫걸음: 어린 왕자",
     quizCount: 1,
@@ -48,6 +50,7 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     selectedMeaning: "책임이 있는, 책임을 져야 하는",
     allMeanings: ["책임이 있는", "신뢰할 수 있는"],
     contextSentence: "You become responsible, forever, for what you have tamed.",
+    sentenceTranslation: "네가 길들인 것에 대해서는 영원히 책임을 져야 해.",
     sourceMemo: "어린 왕자 제21장",
     bookTitle: "원서 첫걸음: 어린 왕자",
     quizCount: 0,
@@ -64,6 +67,7 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     selectedMeaning: "판단하다, 심판하다",
     allMeanings: ["판단하다", "평가하다", "재판하다"],
     contextSentence: "It is much more difficult to judge oneself than to judge others.",
+    sentenceTranslation: "다른 사람을 판단하는 것보다 자기 자신을 판단하는 것이 훨씬 더 어렵다.",
     sourceMemo: "어린 왕자 제10장",
     bookTitle: "원서 첫걸음: 어린 왕자",
     quizCount: 0,
@@ -80,6 +84,7 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     selectedMeaning: "(시간, 노력 등을) 쏟다, 헌신하다",
     allMeanings: ["쏟다, 바치다", "헌신하다", "전념하다"],
     contextSentence: "It is the time you have devoted to your rose that makes your rose so important.",
+    sentenceTranslation: "네 장미를 그토록 소중하게 만든 것은 네가 장미를 위해 쏟은 시간이야.",
     sourceMemo: "어린 왕자 제21장",
     bookTitle: "원서 첫걸음: 어린 왕자",
     quizCount: 0,
@@ -96,6 +101,7 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     selectedMeaning: "평범한, 보통의",
     allMeanings: ["평범한", "일반적인", "보통의"],
     contextSentence: "She is not just an ordinary rose; she is a flower I have watered and sheltered.",
+    sentenceTranslation: "그녀는 평범한 장미가 아니야. 내가 물을 주고 비바람을 막아준 장미꽃이니까.",
     sourceMemo: "어린 왕자 제21장",
     bookTitle: "원서 첫걸음: 어린 왕자",
     quizCount: 0,
@@ -112,6 +118,7 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     selectedMeaning: "방랑하다, 헤매다, 거닐다",
     allMeanings: ["방랑하다", "헤매다", "돌아다니다"],
     contextSentence: "All men have stars, but for travelers who wander, the stars are guides.",
+    sentenceTranslation: "모든 사람에게는 별이 있지만, 길을 헤매는 방랑자들에게 별은 길잡이가 되어 준다.",
     sourceMemo: "어린 왕자 제26장",
     bookTitle: "원서 첫걸음: 어린 왕자",
     quizCount: 0,
@@ -128,6 +135,7 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     selectedMeaning: "소중히 여기다, 아끼다, 간직하다",
     allMeanings: ["소중히 여기다", "간직하다", "아끼다"],
     contextSentence: "Words are the source of misunderstandings, so we must cherish our silent moments together.",
+    sentenceTranslation: "말은 오해의 근원이라서, 우리는 함께하는 고요한 순간들을 소중히 여겨야 한다.",
     sourceMemo: "어린 왕자 제21장",
     bookTitle: "원서 첫걸음: 어린 왕자",
     quizCount: 0,
@@ -144,6 +152,7 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     selectedMeaning: "눈에 보이지 않는",
     allMeanings: ["눈에 보이지 않는", "숨겨진"],
     contextSentence: "The stars are beautiful, because of a flower that cannot be seen, invisible in the night.",
+    sentenceTranslation: "밤하늘에 보이지 않는 꽃 한 송이가 있기에 별들은 그토록 아름다운 것이다.",
     sourceMemo: "어린 왕자 제24장",
     bookTitle: "원서 첫걸음: 어린 왕자",
     quizCount: 0,
@@ -160,6 +169,7 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     selectedMeaning: "비밀, 비결",
     allMeanings: ["비밀", "비결", "신비"],
     contextSentence: "And now here is my secret, a very simple secret: It is only with the heart that one can see rightly.",
+    sentenceTranslation: "이제 내 비밀을 말해줄게, 아주 단순한 비밀이야: 마음으로 보아야만 분명하게 볼 수 있다는 거야.",
     sourceMemo: "어린 왕자 제21장",
     bookTitle: "원서 첫걸음: 어린 왕자",
     quizCount: 0,
@@ -180,6 +190,7 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     selectedMeaning: "연결하다, 이어지다",
     allMeanings: ["연결하다", "이어지다", "관련시키다"],
     contextSentence: "You can't connect the dots looking forward; you can only connect them looking backwards.",
+    sentenceTranslation: "앞을 내다보며 점들을 연결할 수는 없습니다. 뒤돌아볼 때에만 점들을 연결할 수 있죠.",
     sourceMemo: "스티브 잡스 2005 스탠포드 연설",
     bookTitle: "스탠포드 명연설: 인생을 바꾸는 문장",
     quizCount: 2,
@@ -197,6 +208,7 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     selectedMeaning: "호기심, 진기함",
     allMeanings: ["호기심", "신기함", "진기한 것"],
     contextSentence: "Much of what I stumbled into by following my curiosity and intuition turned out to be priceless later on.",
+    sentenceTranslation: "호기심과 직관을 따라 우연히 부딪혔던 많은 것들이 나중에 값을 매길 수 없을 만큼 값진 것이 되었습니다.",
     sourceMemo: "스티브 잡스 2005 스탠포드 연설",
     bookTitle: "스탠포드 명연설: 인생을 바꾸는 문장",
     quizCount: 0,
@@ -213,6 +225,7 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     selectedMeaning: "목적지, 종착역",
     allMeanings: ["목적지", "종착점", "도착지"],
     contextSentence: "Death is the destination we all share; no one has ever escaped it.",
+    sentenceTranslation: "죽음은 우리 모두가 공유하는 종착역입니다. 누구도 그것을 피한 적이 없습니다.",
     sourceMemo: "스티브 잡스 2005 스탠포드 연설",
     bookTitle: "스탠포드 명연설: 인생을 바꾸는 문장",
     quizCount: 0,
@@ -229,6 +242,7 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     selectedMeaning: "용기, 담력",
     allMeanings: ["용기", "담력", "배짱"],
     contextSentence: "Have the courage to follow your heart and intuition; they somehow already know what you truly want to become.",
+    sentenceTranslation: "가슴과 직관을 따를 수 있는 용기를 가지세요. 그것들은 당신이 진정으로 무엇이 되고 싶어 하는지 이미 알고 있습니다.",
     sourceMemo: "스티브 잡스 2005 스탠포드 연설",
     bookTitle: "스탠포드 명연설: 인생을 바꾸는 문장",
     quizCount: 1,
@@ -246,6 +260,7 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     selectedMeaning: "안주하다, 만족하다, 정착하다",
     allMeanings: ["안주하다", "정착하다", "해결하다"],
     contextSentence: "If you haven't found what you love yet, keep looking. Don't settle.",
+    sentenceTranslation: "아직 좋아하는 일을 찾지 못했다면 계속 찾으세요. 안주하지 마세요.",
     sourceMemo: "스티브 잡스 2005 스탠포드 연설",
     bookTitle: "스탠포드 명연설: 인생을 바꾸는 문장",
     quizCount: 0,
@@ -262,6 +277,7 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     selectedMeaning: "관점, 시각, 원근법",
     allMeanings: ["관점, 시각", "원근법", "균형감"],
     contextSentence: "A shift in your perspective can transform a frustrating setback into a profound opportunity.",
+    sentenceTranslation: "관점의 전환은 좌절스러운 실패를 엄청난 기회로 바꿀 수 있습니다.",
     sourceMemo: "명연설 & 자기계발 에세이",
     bookTitle: "스탠포드 명연설: 인생을 바꾸는 문장",
     quizCount: 0,
@@ -278,6 +294,7 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     selectedMeaning: "장애물, 걸림돌",
     allMeanings: ["장애물", "걸림돌", "방해물"],
     contextSentence: "The obstacle in our path becomes the path. What stands in the way becomes the way.",
+    sentenceTranslation: "우리 앞을 가로막는 장애물이 곧 길이 됩니다. 앞길을 가로막는 것이 바로 나아갈 길이 됩니다.",
     sourceMemo: "스토아 철학 명언",
     bookTitle: "스탠포드 명연설: 인생을 바꾸는 문장",
     quizCount: 0,
@@ -294,6 +311,7 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     selectedMeaning: "회복탄력성, 회복력, 탄성",
     allMeanings: ["회복탄력성", "탄력", "회복력"],
     contextSentence: "True resilience is not about avoiding difficulty, but having the inner strength to rise each time you stumble.",
+    sentenceTranslation: "진정한 회복탄력성이란 어려움을 피하는 것이 아니라, 넘어질 때마다 다시 일어설 수 있는 내면의 힘을 갖는 것입니다.",
     sourceMemo: "회복탄력성 명연설",
     bookTitle: "스탠포드 명연설: 인생을 바꾸는 문장",
     quizCount: 0,
@@ -310,6 +328,7 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     selectedMeaning: "열정, 정열",
     allMeanings: ["열정", "정열", "격정"],
     contextSentence: "The only way to do truly exceptional work is to love what you do with genuine passion.",
+    sentenceTranslation: "진정으로 위대한 일을 하는 유일한 방법은 당신이 하는 일을 진정한 열정으로 사랑하는 것입니다.",
     sourceMemo: "스티브 잡스 2005 스탠포드 연설",
     bookTitle: "스탠포드 명연설: 인생을 바꾸는 문장",
     quizCount: 0,
@@ -326,6 +345,7 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     selectedMeaning: "영감을 주다, 고무하다",
     allMeanings: ["영감을 주다", "고무하다", "격려하다"],
     contextSentence: "Great leaders inspire people not with hollow words, but with the integrity of how they live.",
+    sentenceTranslation: "위대한 리더는 공허한 말이 아니라 삶의 진실성으로 사람들에게 영감을 줍니다.",
     sourceMemo: "리더십 명강연",
     bookTitle: "스탠포드 명연설: 인생을 바꾸는 문장",
     quizCount: 0,
@@ -346,6 +366,7 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     selectedMeaning: "어디에나 존재하는, 아주 흔한",
     allMeanings: ["어디에나 존재하는, 아주 흔한", "도처에 나타나는"],
     contextSentence: "Smartphones and artificial intelligence have become truly ubiquitous in every aspect of modern communication.",
+    sentenceTranslation: "스마트폰과 인공지능은 현대 통신의 모든 영역에서 진정 어디에나 존재하는 것이 되었습니다.",
     sourceMemo: "IT 트렌드",
     bookTitle: "스마트 스타터: 교양 원서 필수 단어",
     quizCount: 2,
@@ -363,6 +384,7 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     selectedMeaning: "(고통, 피해, 위험 등을) 완화하다, 경감시키다",
     allMeanings: ["완화하다, 경감시키다", "누그러뜨리다"],
     contextSentence: "Governments must implement strict policies to mitigate the severe consequences of climate crisis.",
+    sentenceTranslation: "정부는 기후 위기의 심각한 영향을 완화하기 위해 엄격한 정책을 시행해야 합니다.",
     sourceMemo: "기후 리포트 3장",
     bookTitle: "스마트 스타터: 교양 원서 필수 단어",
     quizCount: 1,
@@ -380,6 +402,7 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     selectedMeaning: "실용적인, 현실적인",
     allMeanings: ["실용적인, 실무적인", "현실주의적인"],
     contextSentence: "Instead of debating theoretical models, the team adopted a pragmatic approach to launch the MVP quickly.",
+    sentenceTranslation: "이론적인 모델을 논쟁하는 대신, 팀은 MVP를 빠르게 출시하기 위해 실용적인 접근 방식을 채택했습니다.",
     sourceMemo: "스타트업 경영학 원서",
     bookTitle: "스마트 스타터: 교양 원서 필수 단어",
     quizCount: 0,
@@ -396,6 +419,7 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     selectedMeaning: "불가피한, 필연적인",
     allMeanings: ["불가피한", "필연적인", "피할 수 없는"],
     contextSentence: "Constant technological transformation is inevitable, and our ability to adapt defines our future success.",
+    sentenceTranslation: "지속적인 기술 변화는 불가피하며, 우리의 적응 능력이 미래의 성공을 좌우합니다.",
     sourceMemo: "포브스 테크 칼럼",
     bookTitle: "스마트 스타터: 교양 원서 필수 단어",
     quizCount: 0,
@@ -412,6 +436,7 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     selectedMeaning: "공감, 감정이입",
     allMeanings: ["공감", "감정이입", "이해"],
     contextSentence: "Deep empathy enables leaders to understand diverse perspectives and build genuine psychological safety.",
+    sentenceTranslation: "깊은 공감은 리더가 다양한 관점을 이해하고 진정한 심리적 안정감을 구축할 수 있도록 합니다.",
     sourceMemo: "하버드 비즈니스 리뷰",
     bookTitle: "스마트 스타터: 교양 원서 필수 단어",
     quizCount: 0,
@@ -428,6 +453,7 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     selectedMeaning: "진정한, 진짜의, 신뢰할 수 있는",
     allMeanings: ["진정한", "진짜의", "신뢰할 수 있는"],
     contextSentence: "Building an authentic brand requires transparent communication and unwavering consistency in values.",
+    sentenceTranslation: "진정성 있는 브랜드를 구축하려면 투명한 소통과 흔들림 없는 가치 일관성이 필요합니다.",
     sourceMemo: "브랜드 전략 에세이",
     bookTitle: "스마트 스타터: 교양 원서 필수 단어",
     quizCount: 0,
@@ -444,6 +470,7 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     selectedMeaning: "명쾌한, 명료한, 맑은",
     allMeanings: ["명쾌한, 명료한", "맑은", "의식이 또렷한"],
     contextSentence: "The author provided a lucid explanation of complex economic forces, making the concept accessible to general readers.",
+    sentenceTranslation: "저자는 복잡한 경제적 힘에 대해 명쾌하게 설명하여 일반 독자들도 쉽게 이해할 수 있게 했습니다.",
     sourceMemo: "이코노미스트 서평",
     bookTitle: "스마트 스타터: 교양 원서 필수 단어",
     quizCount: 0,
@@ -460,6 +487,7 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     selectedMeaning: "깊은, 심오한, 엄청난",
     allMeanings: ["심오한", "깊은", "엄청난"],
     contextSentence: "Reading timeless literature often leaves a profound and lasting impression on how we understand human nature.",
+    sentenceTranslation: "시대를 초월한 고전을 읽는 것은 인간 본성을 이해하는 방식에 깊고 오래 지속되는 인상을 남깁니다.",
     sourceMemo: "타임지 문학 에세이",
     bookTitle: "스마트 스타터: 교양 원서 필수 단어",
     quizCount: 0,
@@ -476,6 +504,7 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     selectedMeaning: "미묘한, 섬세한, 절묘한",
     allMeanings: ["미묘한", "섬세한", "감지하기 힘든"],
     contextSentence: "Experienced negotiators pay close attention to subtle shifts in vocal tone and non-verbal cues.",
+    sentenceTranslation: "숙련된 협상가는 목소리 톤의 미묘한 변화와 비언어적 신호에 세심한 주의를 기울입니다.",
     sourceMemo: "협상의 심리학",
     bookTitle: "스마트 스타터: 교양 원서 필수 단어",
     quizCount: 0,
@@ -492,6 +521,7 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     selectedMeaning: "다재다능한, 다용도의",
     allMeanings: ["다재다능한", "다용도의", "변화무쌍한"],
     contextSentence: "Python is renowned as a versatile programming language suitable for web development, automation, and machine learning.",
+    sentenceTranslation: "파이썬은 웹 개발, 자동화, 머신러닝에 적합한 다재다능한 프로그래밍 언어로 널리 알려져 있습니다.",
     sourceMemo: "소프트웨어 엔지니어링 저널",
     bookTitle: "스마트 스타터: 교양 원서 필수 단어",
     quizCount: 0,
@@ -559,6 +589,7 @@ export async function fetchVocabulary(targetUser?: User | null): Promise<VocabIt
           selectedMeaning: row.selected_meaning,
           allMeanings: row.all_meanings || [],
           contextSentence: row.context_sentence || '',
+          sentenceTranslation: row.sentence_translation || '',
           candidateSentences: row.candidate_sentences || [],
           sourceMemo: row.source_memo || '',
           bookTitle: row.book_title || row.source_memo || '기본 단어장',
@@ -615,6 +646,15 @@ export async function fetchVocabulary(targetUser?: User | null): Promise<VocabIt
               localStorage.setItem(storageKey, JSON.stringify(INITIAL_SAMPLES));
               return INITIAL_SAMPLES;
             }
+            // 기존 캐시된 샘플 단어들의 sentenceTranslation 누락 시 INITIAL_SAMPLES 기준으로 자동 보강
+            cleaned.forEach((item: any) => {
+              if (!item.sentenceTranslation && item.id?.startsWith('sample_')) {
+                const sample = INITIAL_SAMPLES.find((s) => s.id === item.id);
+                if (sample?.sentenceTranslation) {
+                  item.sentenceTranslation = sample.sentenceTranslation;
+                }
+              }
+            });
             if (cleaned.length !== parsed.length) {
               localStorage.setItem(storageKey, JSON.stringify(cleaned));
             }
@@ -677,7 +717,7 @@ export async function addVocabularyItem(item: VocabItem, userId?: string): Promi
   // Supabase 동기화 (로그인된 사용자가 있을 때만 실행)
   if (checkIsSupabaseConfigured() && supabase && userId) {
     try {
-      const { error } = await supabase.from('vocab_words').insert({
+      const insertPayload: any = {
         id: normalizedItem.id,
         user_id: userId,
         word: normalizedItem.word,
@@ -686,6 +726,7 @@ export async function addVocabularyItem(item: VocabItem, userId?: string): Promi
         selected_meaning: normalizedItem.selectedMeaning,
         all_meanings: normalizedItem.allMeanings || [],
         context_sentence: normalizedItem.contextSentence,
+        sentence_translation: normalizedItem.sentenceTranslation || null,
         candidate_sentences: normalizedItem.candidateSentences || [],
         source_memo: normalizedItem.sourceMemo,
         book_title: normalizedItem.bookTitle,
@@ -694,9 +735,16 @@ export async function addVocabularyItem(item: VocabItem, userId?: string): Promi
         wrong_count: normalizedItem.wrongCount,
         consecutive_correct: normalizedItem.consecutiveCorrect,
         last_quiz_date: normalizedItem.lastQuizDate || null,
-      });
+      };
+
+      const { error } = await supabase.from('vocab_words').insert(insertPayload);
       if (error) {
-        console.warn('Supabase insert error:', error);
+        if (error.message?.includes('sentence_translation')) {
+          delete insertPayload.sentence_translation;
+          await supabase.from('vocab_words').insert(insertPayload);
+        } else {
+          console.warn('Supabase insert error:', error);
+        }
       }
     } catch (err) {
       console.warn('Supabase insert exception:', err);
@@ -776,6 +824,7 @@ export async function saveOrMergeVocabularyItem(
     const mergedItem: VocabItem = {
       ...existingItem,
       contextSentence: newContext || existingItem.contextSentence, // 최신 등록 문장을 대표 문장으로
+      sentenceTranslation: item.sentenceTranslation || existingItem.sentenceTranslation,
       candidateSentences: mergedSentences,
       sourceMemo: mergedMemo,
       allMeanings: mergedMeanings,
@@ -793,19 +842,29 @@ export async function saveOrMergeVocabularyItem(
     // Supabase 업데이트 (로그인된 사용자가 있을 때만 실행)
     if (checkIsSupabaseConfigured() && supabase && userId) {
       try {
-        await supabase
+        const updatePayload: any = {
+          context_sentence: mergedItem.contextSentence,
+          sentence_translation: mergedItem.sentenceTranslation || null,
+          candidate_sentences: mergedItem.candidateSentences,
+          source_memo: mergedItem.sourceMemo,
+          all_meanings: mergedItem.allMeanings,
+          selected_meaning: mergedItem.selectedMeaning,
+          part_of_speech: mergedItem.partOfSpeech,
+          book_title: mergedItem.bookTitle,
+        };
+        const { error } = await supabase
           .from('vocab_words')
-          .update({
-            context_sentence: mergedItem.contextSentence,
-            candidate_sentences: mergedItem.candidateSentences,
-            source_memo: mergedItem.sourceMemo,
-            all_meanings: mergedItem.allMeanings,
-            selected_meaning: mergedItem.selectedMeaning,
-            part_of_speech: mergedItem.partOfSpeech,
-            book_title: mergedItem.bookTitle,
-          })
+          .update(updatePayload)
           .eq('id', mergedItem.id)
           .eq('user_id', userId);
+        if (error && error.message?.includes('sentence_translation')) {
+          delete updatePayload.sentence_translation;
+          await supabase
+            .from('vocab_words')
+            .update(updatePayload)
+            .eq('id', mergedItem.id)
+            .eq('user_id', userId);
+        }
       } catch (err) {
         console.warn('Supabase merge exception:', err);
       }
@@ -922,6 +981,50 @@ export async function updateVocabularyContext(
         .eq('user_id', userId);
     } catch (e) {
       console.warn('Supabase update context exception:', e);
+    }
+  }
+
+  return true;
+}
+
+/**
+ * 문맥 문장의 한글 해석을 업데이트합니다.
+ */
+export async function updateVocabularySentenceTranslation(
+  id: string,
+  translation: string,
+  userId?: string
+): Promise<boolean> {
+  const storageKey = getUserStorageKey(userId);
+
+  if (typeof window !== 'undefined') {
+    const local = localStorage.getItem(storageKey);
+    if (local) {
+      try {
+        const current: VocabItem[] = JSON.parse(local);
+        const updated = current.map((item) => {
+          if (item.id === id) {
+            return { ...item, sentenceTranslation: translation };
+          }
+          return item;
+        });
+        localStorage.setItem(storageKey, JSON.stringify(updated));
+      } catch {}
+    }
+  }
+
+  if (checkIsSupabaseConfigured() && supabase && userId) {
+    try {
+      const { error } = await supabase
+        .from('vocab_words')
+        .update({ sentence_translation: translation })
+        .eq('id', id)
+        .eq('user_id', userId);
+      if (error) {
+        console.warn('Supabase update sentence_translation error:', error);
+      }
+    } catch (e) {
+      console.warn('Supabase update sentence_translation exception:', e);
     }
   }
 
@@ -1103,6 +1206,7 @@ export async function syncGuestWordsToUser(userId: string): Promise<number> {
       selected_meaning: w.selectedMeaning,
       all_meanings: w.allMeanings || [],
       context_sentence: w.contextSentence,
+      sentence_translation: w.sentenceTranslation || null,
       candidate_sentences: w.candidateSentences || [],
       source_memo: w.sourceMemo,
       book_title: w.bookTitle || '기본 단어장',
@@ -1143,6 +1247,7 @@ export async function loadSamplesForUser(userId: string): Promise<VocabItem[]> {
     selected_meaning: sample.selectedMeaning,
     all_meanings: sample.allMeanings || [],
     context_sentence: sample.contextSentence,
+    sentence_translation: sample.sentenceTranslation || null,
     candidate_sentences: [sample.contextSentence],
     source_memo: sample.sourceMemo,
     book_title: sample.bookTitle,
@@ -1174,6 +1279,7 @@ export async function loadSamplesForUser(userId: string): Promise<VocabItem[]> {
     selectedMeaning: row.selected_meaning,
     allMeanings: row.all_meanings,
     contextSentence: row.context_sentence,
+    sentenceTranslation: row.sentence_translation || '',
     candidateSentences: row.candidate_sentences,
     sourceMemo: row.source_memo,
     bookTitle: row.book_title,

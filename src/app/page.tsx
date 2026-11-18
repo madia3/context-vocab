@@ -10,6 +10,7 @@ import {
   moveWordsToAnotherBook,
   deleteWordsByBook,
   updateVocabularyContext,
+  updateVocabularySentenceTranslation,
   updateQuizStat,
   resetWithSamples,
   clearAllVocab,
@@ -97,6 +98,7 @@ import {
   X,
   LogIn,
   SlidersHorizontal,
+  Languages,
 } from 'lucide-react';
 import { compressAvatarImage } from '@/lib/imageCompress';
 import {
@@ -165,6 +167,7 @@ interface WordEntryItem {
   id: string;
   word: string;
   context: string;
+  sentenceTranslation?: string;
   sourceMemo: string;
   dictResult: DictSearchResult | null;
   selectedMeaning: string;
@@ -182,6 +185,7 @@ function createWordEntryItem(init?: Partial<WordEntryItem>): WordEntryItem {
     id: `entry_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
     word: '',
     context: '',
+    sentenceTranslation: '',
     sourceMemo: '',
     dictResult: null,
     selectedMeaning: '',
@@ -357,9 +361,17 @@ export default function Home() {
   const [isQuizFinished, setIsQuizFinished] = useState(false);
   // 단어 목록 카드별 문장 번갈아 보기 인덱스 (단어 ID -> 현재 보고 있는 문장 인덱스)
   const [listCardSentenceIdx, setListCardSentenceIdx] = useState<Record<string, number>>({});
+  // 단어 목록 카드별 문장 한글 해석 펼침 여부 (단어 ID -> boolean)
+  const [showListSentenceTransMap, setShowListSentenceTransMap] = useState<Record<string, boolean>>({});
   // 퀴즈 복습 시 번갈아 가며 출제되는 현재 문맥 문장
   const [quizSentenceIdx, setQuizSentenceIdx] = useState<number>(0);
   const [quizActiveSentence, setQuizActiveSentence] = useState<string>('');
+  // 퀴즈 원문 문맥의 한글 해석 펼침 여부 (기본값 false, 새 문제 풀이 시 false로 자동 리셋)
+  const [showQuizSentenceTranslation, setShowQuizSentenceTranslation] = useState<boolean>(false);
+  // 단어 등록 시 문장 자동 번역 중인 entry id
+  const [translatingSentenceId, setTranslatingSentenceId] = useState<string | null>(null);
+  // 단어 목록/퀴즈에서 AI 문장 번역 중인 item id
+  const [translatingListItemId, setTranslatingListItemId] = useState<string | null>(null);
 
   // User Authentication & Supabase Cloud State
   const [currentUser, setCurrentUser] = useState<User | null>(null);
@@ -1827,6 +1839,7 @@ export default function Home() {
           selectedMeaning: entry.selectedMeaning,
           allMeanings: entry.dictResult ? entry.dictResult.meanings.map((m) => m.def) : [entry.selectedMeaning],
           contextSentence: matchedContext,
+          sentenceTranslation: entry.sentenceTranslation?.trim() || undefined,
           candidateSentences: finalCandidates,
           sourceMemo: entry.sourceMemo.trim() || (loadedWebTitle ? loadedWebTitle : '원서 메모'),
           bookTitle: bookToSave,
@@ -1911,6 +1924,7 @@ export default function Home() {
       selectedMeaning: selectedDef,
       allMeanings: entry.dictResult ? entry.dictResult.meanings.map((m) => m.def) : [selectedDef],
       contextSentence: matchedContext,
+      sentenceTranslation: entry.sentenceTranslation?.trim() || undefined,
       candidateSentences: finalCandidates,
       sourceMemo: entry.sourceMemo.trim() || (loadedWebTitle ? loadedWebTitle : '원서 메모'),
       bookTitle: bookToSave,
@@ -1959,6 +1973,92 @@ export default function Home() {
     if (!confirm('이 단어를 단어장에서 삭제할까요?')) return;
     await deleteVocabularyItem(id, currentUser?.id);
     await loadData(currentUser);
+  }
+
+  // 문장 한글 자동 번역 (단어 등록 탭)
+  async function handleTranslateContextSentence(entryId: string, sentence: string) {
+    const textToTranslate = sentence.trim();
+    if (!textToTranslate) return;
+
+    setTranslatingSentenceId(entryId);
+    try {
+      const res = await fetch('/api/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: textToTranslate }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.translation) {
+          updateWordEntry(entryId, { sentenceTranslation: data.translation });
+        }
+      } else {
+        alert('문장 번역을 가져오지 못했습니다. 잠시 후 다시 시도해 주세요.');
+      }
+    } catch (e) {
+      console.warn('Translate error:', e);
+    } finally {
+      setTranslatingSentenceId(null);
+    }
+  }
+
+  // 단어장 목록에서 원문 문장 AI 자동 번역 및 저장
+  async function handleAutoTranslateAndSaveListItem(itemId: string, sentence: string) {
+    const textToTranslate = sentence.trim();
+    if (!textToTranslate) return;
+
+    setTranslatingListItemId(itemId);
+    try {
+      const res = await fetch('/api/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: textToTranslate }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.translation) {
+          await updateVocabularySentenceTranslation(itemId, data.translation, currentUser?.id);
+          setVocabulary((prev) =>
+            prev.map((v) => (v.id === itemId ? { ...v, sentenceTranslation: data.translation } : v))
+          );
+        }
+      }
+    } catch (e) {
+      console.warn('Auto translate item error:', e);
+    } finally {
+      setTranslatingListItemId(null);
+    }
+  }
+
+  // 퀴즈 화면에서 원문 문장 AI 자동 번역 및 저장
+  async function handleAutoTranslateQuizItem(itemId: string, sentence: string) {
+    const textToTranslate = sentence.trim();
+    if (!textToTranslate) return;
+
+    setTranslatingListItemId(itemId);
+    try {
+      const res = await fetch('/api/translate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text: textToTranslate }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.translation) {
+          await updateVocabularySentenceTranslation(itemId, data.translation, currentUser?.id);
+          setVocabulary((prev) =>
+            prev.map((v) => (v.id === itemId ? { ...v, sentenceTranslation: data.translation } : v))
+          );
+          setQuizList((prev) =>
+            prev.map((v) => (v.id === itemId ? { ...v, sentenceTranslation: data.translation } : v))
+          );
+        }
+      }
+    } catch (e) {
+      console.warn('Auto translate quiz item error:', e);
+    } finally {
+      setTranslatingListItemId(null);
+    }
   }
 
   // Open Delete Book Modal
@@ -2206,6 +2306,7 @@ export default function Home() {
     }
     const current = list[index];
     setQuizAnswerState({ answered: false, chosen: '', isCorrect: false });
+    setShowQuizSentenceTranslation(false);
 
     // 단어에 수집된 문장들 중 무작위/번갈아 가며 출제 문맥으로 선정
     const allSentences = (
@@ -3614,6 +3715,34 @@ export default function Home() {
                             />
                           </div>
 
+                          {/* 문장 한글 해석 (선택) */}
+                          <div>
+                            <div className="flex items-center justify-between mb-1">
+                              <label className="block text-xs font-bold text-slate-700">
+                                문장 한글 해석 <span className="text-slate-400 font-normal">(선택)</span>
+                              </label>
+                              {entry.context?.trim() && (
+                                <button
+                                  type="button"
+                                  onClick={() => handleTranslateContextSentence(entry.id, entry.context)}
+                                  disabled={translatingSentenceId === entry.id}
+                                  className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                  title="원문 문장을 자연스러운 한국어로 자동 번역합니다"
+                                >
+                                  <Sparkles className="w-2.5 h-2.5" />
+                                  <span>{translatingSentenceId === entry.id ? '번역 중...' : 'AI 자동 번역'}</span>
+                                </button>
+                              )}
+                            </div>
+                            <input
+                              type="text"
+                              value={entry.sentenceTranslation || ''}
+                              onChange={(e) => updateWordEntry(entry.id, { sentenceTranslation: e.target.value })}
+                              placeholder="예: 온 나라를 뒤흔든 형언할 수 없는 비극이었다. (단어장/퀴즈에서 클릭 시 표시)"
+                              className="w-full px-3 py-1.5 text-xs bg-white text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                            />
+                          </div>
+
                           {/* 상세 메모 */}
                           <div>
                             <label className="block text-xs font-bold text-slate-700 mb-1">
@@ -4103,9 +4232,60 @@ export default function Home() {
                                   <span>문장 듣기</span>
                                 </button>
                               </div>
-                              <p className="text-xs text-slate-700 leading-relaxed font-serif">
-                                {renderHighlightedContext(viewingSentence, item.word)}
-                              </p>
+                              {/* 원문 문맥 (클릭 시 한글 해석 토글) */}
+                              <div
+                                onClick={() => {
+                                  setShowListSentenceTransMap((prev) => ({
+                                    ...prev,
+                                    [item.id]: !prev[item.id],
+                                  }));
+                                }}
+                                className="cursor-pointer group/trans p-2 -mx-1 rounded-xl hover:bg-slate-100/90 transition select-text"
+                                title="문장을 클릭하면 한글 해석을 볼 수 있습니다"
+                              >
+                                <p className="text-xs text-slate-700 leading-relaxed font-serif">
+                                  {renderHighlightedContext(viewingSentence, item.word)}
+                                </p>
+                                <div className="mt-1.5 flex items-center gap-1 text-[10px] text-indigo-600 font-semibold select-none">
+                                  <Languages className="w-3 h-3" />
+                                  <span>
+                                    {showListSentenceTransMap[item.id] ? '한글 해석 접기 ▴' : '클릭하여 한글 해석 보기 ▾'}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* 한글 해석 (클릭 시 펼침) */}
+                              {showListSentenceTransMap[item.id] && (
+                                <div className="p-2.5 bg-white border border-indigo-100 rounded-xl text-xs text-slate-800 leading-relaxed shadow-2xs animate-fade-in font-sans">
+                                  <div className="flex items-center justify-between gap-1 mb-1">
+                                    <span className="text-[10px] font-bold text-indigo-900 flex items-center gap-1">
+                                      <Languages className="w-3 h-3 text-indigo-600" />
+                                      <span>한글 해석</span>
+                                    </span>
+                                    {!item.sentenceTranslation && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleAutoTranslateAndSaveListItem(item.id, viewingSentence);
+                                        }}
+                                        disabled={translatingListItemId === item.id}
+                                        className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                      >
+                                        <Sparkles className="w-2.5 h-2.5" />
+                                        <span>{translatingListItemId === item.id ? '번역 중...' : 'AI 자동 번역'}</span>
+                                      </button>
+                                    )}
+                                  </div>
+                                  {item.sentenceTranslation ? (
+                                    <p className="text-slate-800">{item.sentenceTranslation}</p>
+                                  ) : (
+                                    <p className="text-slate-400 text-[11px] italic">
+                                      등록된 한글 해석이 없습니다. 상단 [AI 자동 번역]을 누르면 즉시 번역됩니다.
+                                    </p>
+                                  )}
+                                </div>
+                              )}
 
                               {/* 전체 수집된 문맥 목록 (접이식) */}
                               {allSentences.length > 1 && (
@@ -4398,9 +4578,55 @@ export default function Home() {
                                   </button>
                                 </div>
                               </div>
-                              <p className="text-base text-slate-800 leading-relaxed font-serif pt-1">
-                                {renderHighlightedContext(activeSentence, currentQuizItem.word)}
-                              </p>
+                              {/* 클릭 가능한 원문 문장 영역 */}
+                              <div
+                                onClick={() => setShowQuizSentenceTranslation((prev) => !prev)}
+                                className="cursor-pointer group/quiz-trans p-3 -mx-2 rounded-xl hover:bg-amber-100/70 transition select-text"
+                                title="문장을 클릭하면 한글 해석을 볼 수 있습니다"
+                              >
+                                <p className="text-base text-slate-800 leading-relaxed font-serif pt-1">
+                                  {renderHighlightedContext(activeSentence, currentQuizItem.word)}
+                                </p>
+                                <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-800 font-semibold select-none">
+                                  <Languages className="w-3.5 h-3.5" />
+                                  <span>
+                                    {showQuizSentenceTranslation ? '한글 해석 접기 ▴' : '클릭하여 한글 해석 보기 ▾'}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {/* 펼쳐지는 한글 해석 카드 */}
+                              {showQuizSentenceTranslation && (
+                                <div className="p-3.5 bg-white/95 border border-amber-200/90 rounded-xl text-xs sm:text-sm text-slate-800 leading-relaxed shadow-xs animate-fade-in font-sans">
+                                  <div className="flex items-center justify-between gap-1 mb-1">
+                                    <span className="text-xs font-bold text-amber-950 flex items-center gap-1.5">
+                                      <Languages className="w-3.5 h-3.5 text-amber-700" />
+                                      <span>한글 해석</span>
+                                    </span>
+                                    {!currentQuizItem.sentenceTranslation && (
+                                      <button
+                                        type="button"
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleAutoTranslateQuizItem(currentQuizItem.id, activeSentence);
+                                        }}
+                                        disabled={translatingListItemId === currentQuizItem.id}
+                                        className="text-[10px] text-amber-800 hover:text-amber-950 font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                                      >
+                                        <Sparkles className="w-2.5 h-2.5" />
+                                        <span>{translatingListItemId === currentQuizItem.id ? '번역 중...' : 'AI 자동 번역'}</span>
+                                      </button>
+                                    )}
+                                  </div>
+                                  {currentQuizItem.sentenceTranslation ? (
+                                    <p className="text-slate-800 font-medium">{currentQuizItem.sentenceTranslation}</p>
+                                  ) : (
+                                    <p className="text-slate-400 text-xs italic">
+                                      등록된 한글 해석이 없습니다. 상단 [AI 자동 번역]을 누르면 즉시 번역됩니다.
+                                    </p>
+                                  )}
+                                </div>
+                              )}
                               <div className="flex items-center justify-between pt-2 border-t border-amber-200/60 text-xs text-slate-500">
                                 <span>출처: {currentQuizItem.sourceMemo || '원서'}</span>
                                 <button

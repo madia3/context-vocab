@@ -266,6 +266,7 @@ CREATE TABLE IF NOT EXISTS public.vocab_words (
     selected_meaning TEXT NOT NULL,
     all_meanings JSONB DEFAULT '[]'::jsonb,
     context_sentence TEXT,
+    sentence_translation TEXT,
     candidate_sentences JSONB DEFAULT '[]'::jsonb,
     source_memo TEXT,
     book_title TEXT,
@@ -279,6 +280,7 @@ CREATE TABLE IF NOT EXISTS public.vocab_words (
 
 -- 2. 기존 테이블이 있는 경우 누락된 컬럼 추가 (안전 실행)
 ALTER TABLE public.vocab_words ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
+ALTER TABLE public.vocab_words ADD COLUMN IF NOT EXISTS sentence_translation TEXT;
 ALTER TABLE public.vocab_words ADD COLUMN IF NOT EXISTS wrong_count INT DEFAULT 0;
 ALTER TABLE public.vocab_words ADD COLUMN IF NOT EXISTS consecutive_correct INT DEFAULT 0;
 ALTER TABLE public.vocab_words ADD COLUMN IF NOT EXISTS last_quiz_date TEXT;
