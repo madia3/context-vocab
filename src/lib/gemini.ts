@@ -300,7 +300,7 @@ export async function extractTextWithAI(
         'Content-Type': 'application/json',
         ...(apiKey ? { 'x-gemini-key': apiKey } : {}),
       },
-      signal: AbortSignal.timeout(11000),
+      signal: AbortSignal.timeout(15000),
       body: JSON.stringify({
         base64: primary.base64,
         mimeType: primary.mimeType,
