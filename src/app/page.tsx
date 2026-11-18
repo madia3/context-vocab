@@ -223,12 +223,33 @@ export default function Home() {
   // Multi-Word Form State: 한 번에 여러 단어를 추가/등록할 수 있는 단어 등록칸 목록
   const [wordEntries, setWordEntries] = useState<WordEntryItem[]>([createWordEntryItem()]);
   const [inputBookTitle, setInputBookTitle] = useState('원서 첫걸음: 어린 왕자');
+  // 단어 등록 시 복수 단어장 동시 저장 지원
+  const [selectedTargetBooks, setSelectedTargetBooks] = useState<string[]>(['원서 첫걸음: 어린 왕자']);
   const [isCustomBook, setIsCustomBook] = useState(false);
   const [customBookInput, setCustomBookInput] = useState('');
   // 단어장별 최근 사용 시각(타임스탬프) 기록
   const [bookUsageMap, setBookUsageMap] = useState<Record<string, number>>({});
   // 단어 목록 랜덤 순서 재배치를 위한 셔플 키
   const [shuffleKey, setShuffleKey] = useState(0);
+
+  // 단어 등록 시 단어장 선택 토글 (복수 단어장 선택 지원)
+  function handleToggleTargetBook(bookTitle: string) {
+    const trimmed = bookTitle.trim();
+    if (!trimmed) return;
+    setSelectedTargetBooks((prev) => {
+      let next: string[];
+      if (prev.includes(trimmed)) {
+        if (prev.length <= 1) return prev; // 최소 1개는 유지
+        next = prev.filter((b) => b !== trimmed);
+      } else {
+        next = [...prev, trimmed];
+      }
+      if (next.length > 0 && next[0] !== inputBookTitle) {
+        handleSwitchBook(next[0]);
+      }
+      return next;
+    });
+  }
 
   function touchBookUsage(bookTitle: string) {
     if (!bookTitle || bookTitle === '__custom__') return;
@@ -260,6 +281,10 @@ export default function Home() {
 
     // 2) 신규 단어장 설정 및 recency 갱신
     setInputBookTitle(trimmedNext);
+    setSelectedTargetBooks((prev) => {
+      if (prev.includes(trimmedNext)) return prev;
+      return [trimmedNext, ...prev];
+    });
     touchBookUsage(trimmedNext);
 
     // 3) 신규 단어장의 보관된 사진(최대 2장) 및 텍스트 복원
@@ -349,6 +374,55 @@ export default function Home() {
   const [selectedBookFilters, setSelectedBookFilters] = useState<string[]>(['all']);
   const [isBookSelectorOpen, setIsBookSelectorOpen] = useState<boolean>(false);
   const bookSelectorRef = useRef<HTMLDivElement>(null);
+
+  // Touch Swipe Gesture between 3 Main Tabs (단어등록 <-> 단어장 <-> 5지선다)
+  const touchStartXRef = useRef<number | null>(null);
+  const touchStartYRef = useRef<number | null>(null);
+  const touchStartTimeRef = useRef<number>(0);
+
+  const handleTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length !== 1) return;
+    touchStartXRef.current = e.touches[0].clientX;
+    touchStartYRef.current = e.touches[0].clientY;
+    touchStartTimeRef.current = Date.now();
+  };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartXRef.current === null || touchStartYRef.current === null) return;
+    const deltaX = e.changedTouches[0].clientX - touchStartXRef.current;
+    const deltaY = e.changedTouches[0].clientY - touchStartYRef.current;
+    const elapsed = Date.now() - touchStartTimeRef.current;
+    touchStartXRef.current = null;
+    touchStartYRef.current = null;
+
+    const target = e.target as HTMLElement | null;
+    if (target?.closest('input, textarea, select, button, [data-no-swipe="true"], .overflow-x-auto, [role="slider"]')) {
+      return;
+    }
+
+    if (Math.abs(deltaY) > Math.abs(deltaX) * 0.8) return;
+    if (Math.abs(deltaX) < 45 || elapsed > 800) return;
+
+    if (deltaX < -45) {
+      // Swiped Left -> Next tab
+      if (activeTab === 'add') {
+        setActiveTab('list');
+      } else if (activeTab === 'list') {
+        if (quizList.length > 0 && !isQuizFinished) {
+          setActiveTab('quiz');
+        } else {
+          startQuiz();
+        }
+      }
+    } else if (deltaX > 45) {
+      // Swiped Right -> Previous tab
+      if (activeTab === 'quiz') {
+        setActiveTab('list');
+      } else if (activeTab === 'list') {
+        setActiveTab('add');
+      }
+    }
+  };
 
   // 문장 듣기 (연속 낭독) 상태
   const [isListeningSentences, setIsListeningSentences] = useState<boolean>(false);
@@ -1854,45 +1928,50 @@ export default function Home() {
       return;
     }
 
-    const bookToSave = inputBookTitle.trim() || '기본 단어장';
+    const targetBooks =
+      selectedTargetBooks.length > 0
+        ? selectedTargetBooks
+        : [inputBookTitle.trim() || '기본 단어장'];
 
     await Promise.all(
-      validEntries.map((entry, idx) => {
-        const finalWord = entry.dictResult?.word || entry.word.trim();
-        const matchedContext =
-          entry.context.trim() || `This sentence illustrates the word ${finalWord}.`;
-        const finalCandidates =
-          entry.candidateSentences.length > 0
-            ? Array.from(new Set([matchedContext, ...entry.candidateSentences]))
-            : [matchedContext];
+      targetBooks.flatMap((bookToSave) =>
+        validEntries.map((entry, idx) => {
+          const finalWord = entry.dictResult?.word || entry.word.trim();
+          const matchedContext =
+            entry.context.trim() || `This sentence illustrates the word ${finalWord}.`;
+          const finalCandidates =
+            entry.candidateSentences.length > 0
+              ? Array.from(new Set([matchedContext, ...entry.candidateSentences]))
+              : [matchedContext];
 
-        const newItem: VocabItem = {
-          id: `${currentUser?.id ? currentUser.id + '_' : ''}vocab_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}`,
-          word: finalWord,
-          phonetic: entry.dictResult?.phonetic || '',
-          partOfSpeech: entry.selectedPos || '단어',
-          selectedMeaning: entry.selectedMeaning,
-          allMeanings: entry.dictResult ? entry.dictResult.meanings.map((m) => m.def) : [entry.selectedMeaning],
-          contextSentence: matchedContext,
-          sentenceTranslation: entry.sentenceTranslation?.trim() || undefined,
-          candidateSentences: finalCandidates,
-          sourceMemo: entry.sourceMemo.trim() || (loadedWebTitle ? loadedWebTitle : '원서 메모'),
-          bookTitle: bookToSave,
-          quizCount: 0,
-          correctCount: 0,
-          wrongCount: 0,
-          consecutiveCorrect: 0,
-          date: new Date().toISOString().slice(0, 10),
-          user_id: currentUser?.id,
-        };
+          const newItem: VocabItem = {
+            id: `${currentUser?.id ? currentUser.id + '_' : ''}vocab_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}`,
+            word: finalWord,
+            phonetic: entry.dictResult?.phonetic || '',
+            partOfSpeech: entry.selectedPos || '단어',
+            selectedMeaning: entry.selectedMeaning,
+            allMeanings: entry.dictResult ? entry.dictResult.meanings.map((m) => m.def) : [entry.selectedMeaning],
+            contextSentence: matchedContext,
+            sentenceTranslation: entry.sentenceTranslation?.trim() || undefined,
+            candidateSentences: finalCandidates,
+            sourceMemo: entry.sourceMemo.trim() || (loadedWebTitle ? loadedWebTitle : '원서 메모'),
+            bookTitle: bookToSave,
+            quizCount: 0,
+            correctCount: 0,
+            wrongCount: 0,
+            consecutiveCorrect: 0,
+            date: new Date().toISOString().slice(0, 10),
+            user_id: currentUser?.id,
+          };
 
-        return saveOrMergeVocabularyItem(newItem, currentUser?.id);
-      })
+          return saveOrMergeVocabularyItem(newItem, currentUser?.id);
+        })
+      )
     );
 
     await loadData(currentUser);
 
-    touchBookUsage(bookToSave);
+    targetBooks.forEach((b) => touchBookUsage(b));
 
     // Reset Form to 1 empty entry, but keep pageOcrText and loaded sources!
     setWordEntries([createWordEntryItem()]);
@@ -1904,11 +1983,16 @@ export default function Home() {
       fireConfetti({ particleCount: 90, spread: 75, origin: { x: 0.65, y: 0.55 } });
     }, 200);
 
+    const bookSummary =
+      targetBooks.length > 1
+        ? `${targetBooks[0]} 외 ${targetBooks.length - 1}개 (${targetBooks.length}개 단어장 동시 저장)`
+        : targetBooks[0];
+
     triggerToast(
       validEntries.length > 1
         ? `${validEntries.length}개 단어 저장/문맥 추가 완료! 🎉`
         : `'${validEntries[0].word}' 저장/문맥 추가 완료! 🎉`,
-      `[${bookToSave}] 단어장에 반영되었습니다. 이미 등록된 단어는 새로운 원문 문장이 차곡차곡 누적됩니다.`
+      `[${bookSummary}] 단어장에 반영되었습니다. 이미 등록된 단어는 새로운 원문 문장이 차곡차곡 누적됩니다.`
     );
   }
 
@@ -1943,7 +2027,11 @@ export default function Home() {
       }
     }
 
-    const bookToSave = inputBookTitle.trim() || '기본 단어장';
+    const targetBooks =
+      selectedTargetBooks.length > 0
+        ? selectedTargetBooks
+        : [inputBookTitle.trim() || '기본 단어장'];
+
     const matchedContext =
       entry.context.trim() || `This sentence illustrates the word ${finalWord}.`;
     const finalCandidates =
@@ -1951,29 +2039,37 @@ export default function Home() {
         ? Array.from(new Set([matchedContext, ...entry.candidateSentences]))
         : [matchedContext];
 
-    const newItem: VocabItem = {
-      id: `${currentUser?.id ? currentUser.id + '_' : ''}vocab_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-      word: finalWord,
-      phonetic: entry.dictResult?.phonetic || '',
-      partOfSpeech: selectedPos || '단어',
-      selectedMeaning: selectedDef,
-      allMeanings: entry.dictResult ? entry.dictResult.meanings.map((m) => m.def) : [selectedDef],
-      contextSentence: matchedContext,
-      sentenceTranslation: entry.sentenceTranslation?.trim() || undefined,
-      candidateSentences: finalCandidates,
-      sourceMemo: entry.sourceMemo.trim() || (loadedWebTitle ? loadedWebTitle : '원서 메모'),
-      bookTitle: bookToSave,
-      quizCount: 0,
-      correctCount: 0,
-      wrongCount: 0,
-      consecutiveCorrect: 0,
-      date: new Date().toISOString().slice(0, 10),
-      user_id: currentUser?.id,
-    };
+    let anyMerged = false;
+    let totalSentencesCount = 1;
 
-    const saveResult = await saveOrMergeVocabularyItem(newItem, currentUser?.id);
+    for (const bookToSave of targetBooks) {
+      const newItem: VocabItem = {
+        id: `${currentUser?.id ? currentUser.id + '_' : ''}vocab_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
+        word: finalWord,
+        phonetic: entry.dictResult?.phonetic || '',
+        partOfSpeech: selectedPos || '단어',
+        selectedMeaning: selectedDef,
+        allMeanings: entry.dictResult ? entry.dictResult.meanings.map((m) => m.def) : [selectedDef],
+        contextSentence: matchedContext,
+        sentenceTranslation: entry.sentenceTranslation?.trim() || undefined,
+        candidateSentences: finalCandidates,
+        sourceMemo: entry.sourceMemo.trim() || (loadedWebTitle ? loadedWebTitle : '원서 메모'),
+        bookTitle: bookToSave,
+        quizCount: 0,
+        correctCount: 0,
+        wrongCount: 0,
+        consecutiveCorrect: 0,
+        date: new Date().toISOString().slice(0, 10),
+        user_id: currentUser?.id,
+      };
+
+      const saveResult = await saveOrMergeVocabularyItem(newItem, currentUser?.id);
+      if (saveResult.isMerged) anyMerged = true;
+      totalSentencesCount = saveResult.totalSentences;
+      touchBookUsage(bookToSave);
+    }
+
     await loadData(currentUser);
-    touchBookUsage(bookToSave);
 
     // 단어 저장 후 해당 카드 정리:
     // 여러 카드 작성 중인 경우 -> 저장된 카드는 제거
@@ -1985,15 +2081,20 @@ export default function Home() {
     }
 
     fireConfetti({ particleCount: 75, spread: 65, origin: { x: 0.5, y: 0.55 } });
-    if (saveResult.isMerged) {
+    const bookSummary =
+      targetBooks.length > 1
+        ? `${targetBooks[0]} 외 ${targetBooks.length - 1}개 (${targetBooks.length}개 단어장)`
+        : targetBooks[0];
+
+    if (anyMerged) {
       triggerToast(
         `'${finalWord}' 새 문맥 추가 완료! 📚`,
-        `기존 단어장에 새로운 원문 문장이 누적되었습니다. (총 ${saveResult.totalSentences}개 문장 수집됨)`
+        `[${bookSummary}] 단어장에 새로운 원문 문장이 누적되었습니다. (총 ${totalSentencesCount}개 문장 수집됨)`
       );
     } else {
       triggerToast(
         `'${finalWord}' 단어 저장 완료! 🎉`,
-        `[${bookToSave}] 단어장에 성공적으로 추가되었습니다.`
+        `[${bookSummary}] 단어장에 성공적으로 추가되었습니다.`
       );
     }
   }
@@ -3129,14 +3230,21 @@ export default function Home() {
             </div>
           </div>
         </div>
+      </header>
 
-        {/* 3-Tab Bar (Equal 3 Columns, Never Wraps, 100% Mobile Optimized) */}
-        <div className="max-w-5xl mx-auto px-4 pb-2">
-          <nav className="grid grid-cols-3 gap-1 bg-slate-100 p-1 rounded-xl text-center">
+      {/* Main Container (Scroll Area with Touch Swipe between 3 Tabs) */}
+      <main
+        onTouchStart={handleTouchStart}
+        onTouchEnd={handleTouchEnd}
+        className="max-w-5xl mx-auto w-full px-3.5 sm:px-4 py-3 sm:py-4 flex-1 overflow-x-hidden"
+      >
+        {/* 3-Tab Bar (Now in Scroll Area - Scrolls naturally with content & Swipeable) */}
+        <div className="mb-3">
+          <nav className="grid grid-cols-3 gap-1 bg-slate-100/90 border border-slate-200/90 p-1 rounded-2xl text-center shadow-2xs">
             <button
               type="button"
               onClick={() => setActiveTab('add')}
-              className={`py-2 px-1 text-xs rounded-lg transition font-bold flex items-center justify-center gap-1 whitespace-nowrap cursor-pointer ${
+              className={`py-2 px-1 text-xs rounded-xl transition font-bold flex items-center justify-center gap-1 whitespace-nowrap cursor-pointer ${
                 activeTab === 'add'
                   ? 'bg-white text-indigo-600 shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
@@ -3149,7 +3257,7 @@ export default function Home() {
             <button
               type="button"
               onClick={() => setActiveTab('list')}
-              className={`py-2 px-1 text-xs rounded-lg transition font-bold flex items-center justify-center gap-1 whitespace-nowrap cursor-pointer ${
+              className={`py-2 px-1 text-xs rounded-xl transition font-bold flex items-center justify-center gap-1 whitespace-nowrap cursor-pointer ${
                 activeTab === 'list'
                   ? 'bg-white text-indigo-600 shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
@@ -3171,7 +3279,7 @@ export default function Home() {
                   startQuiz();
                 }
               }}
-              className={`py-2 px-1 text-xs rounded-lg transition font-bold flex items-center justify-center gap-1 whitespace-nowrap cursor-pointer ${
+              className={`py-2 px-1 text-xs rounded-xl transition font-bold flex items-center justify-center gap-1 whitespace-nowrap cursor-pointer ${
                 activeTab === 'quiz'
                   ? 'bg-white text-indigo-600 shadow-xs'
                   : 'text-slate-600 hover:text-slate-900'
@@ -3181,11 +3289,26 @@ export default function Home() {
               <span>5지선다 🎯</span>
             </button>
           </nav>
-        </div>
-      </header>
 
-      {/* Main Container */}
-      <main className="max-w-5xl mx-auto w-full px-3.5 sm:px-4 py-3 sm:py-4 flex-1 overflow-x-hidden">
+          {/* Swipe Guide Dots (Mobile Only) */}
+          <div className="flex justify-center items-center gap-1.5 mt-1.5 select-none sm:hidden">
+            <span
+              className={`h-1 rounded-full transition-all duration-200 ${
+                activeTab === 'add' ? 'w-5 bg-indigo-600' : 'w-1.5 bg-slate-300'
+              }`}
+            />
+            <span
+              className={`h-1 rounded-full transition-all duration-200 ${
+                activeTab === 'list' ? 'w-5 bg-indigo-600' : 'w-1.5 bg-slate-300'
+              }`}
+            />
+            <span
+              className={`h-1 rounded-full transition-all duration-200 ${
+                activeTab === 'quiz' ? 'w-5 bg-indigo-600' : 'w-1.5 bg-slate-300'
+              }`}
+            />
+          </div>
+        </div>
 
         {/* ========================================= */}
         {/* TAB 1: ADD WORD & CONTEXT */}
@@ -3193,51 +3316,99 @@ export default function Home() {
         {activeTab === 'add' && (
           <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6 space-y-4">
             <div className="max-w-2xl mx-auto space-y-4">
-                {/* Book Title Selection / Input */}
-                <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200">
-                  <div className="mb-1.5">
-                    <label className="block text-xs font-bold text-slate-700 flex items-center gap-1">
+                {/* Book Title Selection / Input (가로 스크롤 및 다중 단어장 동시 저장 지원) */}
+                <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                       <BookMarked className="w-3.5 h-3.5 text-indigo-600" />
                       <span>저장할 단어장 선택 <span className="text-rose-500">*</span></span>
                     </label>
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">
+                      {selectedTargetBooks.length > 1
+                        ? `${selectedTargetBooks.length}개 단어장 동시 저장`
+                        : '단일 단어장 저장'}
+                    </span>
                   </div>
 
-                  {/* 선택형 드롭다운 */}
-                  <select
-                    value={isCustomBook ? '__custom__' : inputBookTitle}
-                    onChange={(e) => {
-                      if (e.target.value === '__custom__') {
-                        setIsCustomBook(true);
-                      } else {
-                        setIsCustomBook(false);
-                        handleSwitchBook(e.target.value);
-                      }
-                    }}
-                    className="w-full px-3 py-2 text-xs bg-white text-slate-900 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold cursor-pointer"
-                  >
-                    {availableBookTitles.map((title) => (
-                      <option key={title} value={title}>
-                        {title}
-                      </option>
-                    ))}
-                    <option value="__custom__">+ 새 단어장 직접 추가하기...</option>
-                  </select>
+                  {/* 가로 스와이프 가능한 단어장 선택 칩 (다중 선택 지원) */}
+                  <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none" data-no-swipe="true">
+                    {availableBookTitles.map((title) => {
+                      const isSelected = selectedTargetBooks.includes(title);
+                      return (
+                        <button
+                          key={title}
+                          type="button"
+                          onClick={() => handleToggleTargetBook(title)}
+                          className={`px-3 py-1.5 text-xs font-bold rounded-xl transition flex items-center gap-1.5 shrink-0 cursor-pointer shadow-2xs ${
+                            isSelected
+                              ? 'bg-indigo-600 text-white ring-2 ring-indigo-200'
+                              : 'bg-white text-slate-700 border border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                          }`}
+                        >
+                          {isSelected && <Check className="w-3 h-3 stroke-[3]" />}
+                          <span>{title}</span>
+                        </button>
+                      );
+                    })}
 
-                  {/* 새 단어장 직접 입력란 (필요할 때만 펼쳐짐) */}
+                    <button
+                      type="button"
+                      onClick={() => setIsCustomBook(!isCustomBook)}
+                      className={`px-2.5 py-1.5 text-xs font-bold rounded-xl transition flex items-center gap-1 shrink-0 cursor-pointer border ${
+                        isCustomBook
+                          ? 'bg-indigo-50 border-indigo-300 text-indigo-700'
+                          : 'bg-white border-dashed border-slate-300 text-slate-500 hover:text-slate-800 hover:border-slate-400'
+                      }`}
+                    >
+                      <Plus className="w-3 h-3" />
+                      <span>새 단어장</span>
+                    </button>
+                  </div>
+
+                  {/* 새 단어장 직접 입력란 (펼쳐졌을 때) */}
                   {isCustomBook && (
-                    <div className="mt-2 animate-fade-in w-full">
+                    <div className="flex items-center gap-2 pt-1 animate-fade-in">
                       <input
                         type="text"
                         value={customBookInput}
-                        onChange={(e) => {
-                          setCustomBookInput(e.target.value);
-                          setInputBookTitle(e.target.value);
+                        onChange={(e) => setCustomBookInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
+                            const trimmed = customBookInput.trim();
+                            if (trimmed) {
+                              handleSwitchBook(trimmed);
+                              setIsCustomBook(false);
+                              setCustomBookInput('');
+                            }
+                          }
                         }}
-                        placeholder="새 단어장/책 이름을 입력하세요 (예: 코스모스, 논문 2편)"
-                        className="w-full px-3 py-2 text-xs bg-white text-slate-900 border-2 border-indigo-500 rounded-lg focus:outline-none font-bold"
+                        placeholder="새 단어장 이름 입력 (예: 코스모스, 토익 필수)"
+                        className="flex-1 px-3 py-1.5 text-xs bg-white text-slate-900 border-2 border-indigo-500 rounded-lg focus:outline-none font-bold"
                         autoFocus
                       />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const trimmed = customBookInput.trim();
+                          if (trimmed) {
+                            handleSwitchBook(trimmed);
+                            setIsCustomBook(false);
+                            setCustomBookInput('');
+                          }
+                        }}
+                        disabled={!customBookInput.trim()}
+                        className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold rounded-lg transition shrink-0 cursor-pointer"
+                      >
+                        추가 및 선택
+                      </button>
                     </div>
+                  )}
+
+                  {selectedTargetBooks.length > 1 && (
+                    <p className="text-[11px] text-indigo-600 font-medium flex items-center gap-1 pt-0.5">
+                      <span>💡 선택한 {selectedTargetBooks.length}개 단어장에 동일 단어가 동시에 저장/병합됩니다.</span>
+                    </p>
                   )}
                 </div>
 
@@ -4193,7 +4364,7 @@ export default function Home() {
                           </>
                         ) : (
                           <span>
-                            ⭐ [{inputBookTitle || '기본 단어장'}]에 {validCount > 1 ? `${validCount}개 단어 일괄 ` : '단어 '}저장하기
+                            ⭐ [{selectedTargetBooks.length > 1 ? `${selectedTargetBooks[0]} 외 ${selectedTargetBooks.length - 1}개 (${selectedTargetBooks.length}개 단어장 동시 저장)` : (selectedTargetBooks[0] || inputBookTitle || '기본 단어장')}]에 {validCount > 1 ? `${validCount}개 단어 일괄 ` : '단어 '}저장하기
                           </span>
                         )}
                       </button>
@@ -4378,6 +4549,40 @@ export default function Home() {
                     </div>
                   </div>
                 )}
+
+                {/* 가로 스와이프 가능한 빠른 단어장 선택 칩 */}
+                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none pt-0.5" data-no-swipe="true">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedBookFilters(['all'])}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-xl transition shrink-0 cursor-pointer shadow-2xs ${
+                      isAllBooksSelected
+                        ? 'bg-indigo-600 text-white ring-2 ring-indigo-200'
+                        : 'bg-white text-slate-700 border border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                    }`}
+                  >
+                    전체 ({vocabulary.length})
+                  </button>
+                  {availableBookTitles.map((title) => {
+                    const count = vocabulary.filter((v) => (v.bookTitle || '기본 단어장') === title).length;
+                    const isChecked = isBookSelected(title) && !isAllBooksSelected;
+                    return (
+                      <button
+                        key={title}
+                        type="button"
+                        onClick={() => toggleBookCheckbox(title)}
+                        className={`px-3 py-1.5 text-xs font-bold rounded-xl transition flex items-center gap-1.5 shrink-0 cursor-pointer shadow-2xs ${
+                          isChecked
+                            ? 'bg-indigo-600 text-white ring-2 ring-indigo-200'
+                            : 'bg-white text-slate-700 border border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                        }`}
+                      >
+                        {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
+                        <span>{title} ({count})</span>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               {/* 2. 문장 듣기 (왼쪽) & 퀴즈 풀기 (오른쪽) 2분할 버튼 바 */}
@@ -4890,51 +5095,70 @@ export default function Home() {
         {/* ========================================= */}
         {activeTab === 'quiz' && (
           <section className="max-w-2xl mx-auto w-full min-w-0 space-y-3.5">
-            {/* 단어장 선택 바 */}
-            <div className="bg-white/95 backdrop-blur-md p-3 sm:p-3.5 rounded-2xl border border-slate-200 shadow-xs w-full max-w-full">
+            {/* 단어장 선택 바 (다중 선택 및 가로 스와이프 칩 지원) */}
+            <div className="bg-white/95 backdrop-blur-md p-3 sm:p-3.5 rounded-2xl border border-slate-200 shadow-xs w-full max-w-full space-y-2">
               <div className="flex items-center justify-between gap-3 w-full max-w-full">
-                <span className="text-xs font-bold text-slate-700 shrink-0">단어장 선택</span>
-                <div className="relative flex-1 max-w-xs sm:max-w-sm min-w-0">
-                  <select
-                    value={
-                      isAllBooksSelected
-                        ? 'all'
-                        : selectedBookFilters.length === 1
-                        ? selectedBookFilters[0]
-                        : 'multiple'
-                    }
-                    onChange={(e) => {
-                      const newBook = e.target.value;
-                      if (newBook === 'all') {
-                        setSelectedBookFilters(['all']);
-                        startQuiz('all');
-                      } else {
-                        setSelectedBookFilters([newBook]);
-                        touchBookUsage(newBook);
-                        startQuiz(newBook);
-                      }
-                    }}
-                    className="w-full text-xs font-bold bg-slate-100 hover:bg-slate-200/80 text-slate-800 border border-slate-200 rounded-xl px-3 py-2 pr-8 truncate focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer appearance-none transition"
-                  >
-                    <option value="all">전체 단어장 ({vocabulary.length}단어)</option>
-                    {!isAllBooksSelected && selectedBookFilters.length > 1 && (
-                      <option value="multiple" disabled>
-                        선택된 {selectedBookFilters.length}개 단어장 ({filteredVocabulary.length}단어)
-                      </option>
-                    )}
-                    {availableBookTitles.map((title) => {
-                      const count = vocabulary.filter((v) => (v.bookTitle || '기본 단어장') === title).length;
-                      return (
-                        <option key={title} value={title}>
-                          {title} ({count}단어)
-                        </option>
-                      );
-                    })}
-                  </select>
-                  <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
-                    <ChevronDown className="w-3.5 h-3.5" />
-                  </div>
-                </div>
+                <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5 shrink-0">
+                  <Award className="w-3.5 h-3.5 text-indigo-600" />
+                  <span>퀴즈 단어장 선택</span>
+                </span>
+                <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">
+                  {isAllBooksSelected
+                    ? `전체 (${vocabulary.length}단어)`
+                    : `${selectedBookFilters.length}개 단어장 (${filteredVocabulary.length}단어)`}
+                </span>
+              </div>
+
+              {/* 가로 스와이프 가능한 퀴즈 단어장 선택 칩 (다중 선택 지원) */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none" data-no-swipe="true">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedBookFilters(['all']);
+                    startQuiz('all');
+                  }}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-xl transition shrink-0 cursor-pointer shadow-2xs ${
+                    isAllBooksSelected
+                      ? 'bg-indigo-600 text-white ring-2 ring-indigo-200'
+                      : 'bg-white text-slate-700 border border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                  }`}
+                >
+                  전체 ({vocabulary.length})
+                </button>
+                {availableBookTitles.map((title) => {
+                  const count = vocabulary.filter((v) => (v.bookTitle || '기본 단어장') === title).length;
+                  const isChecked = isBookSelected(title) && !isAllBooksSelected;
+                  return (
+                    <button
+                      key={title}
+                      type="button"
+                      onClick={() => {
+                        let next: string[];
+                        if (isAllBooksSelected) {
+                          next = [title];
+                        } else if (selectedBookFilters.includes(title)) {
+                          if (selectedBookFilters.length === 1) {
+                            next = ['all'];
+                          } else {
+                            next = selectedBookFilters.filter((b) => b !== title);
+                          }
+                        } else {
+                          next = [...selectedBookFilters, title];
+                        }
+                        setSelectedBookFilters(next);
+                        startQuiz(next);
+                      }}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-xl transition flex items-center gap-1.5 shrink-0 cursor-pointer shadow-2xs ${
+                        isChecked
+                          ? 'bg-indigo-600 text-white ring-2 ring-indigo-200'
+                          : 'bg-white text-slate-700 border border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                      }`}
+                    >
+                      {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
+                      <span>{title} ({count})</span>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 
