@@ -329,7 +329,10 @@ export default function Home() {
 
   // Computed User Identity for UI Display
   const effectiveAvatar =
-    customAvatar || currentUser?.user_metadata?.avatar_url || null;
+    customAvatar ||
+    currentUser?.user_metadata?.custom_avatar ||
+    currentUser?.user_metadata?.avatar_url ||
+    null;
   const effectiveDisplayName =
     customDisplayName ||
     currentUser?.user_metadata?.full_name ||
@@ -435,6 +438,7 @@ export default function Home() {
             user_metadata: {
               ...currentUser.user_metadata,
               full_name: profileInputName.trim(),
+              custom_avatar: avatarToSave,
             },
           });
         }
@@ -535,17 +539,21 @@ export default function Home() {
     }
   }, []);
 
-  // Sync custom profile (avatar & display name) when currentUser changes
+  // Sync custom profile (avatar & display name) when currentUser changes (across all devices)
   useEffect(() => {
-    const savedAvatar = getCustomAvatar(currentUser?.id);
-    const savedName = getCustomDisplayName(currentUser?.id);
+    const cloudAvatar = currentUser?.user_metadata?.custom_avatar;
+    const localAvatar = getCustomAvatar(currentUser?.id);
+    const savedAvatar = cloudAvatar || localAvatar;
+
+    const cloudName = currentUser?.user_metadata?.full_name;
+    const localName = getCustomDisplayName(currentUser?.id);
+    const savedName = cloudName || localName;
 
     setCustomAvatarState(savedAvatar);
-    setCustomDisplayNameState(savedName);
+    setCustomDisplayNameState(savedName || '');
 
     const initialName =
       savedName ||
-      currentUser?.user_metadata?.full_name ||
       (currentUser?.email ? currentUser.email.split('@')[0] : '');
     setProfileInputName(initialName);
     setPendingAvatarDataUrl(null);
@@ -4948,13 +4956,13 @@ export default function Home() {
                       className="hidden"
                     />
 
-                    {/* Supabase 500MB Quota Zero Usage Notice */}
+                    {/* Supabase 500MB Quota Zero Usage & Cross-device Sync Notice */}
                     <div className="bg-indigo-50/70 border border-indigo-100 rounded-xl p-2.5 flex items-start gap-2 text-[11px] text-indigo-900 leading-relaxed">
                       <Sparkles className="w-3.5 h-3.5 text-indigo-600 shrink-0 mt-0.5" />
                       <div>
-                        <span className="font-bold">Supabase 500MB 무료 한도 안심 보호</span>
+                        <span className="font-bold">모든 기기(폰·패드·PC) 자동 동기화 & 500MB 한도 0MB 소모</span>
                         <p className="text-slate-600 text-[10.5px] mt-0.5">
-                          사진이 클라우드 버킷 대신 브라우저 로컬 저장소에 초경량 압축 보관되어, Supabase 무료 티어(500MB) 용량을 <strong>0MB</strong> 소모합니다.
+                          사진을 128x128px 초경량 WebP(3~5KB)로 압축한 뒤 로그인 계정(Auth)에 안전하게 동기화합니다. 별도의 스토리지 버킷을 쓰지 않으므로 <strong>Supabase 500MB 스토리지 용량을 0MB 소모</strong>하면서도 폰과 태블릿 어디서든 동일한 사진이 나타납니다.
                         </p>
                       </div>
                     </div>
