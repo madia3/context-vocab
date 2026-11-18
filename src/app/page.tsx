@@ -50,6 +50,8 @@ import {
   signUpWithEmail,
   signInWithGoogle,
   signOutUser,
+  sendPasswordResetEmail,
+  updateUserPassword,
   getCurrentUser,
   getSupabaseClient,
   SUPABASE_SETUP_SQL,
@@ -299,7 +301,7 @@ export default function Home() {
 
   // Email / Password Auth Modal State
   const [isAuthModalOpen, setIsAuthModalOpen] = useState(false);
-  const [authMode, setAuthMode] = useState<'login' | 'signup'>('login');
+  const [authMode, setAuthMode] = useState<'login' | 'signup' | 'forgot' | 'reset'>('login');
   const [authEmail, setAuthEmail] = useState('');
   const [authPassword, setAuthPassword] = useState('');
   const [authPasswordConfirm, setAuthPasswordConfirm] = useState('');
@@ -498,6 +500,14 @@ export default function Home() {
     if (config.url) setInputSupabaseUrl(config.url);
     if (config.anonKey) setInputSupabaseAnonKey(config.anonKey);
 
+    if (typeof window !== 'undefined') {
+      const urlParams = new URLSearchParams(window.location.search);
+      if (urlParams.get('auth') === 'reset' || window.location.hash.includes('type=recovery')) {
+        setAuthMode('reset');
+        setIsAuthModalOpen(true);
+      }
+    }
+
     const client = getSupabaseClient();
     if (client) {
       client.auth.getUser().then(({ data: { user } }) => {
@@ -511,7 +521,10 @@ export default function Home() {
         const user = session?.user ?? null;
         setCurrentUser(user);
 
-        if (event === 'SIGNED_IN' && user) {
+        if (event === 'PASSWORD_RECOVERY') {
+          setAuthMode('reset');
+          setIsAuthModalOpen(true);
+        } else if (event === 'SIGNED_IN' && user) {
           await loadData(user);
 
           // URL 해시(#access_token) 또는 쿼리(?code=) 정돈
@@ -631,6 +644,72 @@ export default function Home() {
     setAuthError(null);
     setAuthSuccessMsg(null);
 
+    // 1. 비밀번호 찾기 (재설정 메일 발송)
+    if (authMode === 'forgot') {
+      if (!authEmail.trim()) {
+        setAuthError('비밀번호를 재설정할 이메일 주소를 입력해 주세요.');
+        return;
+      }
+      setIsAuthSubmitting(true);
+      try {
+        const { error } = await sendPasswordResetEmail(authEmail);
+        if (error) {
+          setAuthError(error.message);
+        } else {
+          setAuthSuccessMsg(
+            '비밀번호 재설정 링크를 전송했습니다! 이메일 편지함(또는 스팸함)을 확인해 주세요.'
+          );
+        }
+      } catch (err: any) {
+        setAuthError(err.message || '이메일 전송 중 오류가 발생했습니다.');
+      } finally {
+        setIsAuthSubmitting(false);
+      }
+      return;
+    }
+
+    // 2. 새 비밀번호 설정 완료
+    if (authMode === 'reset') {
+      if (!authPassword) {
+        setAuthError('새 비밀번호를 입력해 주세요.');
+        return;
+      }
+      if (authPassword.length < 6) {
+        setAuthError('비밀번호는 최소 6자 이상이어야 합니다.');
+        return;
+      }
+      if (authPassword !== authPasswordConfirm) {
+        setAuthError('비밀번호 확인이 일치하지 않습니다.');
+        return;
+      }
+      setIsAuthSubmitting(true);
+      try {
+        const { error } = await updateUserPassword(authPassword);
+        if (error) {
+          setAuthError(error.message);
+        } else {
+          setAuthSuccessMsg('비밀번호가 성공적으로 변경되었습니다!');
+          triggerToast('비밀번호 변경 완료! 🎉', '새 비밀번호가 적용되었습니다.');
+          setTimeout(() => {
+            setIsAuthModalOpen(false);
+            setAuthMode('login');
+            setAuthPassword('');
+            setAuthPasswordConfirm('');
+            setAuthSuccessMsg(null);
+            if (typeof window !== 'undefined' && window.location.search.includes('auth=reset')) {
+              window.history.replaceState({}, document.title, window.location.pathname);
+            }
+          }, 1500);
+        }
+      } catch (err: any) {
+        setAuthError(err.message || '비밀번호 변경 중 오류가 발생했습니다.');
+      } finally {
+        setIsAuthSubmitting(false);
+      }
+      return;
+    }
+
+    // 3. 로그인 / 회원가입 기본 검증
     if (!authEmail.trim() || !authPassword) {
       setAuthError('이메일과 비밀번호를 모두 입력해 주세요.');
       return;
@@ -5304,10 +5383,20 @@ export default function Home() {
                 </div>
                 <div>
                   <h3 className="font-black text-base text-slate-900 leading-tight">
-                    {authMode === 'login' ? '로그인' : '회원가입'}
+                    {authMode === 'login'
+                      ? '로그인'
+                      : authMode === 'signup'
+                      ? '회원가입'
+                      : authMode === 'forgot'
+                      ? '비밀번호 재설정'
+                      : '새 비밀번호 등록'}
                   </h3>
                   <p className="text-[11px] text-slate-500 font-semibold">
-                    이메일 계정으로 어디서나 내 단어장 동기화
+                    {authMode === 'forgot'
+                      ? '가입하신 이메일로 재설정 링크를 보내드립니다'
+                      : authMode === 'reset'
+                      ? '새로 사용할 안전한 비밀번호를 입력해 주세요'
+                      : '이메일 계정으로 어디서나 내 단어장 동기화'}
                   </p>
                 </div>
               </div>
@@ -5317,6 +5406,9 @@ export default function Home() {
                   setIsAuthModalOpen(false);
                   setAuthError(null);
                   setAuthSuccessMsg(null);
+                  if (authMode === 'forgot' || authMode === 'reset') {
+                    setAuthMode('login');
+                  }
                 }}
                 className="text-slate-400 hover:text-slate-600 text-lg p-1 rounded-lg cursor-pointer transition"
               >
@@ -5324,39 +5416,59 @@ export default function Home() {
               </button>
             </div>
 
-            {/* Mode Switch Tabs */}
-            <div className="grid grid-cols-2 p-1 bg-slate-100 rounded-2xl">
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthMode('login');
-                  setAuthError(null);
-                  setAuthSuccessMsg(null);
-                }}
-                className={`py-2 text-xs font-bold rounded-xl transition cursor-pointer ${
-                  authMode === 'login'
-                    ? 'bg-white text-indigo-600 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                로그인
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthMode('signup');
-                  setAuthError(null);
-                  setAuthSuccessMsg(null);
-                }}
-                className={`py-2 text-xs font-bold rounded-xl transition cursor-pointer ${
-                  authMode === 'signup'
-                    ? 'bg-white text-indigo-600 shadow-xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                회원가입
-              </button>
-            </div>
+            {/* Mode Switch Tabs or Back Buttons */}
+            {authMode === 'login' || authMode === 'signup' ? (
+              <div className="grid grid-cols-2 p-1 bg-slate-100 rounded-2xl">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode('login');
+                    setAuthError(null);
+                    setAuthSuccessMsg(null);
+                  }}
+                  className={`py-2 text-xs font-bold rounded-xl transition cursor-pointer ${
+                    authMode === 'login'
+                      ? 'bg-white text-indigo-600 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  로그인
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode('signup');
+                    setAuthError(null);
+                    setAuthSuccessMsg(null);
+                  }}
+                  className={`py-2 text-xs font-bold rounded-xl transition cursor-pointer ${
+                    authMode === 'signup'
+                      ? 'bg-white text-indigo-600 shadow-xs'
+                      : 'text-slate-600 hover:text-slate-900'
+                  }`}
+                >
+                  회원가입
+                </button>
+              </div>
+            ) : authMode === 'forgot' ? (
+              <div className="flex items-center justify-between px-1">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAuthMode('login');
+                    setAuthError(null);
+                    setAuthSuccessMsg(null);
+                  }}
+                  className="text-xs font-bold text-indigo-600 hover:text-indigo-800 flex items-center gap-1 transition cursor-pointer"
+                >
+                  ← 로그인 화면으로 돌아가기
+                </button>
+              </div>
+            ) : (
+              <div className="p-2.5 bg-indigo-50/80 border border-indigo-100 rounded-xl text-center">
+                <span className="text-xs font-bold text-indigo-700">🔐 계정 복구 모드 활성화됨</span>
+              </div>
+            )}
 
             {/* Error / Success Messages */}
             {authError && (
@@ -5374,39 +5486,67 @@ export default function Home() {
 
             {/* Form */}
             <form onSubmit={handleEmailAuthSubmit} className="space-y-3.5">
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">이메일 주소</label>
-                <div className="relative">
-                  <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    type="email"
-                    required
-                    value={authEmail}
-                    onChange={(e) => setAuthEmail(e.target.value)}
-                    placeholder="name@example.com"
-                    className="w-full pl-10 pr-4 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1">비밀번호</label>
-                <div className="relative">
-                  <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                  <input
-                    type="password"
-                    required
-                    value={authPassword}
-                    onChange={(e) => setAuthPassword(e.target.value)}
-                    placeholder={authMode === 'signup' ? '비밀번호 (6자 이상)' : '비밀번호 입력'}
-                    className="w-full pl-10 pr-4 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition"
-                  />
-                </div>
-              </div>
-
-              {authMode === 'signup' && (
+              {/* Email field (not needed in reset password mode) */}
+              {authMode !== 'reset' && (
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">비밀번호 확인</label>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">이메일 주소</label>
+                  <div className="relative">
+                    <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="email"
+                      required
+                      value={authEmail}
+                      onChange={(e) => setAuthEmail(e.target.value)}
+                      placeholder="name@example.com"
+                      className="w-full pl-10 pr-4 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Password field (not needed in forgot password mode) */}
+              {authMode !== 'forgot' && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    {authMode === 'reset' ? '새 비밀번호' : '비밀번호'}
+                  </label>
+                  <div className="relative">
+                    <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="password"
+                      required
+                      value={authPassword}
+                      onChange={(e) => setAuthPassword(e.target.value)}
+                      placeholder={authMode === 'login' ? '비밀번호 입력' : '비밀번호 (6자 이상)'}
+                      className="w-full pl-10 pr-4 py-2.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-100 transition"
+                    />
+                  </div>
+                </div>
+              )}
+
+              {/* Forgot password link (only in login mode) */}
+              {authMode === 'login' && (
+                <div className="flex justify-end pt-0.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAuthMode('forgot');
+                      setAuthError(null);
+                      setAuthSuccessMsg(null);
+                    }}
+                    className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 hover:underline transition cursor-pointer"
+                  >
+                    비밀번호를 잊으셨나요?
+                  </button>
+                </div>
+              )}
+
+              {/* Password confirmation (in signup or reset mode) */}
+              {(authMode === 'signup' || authMode === 'reset') && (
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    {authMode === 'reset' ? '새 비밀번호 확인' : '비밀번호 확인'}
+                  </label>
                   <div className="relative">
                     <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                     <input
@@ -5432,30 +5572,41 @@ export default function Home() {
                     <span>처리 중...</span>
                   </>
                 ) : (
-                  <span>{authMode === 'login' ? '로그인' : '회원가입 완료'}</span>
+                  <span>
+                    {authMode === 'login'
+                      ? '로그인'
+                      : authMode === 'signup'
+                      ? '회원가입 완료'
+                      : authMode === 'forgot'
+                      ? '재설정 링크 보내기'
+                      : '새 비밀번호 적용 완료'}
+                  </span>
                 )}
               </button>
             </form>
 
-            {/* Divider */}
-            <div className="relative my-2 flex items-center justify-center">
-              <div className="border-t border-slate-200 w-full" />
-              <span className="bg-white px-3 text-[11px] text-slate-400 font-medium absolute">또는</span>
-            </div>
+            {/* Divider & Google OAuth Option (only in login/signup mode) */}
+            {(authMode === 'login' || authMode === 'signup') && (
+              <>
+                <div className="relative my-2 flex items-center justify-center">
+                  <div className="border-t border-slate-200 w-full" />
+                  <span className="bg-white px-3 text-[11px] text-slate-400 font-medium absolute">또는</span>
+                </div>
 
-            {/* Google OAuth Option (ready for later) */}
-            <button
-              type="button"
-              onClick={() => {
-                setIsAuthModalOpen(false);
-                handleGoogleLoginClick();
-              }}
-              disabled={isLoggingIn}
-              className="w-full py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition cursor-pointer"
-            >
-              <GoogleIcon className="w-4 h-4 shrink-0" />
-              <span>Google 계정으로 계속하기</span>
-            </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsAuthModalOpen(false);
+                    handleGoogleLoginClick();
+                  }}
+                  disabled={isLoggingIn}
+                  className="w-full py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition cursor-pointer"
+                >
+                  <GoogleIcon className="w-4 h-4 shrink-0" />
+                  <span>Google 계정으로 계속하기</span>
+                </button>
+              </>
+            )}
 
             <p className="text-[11px] text-center text-slate-400">
               로그인 없이도 단어는 이 브라우저에 안전하게 보관됩니다.

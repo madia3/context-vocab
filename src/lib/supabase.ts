@@ -195,6 +195,45 @@ export async function signOutUser(): Promise<{ error: Error | null }> {
 }
 
 /**
+ * 비밀번호 재설정 이메일 발송
+ */
+export async function sendPasswordResetEmail(
+  email: string
+): Promise<{ error: Error | null }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { error: new Error('Supabase 클라이언트가 초기화되지 않았습니다.') };
+  }
+  const redirectUrl =
+    typeof window !== 'undefined'
+      ? `${window.location.origin}/auth/callback?type=recovery`
+      : undefined;
+
+  const { error } = await client.auth.resetPasswordForEmail(email.trim(), {
+    redirectTo: redirectUrl,
+  });
+
+  return { error: error ? new Error(error.message) : null };
+}
+
+/**
+ * 로그인/복구 상태에서 비밀번호 변경
+ */
+export async function updateUserPassword(
+  newPassword: string
+): Promise<{ error: Error | null }> {
+  const client = getSupabaseClient();
+  if (!client) {
+    return { error: new Error('Supabase 클라이언트가 초기화되지 않았습니다.') };
+  }
+  const { error } = await client.auth.updateUser({
+    password: newPassword,
+  });
+
+  return { error: error ? new Error(error.message) : null };
+}
+
+/**
  * 현재 로그인된 사용자 정보 조회
  */
 export async function getCurrentUser(): Promise<User | null> {
