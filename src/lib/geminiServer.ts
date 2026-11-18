@@ -490,133 +490,64 @@ function isTextCapableGeminiModel(modelName: string): boolean {
   return !excludedKeywords.some((kw) => clean.includes(kw));
 }
 
-async function autoDiscoverWorkingModelAndCall(options: {
-  apiKey: string;
-  parts: any[];
-  generationConfig: Record<string, any>;
-  attemptLogs?: string[];
-}): Promise<{ ok: boolean; text: string; rawData?: any; modelUsed?: string; lastError?: string } | null> {
-  const { apiKey, parts, generationConfig, attemptLogs } = options;
-  let lastDiscoveryError = '';
+// Cache discovered live models per API key for 10 minutes so ListModels takes 0.00s on subsequent calls
+const discoveredModelsCache = new Map<string, { models: GeminiModelCandidate[]; fetchedAt: number }>();
+const DISCOVERED_CACHE_TTL_MS = 10 * 60 * 1000;
 
-  for (const ver of ['v1beta', 'v1']) {
+async function fetchLiveOrderedModels(
+  apiKey: string,
+  attemptLogs?: string[]
+): Promise<GeminiModelCandidate[]> {
+  const cacheKey = apiKey.slice(0, 12);
+  const now = Date.now();
+  const cached = discoveredModelsCache.get(cacheKey);
+  if (cached && now - cached.fetchedAt < DISCOVERED_CACHE_TTL_MS && cached.models.length > 0) {
+    return cached.models.filter((m) => !unsupportedModelsCache.has(m.model));
+  }
+
+  for (const ver of ['v1beta', 'v1'] as const) {
+    const listStart = Date.now();
     try {
-      const listStart = Date.now();
       const listUrl = `https://generativelanguage.googleapis.com/${ver}/models?key=${encodeURIComponent(apiKey)}`;
       const listRes = await fetch(listUrl, {
         headers: {
           'Content-Type': 'application/json',
           'x-goog-api-key': apiKey,
         },
-        signal: AbortSignal.timeout(4000),
+        signal: AbortSignal.timeout(3500),
       });
       if (!listRes.ok) {
-        lastDiscoveryError = await listRes.text();
         attemptLogs?.push(`ListModels(${ver}): HTTP ${listRes.status} (${((Date.now() - listStart) / 1000).toFixed(2)}s)`);
         continue;
       }
 
       const listData = await listRes.json();
-      const models: any[] = listData.models || [];
-      const supported = models
+      const rawModels: any[] = listData.models || [];
+      const supported = rawModels
         .filter(
           (m) =>
             m?.name &&
             Array.isArray(m.supportedGenerationMethods) &&
             m.supportedGenerationMethods.includes('generateContent') &&
-            isTextCapableGeminiModel(m.name) &&
-            !unsupportedModelsCache.has(m.name.replace(/^models\//, ''))
+            isTextCapableGeminiModel(m.name)
         )
-        .sort((a, b) => scoreDiscoveredModel(b.name) - scoreDiscoveredModel(a.name));
+        .sort((a, b) => scoreDiscoveredModel(b.name) - scoreDiscoveredModel(a.name))
+        .map((m) => ({
+          model: String(m.name).replace(/^models\//, ''),
+          apiVersion: ver,
+          timeoutMs: 9500,
+        }));
 
-      attemptLogs?.push(`ListModels(${ver}): ${supported.length}개 발견 (${((Date.now() - listStart) / 1000).toFixed(2)}s)`);
-
-      // Try up to 4 discovered models in priority order until one works
-      for (const candidateModel of supported.slice(0, 4)) {
-        const modelClean = candidateModel.name.replace(/^models\//, '');
-        if (unsupportedModelsCache.has(modelClean)) continue;
-
-        const callStart = Date.now();
-        try {
-          const callUrl = `https://generativelanguage.googleapis.com/${ver}/models/${modelClean}:generateContent?key=${encodeURIComponent(apiKey)}`;
-          const fastThinking = getFastThinkingConfig(modelClean);
-          const modelGenConfig = fastThinking
-            ? { ...generationConfig, thinkingConfig: fastThinking }
-            : generationConfig;
-
-          const genRes = await fetch(callUrl, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-goog-api-key': apiKey,
-            },
-            signal: AbortSignal.timeout(9500),
-            body: JSON.stringify({ contents: [{ parts }], generationConfig: modelGenConfig }),
-          });
-
-          if (genRes.ok) {
-            const genData = await genRes.json();
-            const genText = extractTextFromGeminiResponse(genData);
-            if (genText) {
-              lastSuccessfulModelName = modelClean;
-              attemptLogs?.push(`${modelClean}: OK (${((Date.now() - callStart) / 1000).toFixed(2)}s)`);
-              return {
-                ok: true,
-                text: genText,
-                rawData: genData,
-                modelUsed: modelClean,
-              };
-            }
-          } else {
-            const errText = await genRes.text();
-            lastDiscoveryError = errText;
-            attemptLogs?.push(`${modelClean}: HTTP ${genRes.status} (${((Date.now() - callStart) / 1000).toFixed(2)}s)`);
-
-            if (genRes.status === 400 && fastThinking) {
-              const retryStart = Date.now();
-              const retryRes = await fetch(callUrl, {
-                method: 'POST',
-                headers: {
-                  'Content-Type': 'application/json',
-                  'x-goog-api-key': apiKey,
-                },
-                signal: AbortSignal.timeout(9500),
-                body: JSON.stringify({ contents: [{ parts }], generationConfig }),
-              });
-              if (retryRes.ok) {
-                const retryData = await retryRes.json();
-                const retryText = extractTextFromGeminiResponse(retryData);
-                if (retryText) {
-                  lastSuccessfulModelName = modelClean;
-                  attemptLogs?.push(`${modelClean}(retry): OK (${((Date.now() - retryStart) / 1000).toFixed(2)}s)`);
-                  return {
-                    ok: true,
-                    text: retryText,
-                    rawData: retryData,
-                    modelUsed: modelClean,
-                  };
-                }
-              }
-            }
-
-            if (isModelUnsupportedError(genRes.status, errText)) {
-              unsupportedModelsCache.add(modelClean);
-              continue;
-            }
-            if (genRes.status === 401 || (genRes.status === 400 && errText.includes('API_KEY_INVALID'))) {
-              return { ok: false, text: '', lastError: errText };
-            }
-          }
-        } catch (innerErr: any) {
-          lastDiscoveryError = innerErr?.message || String(innerErr);
-          attemptLogs?.push(`${modelClean}: 타임아웃/에러 (${((Date.now() - callStart) / 1000).toFixed(2)}s)`);
-        }
+      if (supported.length > 0) {
+        discoveredModelsCache.set(cacheKey, { models: supported, fetchedAt: Date.now() });
+        attemptLogs?.push(`ListModels(${ver}): ${supported.length}개 대기 (${((Date.now() - listStart) / 1000).toFixed(2)}s)`);
+        return supported.filter((m) => !unsupportedModelsCache.has(m.model));
       }
-    } catch (err: any) {
-      lastDiscoveryError = err?.message || String(err);
+    } catch {
+      // ignore discovery error and fall back to static candidates
     }
   }
-  return lastDiscoveryError ? { ok: false, text: '', lastError: lastDiscoveryError } : null;
+  return [];
 }
 
 export async function callGeminiWithFallback(options: {
@@ -664,197 +595,229 @@ export async function callGeminiWithFallback(options: {
     }
   }
 
-  // Filter out models already known to be unsupported/deprecated for this key
-  const orderedCandidates = candidates.filter((c) => !unsupportedModelsCache.has(c.model));
-  if (lastSuccessfulModelName && !unsupportedModelsCache.has(lastSuccessfulModelName)) {
-    const idx = orderedCandidates.findIndex((c) => c.model === lastSuccessfulModelName);
-    if (idx > 0) {
-      const [preferred] = orderedCandidates.splice(idx, 1);
-      orderedCandidates.unshift(preferred);
-    } else if (idx === -1) {
-      orderedCandidates.unshift({
-        model: lastSuccessfulModelName,
-        apiVersion: 'v1beta',
-        thinkingConfig: getFastThinkingConfig(lastSuccessfulModelName),
-        timeoutMs: 10000,
-      });
+  // Build initial priority candidate pool (gemini-flash-lite-latest at #1)
+  const candidatePool: GeminiModelCandidate[] = [];
+  const addCandidateToPool = (c: GeminiModelCandidate) => {
+    if (!c.model || unsupportedModelsCache.has(c.model)) return;
+    if (!candidatePool.some((x) => x.model === c.model)) {
+      candidatePool.push(c);
     }
+  };
+
+  if (lastSuccessfulModelName && !unsupportedModelsCache.has(lastSuccessfulModelName)) {
+    addCandidateToPool({
+      model: lastSuccessfulModelName,
+      apiVersion: 'v1beta',
+      timeoutMs: 9500,
+    });
   }
+  candidates.forEach(addCandidateToPool);
 
-  let lastError = '';
-  let attemptsMade = 0;
+  // Start ListModels in parallel at t=0.00s (non-blocking) so live models are ready if 1st model errors or exceeds 3.0s
+  let liveModelsMerged = false;
+  const liveModelsPromise = fetchLiveOrderedModels(cleanApiKey, attemptLogs).then((liveList) => {
+    liveList.forEach(addCandidateToPool);
+    liveModelsMerged = true;
+    return liveList;
+  });
 
-  for (const candidate of orderedCandidates) {
-    if (unsupportedModelsCache.has(candidate.model)) continue;
-    // After 2 failed attempts on static candidates, jump straight to dynamic ListModels discovery
-    if (attemptsMade >= 2) break;
-    attemptsMade += 1;
+  const STAGGER_INTERVAL_MS = 3000; // 3.0초 내 응답 없으면 다음 살아있는 모델을 병렬로 즉시 추가 투입
+  const MAX_PARALLEL_MODELS = 4;
 
-    const callStart = Date.now();
-    const activeThinkingConfig = candidate.thinkingConfig || getFastThinkingConfig(candidate.model);
+  const raceResult = await new Promise<{
+    ok: boolean;
+    text: string;
+    rawData?: any;
+    modelUsed?: string;
+    lastError?: string;
+  }>((resolveRace) => {
+    let resolved = false;
+    let inFlightCount = 0;
+    let fatalAuthError = false;
+    let latestError = '';
+    const launchedModels = new Set<string>();
+    const activeControllers = new Set<AbortController>();
+    const activeTimers = new Set<ReturnType<typeof setTimeout>>();
 
-    try {
-      const apiVer = candidate.apiVersion || 'v1beta';
-      const url = `https://generativelanguage.googleapis.com/${apiVer}/models/${candidate.model}:generateContent?key=${encodeURIComponent(cleanApiKey)}`;
-      const generationConfig: Record<string, any> = {
-        temperature,
-      };
-      if (responseMimeType) {
-        generationConfig.responseMimeType = responseMimeType;
-      }
-      if (typeof maxOutputTokens === 'number') {
-        generationConfig.maxOutputTokens = maxOutputTokens;
-      }
-      if (activeThinkingConfig) {
-        generationConfig.thinkingConfig = activeThinkingConfig;
-      }
-
-      const res = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-goog-api-key': cleanApiKey,
-        },
-        signal: AbortSignal.timeout(candidate.timeoutMs),
-        body: JSON.stringify({
-          contents: [{ parts }],
-          generationConfig,
-        }),
+    const cleanupAll = () => {
+      activeTimers.forEach((t) => clearTimeout(t));
+      activeTimers.clear();
+      activeControllers.forEach((ctrl) => {
+        try {
+          ctrl.abort();
+        } catch {}
       });
+      activeControllers.clear();
+    };
 
-      if (res.ok) {
-        const data = await res.json();
-        const text = extractTextFromGeminiResponse(data);
-        if (text) {
-          lastSuccessfulModelName = candidate.model;
-          const durationMs = Date.now() - startTime;
-          attemptLogs.push(
-            `${candidate.model}${activeThinkingConfig ? '(thinking:0)' : ''}: OK (${((Date.now() - callStart) / 1000).toFixed(2)}s)`
-          );
-          recordServerUsage({
-            isServerKey,
-            endpoint,
-            model: candidate.model,
-            status: 'ok',
-            durationMs,
-          });
-          return {
-            ok: true,
-            text,
-            rawData: data,
-            modelUsed: candidate.model,
-            durationMs,
-            attemptLogs,
-          };
+    const pickNextCandidate = (): GeminiModelCandidate | null => {
+      for (const c of candidatePool) {
+        if (!launchedModels.has(c.model) && !unsupportedModelsCache.has(c.model)) {
+          return c;
         }
-      } else {
-        lastError = await res.text();
-        attemptLogs.push(`${candidate.model}: HTTP ${res.status} (${((Date.now() - callStart) / 1000).toFixed(2)}s)`);
+      }
+      return null;
+    };
 
-        // Remember unsupported/deprecated/0-quota models so we never waste time calling them again
-        if (isModelUnsupportedError(res.status, lastError)) {
-          unsupportedModelsCache.add(candidate.model);
+    const launchNextModel = async () => {
+      if (resolved || fatalAuthError || launchedModels.size >= MAX_PARALLEL_MODELS) {
+        return;
+      }
+
+      let candidate = pickNextCandidate();
+      if (!candidate && !liveModelsMerged) {
+        await liveModelsPromise;
+        if (resolved || fatalAuthError) return;
+        candidate = pickNextCandidate();
+      }
+
+      if (!candidate) {
+        if (inFlightCount === 0 && !resolved) {
+          resolved = true;
+          cleanupAll();
+          resolveRace({ ok: false, text: '', lastError: latestError || '사용 가능한 Gemini 모델을 찾지 못했습니다.' });
+        }
+        return;
+      }
+
+      launchedModels.add(candidate.model);
+      inFlightCount += 1;
+
+      const controller = new AbortController();
+      activeControllers.add(controller);
+
+      // Per-model hard timeout (9.5s)
+      const hardTimeout = setTimeout(() => {
+        try {
+          controller.abort();
+        } catch {}
+      }, candidate.timeoutMs || 9500);
+      activeTimers.add(hardTimeout);
+
+      // 3.0초(3000ms) 헤징 타이머: 3초 내에 현재 모델이 안 끝나면 끊지 않고 차순위 살아있는 모델을 병렬로 추가 출발!
+      const staggerTimer = setTimeout(() => {
+        activeTimers.delete(staggerTimer);
+        if (!resolved && !fatalAuthError && launchedModels.size < MAX_PARALLEL_MODELS) {
+          attemptLogs.push(`${candidate!.model}: 3.0s 경과 ➔ 차순위 병렬투입`);
+          void launchNextModel();
+        }
+      }, STAGGER_INTERVAL_MS);
+      activeTimers.add(staggerTimer);
+
+      const callStart = Date.now();
+      try {
+        const apiVer = candidate.apiVersion || 'v1beta';
+        const url = `https://generativelanguage.googleapis.com/${apiVer}/models/${candidate.model}:generateContent?key=${encodeURIComponent(cleanApiKey)}`;
+        const generationConfig: Record<string, any> = { temperature };
+        if (responseMimeType) generationConfig.responseMimeType = responseMimeType;
+        if (typeof maxOutputTokens === 'number') generationConfig.maxOutputTokens = maxOutputTokens;
+
+        const res = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-goog-api-key': cleanApiKey,
+          },
+          signal: controller.signal,
+          body: JSON.stringify({
+            contents: [{ parts }],
+            generationConfig,
+          }),
+        });
+
+        clearTimeout(staggerTimer);
+        activeTimers.delete(staggerTimer);
+        clearTimeout(hardTimeout);
+        activeTimers.delete(hardTimeout);
+        activeControllers.delete(controller);
+
+        if (resolved) return;
+
+        if (res.ok) {
+          const data = await res.json();
+          const text = extractTextFromGeminiResponse(data);
+          if (text && !resolved) {
+            resolved = true;
+            lastSuccessfulModelName = candidate.model;
+            attemptLogs.push(`${candidate.model}: OK (${((Date.now() - callStart) / 1000).toFixed(2)}s)`);
+            cleanupAll();
+            resolveRace({
+              ok: true,
+              text,
+              rawData: data,
+              modelUsed: candidate.model,
+            });
+            return;
+          }
+        } else {
+          const errText = await res.text();
+          latestError = errText;
+          attemptLogs.push(`${candidate.model}: HTTP ${res.status} (${((Date.now() - callStart) / 1000).toFixed(2)}s)`);
+
+          if (isModelUnsupportedError(res.status, errText)) {
+            unsupportedModelsCache.add(candidate.model);
+            if (lastSuccessfulModelName === candidate.model) {
+              lastSuccessfulModelName = null;
+            }
+          }
+
+          if (res.status === 401 || (res.status === 400 && errText.includes('API_KEY_INVALID'))) {
+            fatalAuthError = true;
+            if (!resolved) {
+              resolved = true;
+              cleanupAll();
+              resolveRace({ ok: false, text: '', lastError: errText });
+            }
+            return;
+          }
+        }
+      } catch (err: any) {
+        clearTimeout(staggerTimer);
+        activeTimers.delete(staggerTimer);
+        clearTimeout(hardTimeout);
+        activeTimers.delete(hardTimeout);
+        activeControllers.delete(controller);
+
+        if (!resolved) {
+          latestError = err?.message || String(err);
+          attemptLogs.push(`${candidate.model}: 타임아웃/에러 (${((Date.now() - callStart) / 1000).toFixed(2)}s)`);
           if (lastSuccessfulModelName === candidate.model) {
             lastSuccessfulModelName = null;
           }
         }
-
-        // Early abort ONLY if API Key is definitively invalid
-        if (
-          res.status === 401 ||
-          (res.status === 400 && lastError.includes('API_KEY_INVALID'))
-        ) {
-          break;
-        }
-
-        // If 400 Invalid Argument due to thinkingConfig, retry immediately without thinkingConfig
-        if (res.status === 400 && activeThinkingConfig) {
-          const retryStart = Date.now();
-          const retryGenConfig: Record<string, any> = { temperature };
-          if (responseMimeType) retryGenConfig.responseMimeType = responseMimeType;
-          if (typeof maxOutputTokens === 'number') retryGenConfig.maxOutputTokens = maxOutputTokens;
-
-          const retryRes = await fetch(url, {
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'x-goog-api-key': cleanApiKey,
-            },
-            signal: AbortSignal.timeout(candidate.timeoutMs),
-            body: JSON.stringify({
-              contents: [{ parts }],
-              generationConfig: retryGenConfig,
-            }),
-          });
-          if (retryRes.ok) {
-            const retryData = await retryRes.json();
-            const retryText = extractTextFromGeminiResponse(retryData);
-            if (retryText) {
-              lastSuccessfulModelName = candidate.model;
-              const durationMs = Date.now() - startTime;
-              attemptLogs.push(`${candidate.model}(retry): OK (${((Date.now() - retryStart) / 1000).toFixed(2)}s)`);
-              recordServerUsage({
-                isServerKey,
-                endpoint,
-                model: candidate.model,
-                status: 'ok',
-                durationMs,
-              });
-              return {
-                ok: true,
-                text: retryText,
-                rawData: retryData,
-                modelUsed: candidate.model,
-                durationMs,
-                attemptLogs,
-              };
-            }
-          }
+      } finally {
+        inFlightCount -= 1;
+        if (!resolved && !fatalAuthError) {
+          // 에러가 났을 때는 3초를 기다리지 않고 즉시 다음 살아있는 모델 투입!
+          void launchNextModel();
         }
       }
-    } catch (err: any) {
-      lastError = err?.message || String(err);
-      attemptLogs.push(`${candidate.model}: 타임아웃 (${((Date.now() - callStart) / 1000).toFixed(2)}s)`);
-      if (lastSuccessfulModelName === candidate.model) {
-        lastSuccessfulModelName = null;
-      }
-    }
-  }
+    };
 
-  // Dynamic model discovery via Google ModelService.ListModels whenever static candidates fail (unless API key is invalid)
-  if (!lastError.includes('API_KEY_INVALID') && !lastError.includes('401')) {
-    const fallbackGenConfig: Record<string, any> = { temperature };
-    if (responseMimeType) fallbackGenConfig.responseMimeType = responseMimeType;
-    if (typeof maxOutputTokens === 'number') fallbackGenConfig.maxOutputTokens = maxOutputTokens;
+    // t = 0.00s: 1순위 모델(gemini-flash-lite-latest) 즉시 출발
+    void launchNextModel();
+  });
 
-    const dynamicDiscovery = await autoDiscoverWorkingModelAndCall({
-      apiKey: cleanApiKey,
-      parts,
-      generationConfig: fallbackGenConfig,
-      attemptLogs,
+  if (raceResult.ok && raceResult.text) {
+    const durationMs = Date.now() - startTime;
+    recordServerUsage({
+      isServerKey,
+      endpoint,
+      model: raceResult.modelUsed || 'gemini-flash-lite-latest',
+      status: 'ok',
+      durationMs,
     });
-
-    if (dynamicDiscovery && dynamicDiscovery.ok) {
-      const durationMs = Date.now() - startTime;
-      recordServerUsage({
-        isServerKey,
-        endpoint,
-        model: dynamicDiscovery.modelUsed || 'gemini-auto',
-        status: 'ok',
-        durationMs,
-      });
-      return {
-        ok: true,
-        text: dynamicDiscovery.text,
-        rawData: dynamicDiscovery.rawData,
-        modelUsed: dynamicDiscovery.modelUsed,
-        durationMs,
-        attemptLogs,
-      };
-    } else if (dynamicDiscovery?.lastError) {
-      lastError = dynamicDiscovery.lastError;
-    }
+    return {
+      ok: true,
+      text: raceResult.text,
+      rawData: raceResult.rawData,
+      modelUsed: raceResult.modelUsed,
+      durationMs,
+      attemptLogs,
+    };
   }
+
+  const lastError = raceResult.lastError || '';
 
   // If client-provided key failed due to invalid key or auth error or quota error, and server environment has a fallback key, retry once with server env key
   if (
@@ -878,7 +841,7 @@ export async function callGeminiWithFallback(options: {
   recordServerUsage({
     isServerKey,
     endpoint,
-    model: orderedCandidates[0]?.model || 'gemini',
+    model: candidatePool[0]?.model || 'gemini',
     status: 'error',
     durationMs,
     error: lastError,
