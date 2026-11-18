@@ -109,54 +109,54 @@ export const FAST_GEMINI_CANDIDATES: GeminiModelCandidate[] = [
   {
     model: 'gemini-flash-latest',
     apiVersion: 'v1beta',
-    timeoutMs: 8500,
+    timeoutMs: 7000,
   },
   // 2. Gemini 3.x Flash series (Default active models for new 2026 Google AI Studio keys)
   {
-    model: 'gemini-3-flash-preview',
+    model: 'gemini-3.1-flash-lite',
     apiVersion: 'v1beta',
-    timeoutMs: 8500,
+    timeoutMs: 6500,
   },
   {
-    model: 'gemini-3.1-flash-lite',
+    model: 'gemini-3-flash-preview',
     apiVersion: 'v1beta',
     timeoutMs: 7500,
   },
   {
     model: 'gemini-3.1-flash-lite-preview',
     apiVersion: 'v1beta',
-    timeoutMs: 7500,
-  },
-  {
-    model: 'gemini-3.8-flash',
-    apiVersion: 'v1beta',
-    timeoutMs: 8500,
-  },
-  {
-    model: 'gemini-3.5-flash',
-    apiVersion: 'v1beta',
-    timeoutMs: 8500,
-  },
-  {
-    model: 'gemini-3.5-flash-lite',
-    apiVersion: 'v1beta',
-    timeoutMs: 7500,
+    timeoutMs: 6500,
   },
   {
     model: 'gemini-flash-lite-latest',
     apiVersion: 'v1beta',
+    timeoutMs: 6500,
+  },
+  {
+    model: 'gemini-3.8-flash',
+    apiVersion: 'v1beta',
     timeoutMs: 7500,
+  },
+  {
+    model: 'gemini-3.5-flash',
+    apiVersion: 'v1beta',
+    timeoutMs: 7500,
+  },
+  {
+    model: 'gemini-3.5-flash-lite',
+    apiVersion: 'v1beta',
+    timeoutMs: 6500,
   },
   // 3. Fallback for older projects/keys
   {
     model: 'gemini-2.5-flash',
     apiVersion: 'v1beta',
-    timeoutMs: 8500,
+    timeoutMs: 7500,
   },
   {
     model: 'gemini-2.0-flash',
     apiVersion: 'v1beta',
-    timeoutMs: 8000,
+    timeoutMs: 7500,
   },
 ];
 
@@ -492,6 +492,7 @@ export function resolveServerGeminiKey(req: Request, explicitKey?: string): stri
 function scoreDiscoveredModel(modelName: string): number {
   const clean = modelName.replace(/^models\//, '').toLowerCase();
   if (clean === 'gemini-flash-latest') return 100;
+  if (clean === 'gemini-3.1-flash-lite') return 99;
   if (clean === 'gemini-flash-lite-latest') return 98;
   if ((clean.includes('gemini-3') || clean.includes('gemini-4')) && clean.includes('flash')) return 95;
   if (clean.includes('gemini-3') || clean.includes('gemini-4')) return 85;

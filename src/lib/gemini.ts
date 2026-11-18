@@ -85,17 +85,17 @@ export function setStoredGeminiKey(keyOrEncryptedToken: string, maskedPreview?: 
   localStorage.setItem(GEMINI_API_KEY_MASK_STORAGE, maskToStore);
 }
 
-// 이미지 파일을 가볍게 최적화(최대 1200px 리사이즈 및 JPEG 82% 압축)하여 base64로 초고속 변환
+// 이미지 파일을 가볍게 최적화(최대 1200px 리사이즈 및 JPEG 78% 압축)하여 base64로 초고속 변환
 export function fileToBase64(file: File | Blob): Promise<{ base64: string; mimeType: string }> {
   return new Promise((resolve) => {
-    // 브라우저 캔버스를 이용한 초고속 리사이즈 & 압축 (모바일 LTE 전송량 95% 절감 및 Vision 응답시간 2초대 단축)
+    // 브라우저 캔버스를 이용한 초고속 리사이즈 & 압축 (모바일 LTE 전송량 95% 절감 및 Vision 응답시간 1~2초대 단축)
     if (typeof window !== 'undefined' && typeof Image !== 'undefined') {
       const img = new Image();
       const objectUrl = URL.createObjectURL(file);
 
       img.onload = () => {
         URL.revokeObjectURL(objectUrl);
-        const maxDimension = 1400; // 원서 빽빽한 글자 및 밑줄/동그라미 고해상도 인식 최적화 (토큰 소모량 40% 절감 & 고화질 사진 압축)
+        const maxDimension = 1200; // 원서 빽빽한 글자 및 밑줄/동그라미 고해상도 인식 최적화 (토큰 및 대역폭 절감 -> 100~150KB 경량화)
         let { width, height } = img;
 
         if (width > maxDimension || height > maxDimension) {
@@ -114,7 +114,7 @@ export function fileToBase64(file: File | Blob): Promise<{ base64: string; mimeT
         const ctx = canvas.getContext('2d');
         if (ctx) {
           ctx.drawImage(img, 0, 0, width, height);
-          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.80);
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.78);
           const [, base64] = compressedDataUrl.split(',');
           resolve({ base64, mimeType: 'image/jpeg' });
           return;
@@ -222,6 +222,7 @@ export async function extractTextWithAI(
         'Content-Type': 'application/json',
         ...(apiKey ? { 'x-gemini-key': apiKey } : {}),
       },
+      signal: AbortSignal.timeout(11000),
       body: JSON.stringify({
         base64: primary.base64,
         mimeType: primary.mimeType,

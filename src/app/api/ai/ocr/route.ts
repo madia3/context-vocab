@@ -98,24 +98,23 @@ Output strictly valid JSON:
   "text": "Clean combined transcribed article/prose text across both pages in chronological reading order...",
   "markedWords": ["word1", "word2"]
 }`
-        : `You are a high-precision OCR and document analysis AI specializing in English books, news articles, and research reports.
+        : `You are a fast, high-precision OCR and document analysis AI for English books and articles.
 Carefully inspect the provided image.
 
 Strict Rules:
-1. EXCLUDE CHARTS, GRAPHS, PLOTS & TABLES:
-   - Completely IGNORE and DO NOT transcribe any charts, bar graphs, plots, diagrams, percentages or years along graph axes (e.g. "40% 30% 20% 0% -20%", "1990 1995 2000 2025"), tick marks, legends, and footnote citations like "Source: Datastream, Goldman Sachs".
-   - Transcribe ONLY the readable reading prose sentences, paragraphs, and article headings.
-   - Fix all hyphenated word breaks across lines (e.g. "con- / dition" -> "condition", "pub- / lishing" -> "publishing") and OCR typos.
+1. EXCLUDE CHARTS, GRAPHS & TABLES:
+   - Completely ignore charts, bar graphs, plots, diagrams, axes numbers, and footnote citations.
+   - Transcribe ONLY readable English prose sentences, paragraphs, and headings.
+   - Connect line-broken hyphenated words (e.g. "con- / dition" -> "condition").
 
-2. DETECT CIRCLED OR UNDERLINED WORDS (VERY IMPORTANT):
-   - Readers often mark words with a pen or pencil. Identify any English words that have a HANDWRITTEN UNDERLINE, a CIRCLE, or an OVAL around or under them (for example, in the image: "earnings" is underlined, "grow" is circled, "categories" is circled).
-   - Accurately restore the clean original English word, ignoring the pen marks (e.g. recognize "grow", NOT "tcGrow)1"; recognize "categories", NOT "CATEGOR )Eg").
-   - Put all such marked words into the "markedWords" array as clean lowercase words (e.g. ["earnings", "grow"]).
-   - If there are no underlines or circles, return an empty array [].
+2. DETECT CIRCLED OR UNDERLINED WORDS:
+   - Identify any English words marked with handwritten underlines or circles/ovals.
+   - Restore the clean original English word without pen marks into the "markedWords" array (e.g. ["grow", "earnings"]).
+   - If none, return [].
 
-Output strictly valid JSON in this exact structure without markdown backticks:
+Output strictly valid JSON:
 {
-  "text": "Clean transcribed article/prose text without any charts or graphs...",
+  "text": "Clean transcribed prose text...",
   "markedWords": ["word1", "word2"]
 }`;
 

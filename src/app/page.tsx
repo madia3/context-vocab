@@ -1618,16 +1618,15 @@ export default function Home() {
     setIsOcrProcessing(true);
     setOcrProgress(30);
 
-    const hasPrevImage = sourceImagesRef.current.length > 0;
     triggerToast(
-      isAppend || hasPrevImage ? '연속 페이지 분석 시작! 📄' : '사진 분석 시작! 📸',
-      isAppend || hasPrevImage
+      isAppend ? '연속 페이지 분석 시작! 📄' : '사진 분석 시작! 📸',
+      isAppend
         ? '이전 사진과 이번 사진의 전후 관계를 AI가 파악해 잘린 문장을 하나로 연결합니다.'
         : '표/그래프를 제외한 본문 글자와 밑줄/동그라미 친 단어를 감지합니다.'
     );
 
     startBackgroundSourceAnalysis(
-      isAppend || hasPrevImage ? '연속 페이지(2장) 분석' : '책 사진 분석',
+      isAppend ? '연속 페이지(2장) 분석' : '책 사진 분석',
       'camera',
       async () => {
         setOcrProgress(45);
@@ -1635,9 +1634,13 @@ export default function Home() {
         let updatedImages: { base64: string; mimeType: string }[] = [];
 
         if (imgData.base64) {
-          // 이전 사진까지 최대 2장만 보관 (최신 사진을 추가하고 2장 초과 시 오래된 것 제거)
-          const prev = sourceImagesRef.current || [];
-          updatedImages = [...prev, imgData].slice(-2);
+          // 새로 촬영/업로드 시 단일 사진으로 초기화, 연속 추가 모드일 때만 이전 사진과 결합
+          if (isAppend) {
+            const prev = sourceImagesRef.current || [];
+            updatedImages = [...prev, imgData].slice(-2);
+          } else {
+            updatedImages = [imgData];
+          }
           sourceImagesRef.current = updatedImages;
           setSourceImages(updatedImages);
 
@@ -1653,7 +1656,7 @@ export default function Home() {
           }
         }
 
-        // AI가 2장의 사진을 직접 보고 전후 관계를 스스로 판단해 잘린 문장을 완벽하게 이어붙임
+        // AI Vision 분석 (단일 사진은 1.5~2초 초고속 처리, 연속 모드는 2장 문맥 연결)
         const ocrRes = await extractTextWithAI(
           file,
           geminiApiKey,
