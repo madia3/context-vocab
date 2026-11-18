@@ -104,11 +104,11 @@ export interface GeminiModelCandidate {
 // Vercel Serverless Function timeout (10s on hobby plan) safe: individual timeouts strictly under 8.5s
 export const FAST_GEMINI_CANDIDATES: GeminiModelCandidate[] = [
   {
-    model: 'gemini-2.0-flash',
+    model: 'gemini-1.5-flash',
     timeoutMs: 8500,
   },
   {
-    model: 'gemini-1.5-flash',
+    model: 'gemini-2.0-flash',
     timeoutMs: 8500,
   },
   {
@@ -186,6 +186,11 @@ export async function callGeminiWithFallback(options: {
     candidates = FAST_GEMINI_CANDIDATES,
   } = options;
 
+  const cleanApiKey = (apiKey || '').trim();
+  if (!cleanApiKey) {
+    return { ok: false, text: '', lastError: 'API 키가 비어있습니다.' };
+  }
+
   // Prioritize the last known working model first to avoid 404/timeout overhead
   const orderedCandidates = [...candidates];
   if (lastSuccessfulModelName) {
@@ -200,7 +205,7 @@ export async function callGeminiWithFallback(options: {
 
   for (const candidate of orderedCandidates) {
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${candidate.model}:generateContent?key=${apiKey}`;
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${candidate.model}:generateContent?key=${encodeURIComponent(cleanApiKey)}`;
       const generationConfig: Record<string, any> = {
         temperature,
       };

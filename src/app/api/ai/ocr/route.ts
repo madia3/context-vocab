@@ -4,6 +4,26 @@ import { callGeminiWithFallback, checkRateLimit, resolveServerGeminiKey } from '
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
+function extractGeminiErrorMessage(rawError?: string): string {
+  if (!rawError) return 'Gemini API 응답 없음';
+  try {
+    const parsed = JSON.parse(rawError);
+    if (parsed.error?.message) {
+      return parsed.error.message;
+    }
+  } catch {}
+  if (rawError.includes('API_KEY_INVALID') || rawError.includes('API key not valid')) {
+    return 'Gemini API 키가 유효하지 않습니다 (API_KEY_INVALID)';
+  }
+  if (rawError.includes('RESOURCE_EXHAUSTED')) {
+    return 'Gemini API 요청 한도 초과 (RESOURCE_EXHAUSTED)';
+  }
+  if (rawError.includes('Timeout') || rawError.includes('aborted') || rawError.includes('abort')) {
+    return '분석 시간 초과 (Vercel 타임아웃)';
+  }
+  return rawError.length > 80 ? `${rawError.slice(0, 80)}...` : rawError;
+}
+
 export async function POST(req: NextRequest) {
   try {
     const rateLimit = checkRateLimit(req, 20);
@@ -49,6 +69,8 @@ export async function POST(req: NextRequest) {
         { status: 401 }
       );
     }
+
+    let visionLastError = '';
 
     // 1. 원본 이미지가 있는 경우: 초고속 Vision OCR (thinkingLevel: LOW / thinkingBudget: 0 적용)
     if (hasImages) {
@@ -113,8 +135,8 @@ Output strictly valid JSON in this exact structure without markdown backticks:
         temperature: 0.0,
         responseMimeType: 'application/json',
         candidates: [
-          { model: 'gemini-2.0-flash', timeoutMs: 8500 },
           { model: 'gemini-1.5-flash', timeoutMs: 8500 },
+          { model: 'gemini-2.0-flash', timeoutMs: 8500 },
         ],
       });
 
@@ -141,6 +163,8 @@ Output strictly valid JSON in this exact structure without markdown backticks:
         if (text) {
           return NextResponse.json({ text, markedWords, method: 'vision' });
         }
+      } else {
+        visionLastError = visionRes.lastError || '';
       }
     }
 
@@ -188,14 +212,15 @@ ${String(fallbackRawText).slice(0, 6000)}
       }
     }
 
+    const finalErrMsg = extractGeminiErrorMessage(visionLastError || 'Gemini Vision 호출 실패');
     return NextResponse.json(
-      { error: 'Gemini OCR API request failed' },
+      { error: finalErrMsg },
       { status: 502 }
     );
   } catch (err: any) {
     console.error('OCR API Route Error:', err);
     return NextResponse.json(
-      { error: err.message || 'Internal server error' },
+      { error: extractGeminiErrorMessage(err.message || 'Internal server error') },
       { status: 500 }
     );
   }
