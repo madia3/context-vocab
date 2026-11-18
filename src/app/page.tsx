@@ -4158,7 +4158,7 @@ export default function Home() {
                                 {lastOcrEngineInfo.method === 'tesseract' && '⚠️ Tesseract.js (무료 로컬 기본 엔진)'}
                                 {lastOcrEngineInfo.method === 'web' && '🌐 웹 기사 스크래퍼'}
                               </span>
-                              {lastOcrEngineInfo.failureReason && (
+                              {lastOcrEngineInfo.method === 'tesseract' && lastOcrEngineInfo.failureReason && (
                                 <span className="block sm:inline sm:ml-1 text-[10px] text-amber-800 font-semibold">
                                   (AI 실패 사유: {lastOcrEngineInfo.failureReason})
                                 </span>

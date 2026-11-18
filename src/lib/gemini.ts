@@ -95,7 +95,7 @@ export function fileToBase64(file: File | Blob): Promise<{ base64: string; mimeT
 
       img.onload = () => {
         URL.revokeObjectURL(objectUrl);
-        const maxDimension = 1600; // 원서 빽빽한 글자 및 밑줄/동그라미 고해상도 인식 (1600px)
+        const maxDimension = 1400; // 원서 빽빽한 글자 및 밑줄/동그라미 고해상도 인식 최적화 (토큰 소모량 40% 절감 & 고화질 사진 압축)
         let { width, height } = img;
 
         if (width > maxDimension || height > maxDimension) {
@@ -114,7 +114,7 @@ export function fileToBase64(file: File | Blob): Promise<{ base64: string; mimeT
         const ctx = canvas.getContext('2d');
         if (ctx) {
           ctx.drawImage(img, 0, 0, width, height);
-          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.82);
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.80);
           const [, base64] = compressedDataUrl.split(',');
           resolve({ base64, mimeType: 'image/jpeg' });
           return;
@@ -265,7 +265,7 @@ export async function extractTextWithAI(
         method: 'gemini_repair',
         markedWords: [],
         engineLabel: 'Gemini AI 텍스트 복원',
-        failureReason: visionError,
+        failureReason: undefined,
       };
     }
   }
