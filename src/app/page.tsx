@@ -407,7 +407,6 @@ export default function Home() {
       const result = await compressAvatarImage(file, 128, 0.75);
       setPendingAvatarDataUrl(result.dataUrl);
       setAvatarCompressionInfo({ sizeKb: result.sizeKb });
-      triggerToast('사진 압축 완료 ✨', `초경량 ${result.sizeKb}KB로 압축되었습니다. (Supabase 용량 0MB 소모)`);
     } catch (err: unknown) {
       alert(err instanceof Error ? err.message : '이미지 압축에 실패했습니다.');
     } finally {
@@ -457,7 +456,6 @@ export default function Home() {
     if (currentUser?.user_metadata?.avatar_url) {
       setPendingAvatarDataUrl(currentUser.user_metadata.avatar_url);
       setAvatarCompressionInfo(null);
-      triggerToast('Google 계정 사진 선택됨', '하단 [변경사항 저장]을 누르면 적용됩니다.');
     }
   }
 
@@ -465,7 +463,6 @@ export default function Home() {
   function handleRemoveAvatar() {
     setPendingAvatarDataUrl('');
     setAvatarCompressionInfo(null);
-    triggerToast('기본 아바타 선택됨', '하단 [변경사항 저장]을 누르면 적용됩니다.');
   }
 
   // Load Data
@@ -515,10 +512,6 @@ export default function Home() {
         setCurrentUser(user);
 
         if (event === 'SIGNED_IN' && user) {
-          triggerToast(
-            'Google 로그인 완료! 🎉',
-            `${user.user_metadata?.full_name || user.email}님의 개인 클라우드 단어장이 연결되었습니다.`
-          );
           await loadData(user);
 
           // URL 해시(#access_token) 또는 쿼리(?code=) 정돈
@@ -526,7 +519,6 @@ export default function Home() {
             window.history.replaceState({}, document.title, window.location.pathname);
           }
         } else if (event === 'SIGNED_OUT') {
-          triggerToast('로그아웃되었습니다', '로컬 단어장 모드로 전환되었습니다.');
           await loadData(null);
         }
       });
@@ -1185,7 +1177,6 @@ export default function Home() {
   // Multi-Word Form Helpers
   function handleAddWordEntry() {
     setWordEntries((prev) => [...prev, createWordEntryItem()]);
-    triggerToast('단어 등록칸 추가됨 ➕', '새 단어와 뜻을 입력하세요.');
   }
 
   function handleRemoveWordEntry(id: string) {
@@ -2746,7 +2737,6 @@ export default function Home() {
                                 sessionStorage.removeItem('context_vocab_source_image');
                                 sessionStorage.removeItem('context_vocab_source_images');
                               }
-                              triggerToast('원문 지움', '등록된 본문과 사진이 초기화되었습니다.');
                             }}
                             className="w-full h-9 text-xs text-slate-500 hover:text-rose-600 font-bold bg-white hover:bg-rose-50 border border-slate-200 hover:border-rose-200 rounded-xl transition cursor-pointer whitespace-nowrap flex items-center justify-center gap-1 active:scale-95 px-1"
                             title="불러온 원문 지우기"
