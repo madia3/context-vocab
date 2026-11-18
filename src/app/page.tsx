@@ -2260,7 +2260,7 @@ export default function Home() {
         <div className="max-w-5xl mx-auto px-4 py-2.5 flex items-center justify-between gap-3">
           {/* Logo - Styled identically to leegwajang.com signature logo */}
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-[#5090B3] text-[#F3D372] flex items-center justify-center font-black text-base shadow-sm ring-1 ring-[#417897]/20 select-none">
+            <div className="w-8 h-8 rounded-xl bg-slate-900 text-white flex items-center justify-center font-black text-base shadow-sm ring-1 ring-slate-800 select-none">
               이
             </div>
             <div>
@@ -2802,7 +2802,7 @@ export default function Home() {
                             disabled={!((entry.dictResult?.word || entry.word.trim()) && isValidMeaningDef(entry.selectedMeaning))}
                             className={`text-xs font-bold px-2.5 sm:px-3 py-1 rounded-xl shadow-2xs transition flex items-center gap-1 cursor-pointer ${
                               (entry.dictResult?.word || entry.word.trim()) && isValidMeaningDef(entry.selectedMeaning)
-                                ? 'bg-[#5090B3] hover:bg-[#417897] text-white active:scale-95'
+                                ? 'bg-slate-900 hover:bg-slate-800 text-white active:scale-95'
                                 : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                             }`}
                             title="이 단어를 단어장에 바로 저장합니다"
@@ -3219,10 +3219,10 @@ export default function Home() {
                               if (allFound.length <= 1) return null;
 
                               return (
-                                <div className="bg-sky-50/70 p-2.5 rounded-xl border border-[#5090B3]/30 space-y-2 mb-2">
+                                <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-300 space-y-2 mb-2">
                                   <div className="flex items-center justify-between flex-wrap gap-1">
-                                    <div className="text-[11px] font-bold text-[#3d7a9c] flex items-center gap-1">
-                                      <Sparkles className="w-3.5 h-3.5 text-[#5090B3]" />
+                                    <div className="text-[11px] font-bold text-slate-800 flex items-center gap-1">
+                                      <Sparkles className="w-3.5 h-3.5 text-slate-700" />
                                       <span>본문 내 서로 다른 {allFound.length}개 문장 발견 (등록할 문장 선택):</span>
                                     </div>
                                     <div className="flex items-center gap-1.5 text-[10px]">
@@ -3233,7 +3233,7 @@ export default function Home() {
                                             candidateSentences: [...allFound],
                                           });
                                         }}
-                                        className="text-[#5090B3] hover:underline font-bold cursor-pointer"
+                                        className="text-slate-800 hover:underline font-bold cursor-pointer"
                                       >
                                         전체 선택
                                       </button>
@@ -3262,7 +3262,7 @@ export default function Home() {
                                           key={sIdx}
                                           className={`w-full p-2.5 rounded-xl border text-xs transition flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
                                             isPrimary
-                                              ? 'bg-sky-50/90 border-[#5090B3] ring-1 ring-[#5090B3]/40 shadow-xs'
+                                              ? 'bg-slate-100 border-slate-700 ring-1 ring-slate-400/40 shadow-xs'
                                               : isIncluded
                                               ? 'bg-white border-slate-300 text-slate-800'
                                               : 'bg-slate-50/60 border-slate-200 text-slate-400'
@@ -3293,7 +3293,7 @@ export default function Home() {
                                                     context: nextContext,
                                                   });
                                                 }}
-                                                className="w-3.5 h-3.5 text-[#5090B3] rounded border-slate-300 focus:ring-[#5090B3] cursor-pointer"
+                                                className="w-3.5 h-3.5 text-slate-900 rounded border-slate-300 focus:ring-slate-700 cursor-pointer"
                                               />
                                               <span className="text-[10px] font-bold text-slate-500">
                                                 {sIdx + 1}
@@ -3308,7 +3308,7 @@ export default function Home() {
                                                 });
                                               }}
                                               className={`font-serif leading-relaxed line-clamp-2 cursor-pointer flex-1 ${
-                                                isPrimary ? 'font-bold text-slate-900' : 'text-slate-700 hover:text-[#5090B3]'
+                                                isPrimary ? 'font-bold text-slate-900' : 'text-slate-700 hover:text-slate-900'
                                               }`}
                                               title="클릭하여 대표 문장으로 지정"
                                             >
@@ -3318,7 +3318,7 @@ export default function Home() {
 
                                           <div className="flex items-center gap-1.5 shrink-0 self-end sm:self-auto">
                                             {isPrimary ? (
-                                              <span className="text-[10px] bg-[#5090B3] text-white px-2 py-0.5 rounded-full font-bold flex items-center gap-0.5 shadow-2xs">
+                                              <span className="text-[10px] bg-slate-900 text-white px-2 py-0.5 rounded-full font-bold flex items-center gap-0.5 shadow-2xs">
                                                 <span>대표 원문 📌</span>
                                               </span>
                                             ) : (
@@ -3330,7 +3330,7 @@ export default function Home() {
                                                     candidateSentences: Array.from(new Set([...(entry.candidateSentences || []), sent])),
                                                   });
                                                 }}
-                                                className="text-[10px] bg-white border border-[#5090B3]/40 text-[#5090B3] hover:bg-[#5090B3] hover:text-white px-2 py-0.5 rounded font-bold transition cursor-pointer"
+                                                className="text-[10px] bg-white border border-slate-300 text-slate-700 hover:bg-slate-800 hover:text-white px-2 py-0.5 rounded font-bold transition cursor-pointer"
                                               >
                                                 대표로 지정
                                               </button>
@@ -3364,17 +3364,17 @@ export default function Home() {
                                     )
                                   }
                                   disabled={completingSentenceId === entry.id}
-                                  className="text-[10px] bg-sky-50 border border-[#5090B3]/50 text-[#3d7a9c] hover:bg-[#5090B3] hover:text-white px-2 py-0.5 rounded-md font-bold flex items-center gap-1 transition cursor-pointer ml-auto shadow-2xs disabled:opacity-50"
+                                  className="text-[10px] bg-slate-100 border border-slate-300 text-slate-800 hover:bg-slate-900 hover:text-white px-2 py-0.5 rounded-md font-bold flex items-center gap-1 transition cursor-pointer ml-auto shadow-2xs disabled:opacity-50"
                                   title="페이지 경계나 여백으로 잘린 문장을 AI가 자연스러운 완전한 문장으로 복원합니다"
                                 >
                                   {completingSentenceId === entry.id ? (
                                     <>
-                                      <RotateCw className="w-2.5 h-2.5 animate-spin text-[#3d7a9c]" />
+                                      <RotateCw className="w-2.5 h-2.5 animate-spin text-slate-700" />
                                       <span>문장 완성 중...</span>
                                     </>
                                   ) : (
                                     <>
-                                      <Sparkles className="w-2.5 h-2.5 text-[#5090B3]" />
+                                      <Sparkles className="w-2.5 h-2.5 text-slate-700" />
                                       <span>잘린 문장 AI 완성 ✨</span>
                                     </>
                                   )}
@@ -3430,7 +3430,7 @@ export default function Home() {
                           disabled={!((entry.dictResult?.word || entry.word.trim()) && isValidMeaningDef(entry.selectedMeaning))}
                           className={`w-full sm:w-auto font-bold px-4 py-2 text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 shrink-0 ${
                             (entry.dictResult?.word || entry.word.trim()) && isValidMeaningDef(entry.selectedMeaning)
-                              ? 'bg-[#5090B3] hover:bg-[#417897] text-white cursor-pointer active:scale-95'
+                              ? 'bg-slate-900 hover:bg-slate-800 text-white cursor-pointer active:scale-95'
                               : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                           }`}
                         >
@@ -3841,7 +3841,7 @@ export default function Home() {
                                     {isViewingPrimary ? '대표 원문:' : '수집 원문:'}
                                   </span>
                                   {allSentences.length > 1 && (
-                                    <span className="text-[10px] bg-sky-100 text-[#3d7a9c] px-1.5 py-0.5 rounded-full font-bold">
+                                    <span className="text-[10px] bg-slate-200 text-slate-800 px-1.5 py-0.5 rounded-full font-bold">
                                       {currentIdx + 1} / {allSentences.length}
                                     </span>
                                   )}
@@ -3854,7 +3854,7 @@ export default function Home() {
                                           [item.id]: (currentIdx + 1) % allSentences.length,
                                         }));
                                       }}
-                                      className="text-[10px] bg-white border border-[#5090B3]/40 text-[#3d7a9c] hover:bg-[#5090B3] hover:text-white px-2 py-0.5 rounded font-bold flex items-center gap-1 transition shadow-2xs cursor-pointer"
+                                      className="text-[10px] bg-white border border-slate-300 text-slate-700 hover:bg-slate-800 hover:text-white px-2 py-0.5 rounded font-bold flex items-center gap-1 transition shadow-2xs cursor-pointer"
                                       title="이 단어가 쓰인 다른 문장으로 번갈아 보기"
                                     >
                                       <RotateCw className="w-2.5 h-2.5" />
@@ -3881,7 +3881,7 @@ export default function Home() {
                                 </div>
                                 <button
                                   onClick={() => speakSentenceTTS(viewingSentence, ttsVoice)}
-                                  className="text-[10px] text-[#5090B3] hover:underline flex items-center gap-0.5 font-bold cursor-pointer ml-auto"
+                                  className="text-[10px] text-slate-700 hover:text-slate-900 hover:underline flex items-center gap-0.5 font-bold cursor-pointer ml-auto"
                                 >
                                   <Volume2 className="w-3 h-3" />
                                   <span>문장 듣기</span>
@@ -3894,11 +3894,11 @@ export default function Home() {
                               {/* 전체 수집된 문맥 목록 (접이식) */}
                               {allSentences.length > 1 && (
                                 <details className="pt-2 border-t border-slate-200/80 text-xs text-slate-600 group">
-                                  <summary className="cursor-pointer font-bold text-[#5090B3] hover:text-[#3d7a9c] flex items-center gap-1 text-[11px]">
-                                    <Sparkles className="w-3 h-3 text-[#5090B3]" />
+                                  <summary className="cursor-pointer font-bold text-slate-800 hover:text-slate-900 flex items-center gap-1 text-[11px]">
+                                    <Sparkles className="w-3 h-3 text-slate-700" />
                                     <span>수집된 전체 문맥 ({allSentences.length}개 보관됨)</span>
                                   </summary>
-                                  <div className="mt-2 space-y-1.5 pl-1.5 border-l-2 border-[#5090B3]/30">
+                                  <div className="mt-2 space-y-1.5 pl-1.5 border-l-2 border-slate-300">
                                     {allSentences.map((sent, sIdx) => {
                                       const isCurrentViewing = viewingSentence.trim() === sent.trim();
                                       const isSentPrimary = item.contextSentence.trim() === sent.trim();
@@ -3907,7 +3907,7 @@ export default function Home() {
                                           key={sIdx}
                                           className={`p-2 rounded-lg border text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-2 ${
                                             isCurrentViewing
-                                              ? 'bg-[#5090B3]/10 border-[#5090B3]/50 font-bold text-slate-900 shadow-2xs'
+                                              ? 'bg-slate-100 border-slate-400 font-bold text-slate-900 shadow-2xs'
                                               : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300'
                                           }`}
                                         >
@@ -3916,7 +3916,7 @@ export default function Home() {
                                           </p>
                                           <div className="flex items-center gap-1 shrink-0 self-start sm:self-auto">
                                             {isSentPrimary && (
-                                              <span className="text-[10px] bg-[#5090B3] text-white px-2 py-0.5 rounded font-bold">
+                                              <span className="text-[10px] bg-slate-800 text-white px-2 py-0.5 rounded font-bold">
                                                 대표 원문
                                               </span>
                                             )}
@@ -3929,7 +3929,7 @@ export default function Home() {
                                                     [item.id]: sIdx,
                                                   }));
                                                 }}
-                                                className="text-[10px] bg-white border border-slate-300 text-slate-600 hover:border-[#5090B3] hover:text-[#5090B3] px-2 py-0.5 rounded font-medium transition cursor-pointer"
+                                                className="text-[10px] bg-white border border-slate-300 text-slate-600 hover:border-slate-800 hover:text-slate-900 px-2 py-0.5 rounded font-medium transition cursor-pointer"
                                               >
                                                 보기
                                               </button>
@@ -3945,7 +3945,7 @@ export default function Home() {
                                                     '앞으로 퀴즈 복습 시 변경된 문장이 우선 출제됩니다.'
                                                   );
                                                 }}
-                                                className="text-[10px] bg-white border border-[#5090B3]/40 text-[#5090B3] hover:bg-[#5090B3] hover:text-white px-2 py-0.5 rounded font-bold transition cursor-pointer"
+                                                className="text-[10px] bg-white border border-slate-300 text-slate-700 hover:bg-slate-800 hover:text-white px-2 py-0.5 rounded font-bold transition cursor-pointer"
                                               >
                                                 대표로 변경
                                               </button>
@@ -4296,14 +4296,14 @@ export default function Home() {
             {/* Modal Header */}
             <div className="flex items-center justify-between border-b border-slate-100 pb-3 shrink-0">
               <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 to-blue-600 text-white flex items-center justify-center shadow-md">
+                <div className="w-10 h-10 rounded-2xl bg-slate-900 text-white flex items-center justify-center shadow-md">
                   <Globe className="w-5 h-5" />
                 </div>
                 <div>
                   <h3 className="font-black text-sm sm:text-base text-slate-900 leading-tight">
                     원문 가져오기 (URL / 본문 글 통합)
                   </h3>
-                  <p className="text-[11px] text-indigo-600 font-semibold">
+                  <p className="text-[11px] text-slate-500 font-semibold">
                     웹 주소(URL)나 복사한 기사 본문을 넣으면 자동 감지해 불러옵니다
                   </p>
                 </div>
@@ -4322,7 +4322,7 @@ export default function Home() {
               <button
                 type="button"
                 onClick={handleClipboardPasteSmart}
-                className="w-full py-3 px-4 bg-gradient-to-r from-indigo-600 via-indigo-700 to-blue-600 hover:opacity-95 text-white font-bold text-xs sm:text-sm rounded-2xl shadow-sm transition flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+                className="w-full py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs sm:text-sm rounded-2xl shadow-sm transition flex items-center justify-center gap-2 cursor-pointer active:scale-98"
                 title="복사한 내용이 URL이면 기사를 불러오고, 글이면 본문으로 자동 등록합니다"
               >
                 <ClipboardPaste className="w-4 h-4 text-amber-300 shrink-0" />
@@ -4529,10 +4529,10 @@ export default function Home() {
                   type="button"
                   onClick={handleAiCleanPageText}
                   disabled={isCleaningWithAI}
-                  className="text-[11px] bg-gradient-to-r from-indigo-50 to-sky-50 border border-indigo-200 text-indigo-700 hover:bg-indigo-100 px-2.5 py-1.5 rounded-xl font-bold transition flex items-center gap-1 shadow-2xs cursor-pointer disabled:opacity-50"
+                  className="text-[11px] bg-slate-100 border border-slate-300 text-slate-800 hover:bg-slate-200 px-2.5 py-1.5 rounded-xl font-bold transition flex items-center gap-1 shadow-2xs cursor-pointer disabled:opacity-50"
                   title="Tesseract 인식 오타나 깨진 글자를 Gemini AI로 1~2초 만에 깔끔하게 복원합니다"
                 >
-                  <Sparkles className={`w-3 h-3 ${isCleaningWithAI ? 'animate-spin' : 'text-indigo-500'}`} />
+                  <Sparkles className={`w-3 h-3 ${isCleaningWithAI ? 'animate-spin' : 'text-slate-600'}`} />
                   <span>{isCleaningWithAI ? 'AI 복원 중...' : '✨ AI 본문 복원'}</span>
                 </button>
               )}
@@ -4790,7 +4790,7 @@ export default function Home() {
             {/* Header */}
             <div className="p-5 sm:p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
               <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 to-indigo-500 text-white flex items-center justify-center shadow-md">
+                <div className="w-10 h-10 rounded-2xl bg-slate-900 text-white flex items-center justify-center shadow-md">
                   <Settings className="w-5 h-5" />
                 </div>
                 <div>
@@ -4864,7 +4864,7 @@ export default function Home() {
                     <div className="flex items-center gap-4">
                       {/* Avatar Preview with Camera Trigger */}
                       <div className="relative shrink-0">
-                        <div className="w-18 h-18 rounded-full ring-4 ring-white shadow-md overflow-hidden bg-gradient-to-tr from-indigo-500 to-indigo-700 flex items-center justify-center text-white text-2xl font-bold">
+                        <div className="w-18 h-18 rounded-full ring-4 ring-white shadow-md overflow-hidden bg-gradient-to-tr from-slate-700 to-slate-900 flex items-center justify-center text-white text-2xl font-bold">
                           {(pendingAvatarDataUrl !== null ? pendingAvatarDataUrl : effectiveAvatar) ? (
                             <img
                               src={(pendingAvatarDataUrl !== null ? pendingAvatarDataUrl : effectiveAvatar)!}
@@ -4879,7 +4879,7 @@ export default function Home() {
                           type="button"
                           onClick={() => avatarFileInputRef.current?.click()}
                           disabled={isCompressingAvatar}
-                          className="absolute -bottom-1 -right-1 w-7 h-7 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full flex items-center justify-center shadow-md cursor-pointer transition active:scale-95 border-2 border-white"
+                          className="absolute -bottom-1 -right-1 w-7 h-7 bg-slate-900 hover:bg-slate-800 text-white rounded-full flex items-center justify-center shadow-md cursor-pointer transition active:scale-95 border-2 border-white"
                           title="사진 변경하기"
                         >
                           {isCompressingAvatar ? (
@@ -5043,7 +5043,7 @@ export default function Home() {
                   <div className="bg-brand-50/70 rounded-2xl p-4 border border-brand-200/80 space-y-2 text-xs">
                     <div className="flex items-center justify-between">
                       <h4 className="font-black text-xs text-brand-900 flex items-center gap-1.5">
-                        <Sparkles className="w-3.5 h-3.5 text-[#5090B3]" />
+                        <Sparkles className="w-3.5 h-3.5 text-slate-700" />
                         <span>Google Gemini AI 비전 & 문맥 분석</span>
                       </h4>
                       {geminiApiKey ? (
@@ -5272,14 +5272,14 @@ export default function Home() {
           <div className="bg-white rounded-3xl max-w-md w-full p-6 sm:p-7 shadow-2xl border border-indigo-100 space-y-5">
             <div className="flex items-center justify-between border-b border-slate-100 pb-3.5">
               <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 to-violet-600 text-white flex items-center justify-center shadow-md">
+                <div className="w-10 h-10 rounded-2xl bg-slate-900 text-white flex items-center justify-center shadow-md">
                   <UserIcon className="w-5 h-5" />
                 </div>
                 <div>
                   <h3 className="font-black text-base text-slate-900 leading-tight">
                     {authMode === 'login' ? '로그인' : '회원가입'}
                   </h3>
-                  <p className="text-[11px] text-indigo-600 font-semibold">
+                  <p className="text-[11px] text-slate-500 font-semibold">
                     이메일 계정으로 어디서나 내 단어장 동기화
                   </p>
                 </div>

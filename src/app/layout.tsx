@@ -19,7 +19,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="ko">
-      <body className="bg-brand-50 text-slate-800 font-sans min-h-screen flex flex-col antialiased selection:bg-brand-200 selection:text-brand-900">
+      <body className="bg-slate-50 text-slate-800 font-sans min-h-screen flex flex-col antialiased selection:bg-brand-100 selection:text-brand-900">
         {children}
       </body>
     </html>
