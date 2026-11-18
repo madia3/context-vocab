@@ -1,2 +1,2 @@
-export const APP_BUILD_VERSION = 'v2026.11.19-12 (11/19 08:55 KST)';
-export const APP_BUILD_SUMMARY = '단어장 다중 선택 드롭다운 단독 선택 버튼 앞쪽(좌측) 이동';
+export const APP_BUILD_VERSION = 'v2026.11.19-13 (11/19 08:58 KST)';
+export const APP_BUILD_SUMMARY = '단어 등록 탭 단어장 목록형 단일 선택(1개만 선택) 변경';

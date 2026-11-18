@@ -279,23 +279,14 @@ export default function Home() {
   // 단어 목록 랜덤 순서 재배치를 위한 셔플 키
   const [shuffleKey, setShuffleKey] = useState(0);
 
-  // 단어 등록 시 단어장 선택 토글 (복수 단어장 선택 지원)
+  // 단어 등록 시 단어장 단일 선택 (목록형 1개만 선택 가능)
   function handleToggleTargetBook(bookTitle: string) {
     const trimmed = bookTitle.trim();
     if (!trimmed) return;
-    setSelectedTargetBooks((prev) => {
-      let next: string[];
-      if (prev.includes(trimmed)) {
-        if (prev.length <= 1) return prev; // 최소 1개는 유지
-        next = prev.filter((b) => b !== trimmed);
-      } else {
-        next = [...prev, trimmed];
-      }
-      if (next.length > 0 && next[0] !== inputBookTitle) {
-        handleSwitchBook(next[0]);
-      }
-      return next;
-    });
+    setSelectedTargetBooks([trimmed]);
+    if (trimmed !== inputBookTitle) {
+      handleSwitchBook(trimmed);
+    }
   }
 
   function touchBookUsage(bookTitle: string) {
@@ -326,12 +317,9 @@ export default function Home() {
       }
     }
 
-    // 2) 신규 단어장 설정 및 recency 갱신
+    // 2) 신규 단어장 설정 및 recency 갱신 (단일 선택 유지)
     setInputBookTitle(trimmedNext);
-    setSelectedTargetBooks((prev) => {
-      if (prev.includes(trimmedNext)) return prev;
-      return [trimmedNext, ...prev];
-    });
+    setSelectedTargetBooks([trimmedNext]);
     touchBookUsage(trimmedNext);
 
     // 3) 신규 단어장의 보관된 사진(최대 2장) 및 텍스트 복원
@@ -4074,17 +4062,15 @@ export default function Home() {
                       <BookMarked className="w-3.5 h-3.5 text-indigo-600" />
                       <span>저장할 단어장 선택 <span className="text-rose-500">*</span></span>
                     </label>
-                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">
-                      {selectedTargetBooks.length > 1
-                        ? `${selectedTargetBooks.length}개 단어장 동시 저장`
-                        : `${selectedTargetBooks[0] || '단어장 선택됨'}`}
+                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100 truncate max-w-[180px]">
+                      {selectedTargetBooks[0] || inputBookTitle || '단어장 선택됨'}
                     </span>
                   </div>
 
-                  {/* 세로 리스트 형태로 표시되는 단어장 목록 */}
+                  {/* 세로 목록형 단일 선택 단어장 리스트 */}
                   <div className="space-y-1.5 max-h-60 overflow-y-auto pr-0.5">
                     {availableBookTitles.map((title) => {
-                      const isSelected = selectedTargetBooks.includes(title);
+                      const isSelected = (selectedTargetBooks[0] || inputBookTitle) === title;
                       const count = vocabulary.filter((v) => (v.bookTitle || '기본 단어장') === title).length;
                       return (
                         <button
@@ -4099,13 +4085,13 @@ export default function Home() {
                         >
                           <div className="flex items-center gap-2.5 min-w-0">
                             <div
-                              className={`w-4 h-4 rounded-md flex items-center justify-center shrink-0 border transition ${
+                              className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 border-2 transition ${
                                 isSelected
-                                  ? 'bg-indigo-600 border-indigo-600 text-white'
-                                  : 'bg-white border-slate-300 text-transparent'
+                                  ? 'border-indigo-600 bg-indigo-600'
+                                  : 'border-slate-300 bg-white'
                               }`}
                             >
-                              <Check className="w-3 h-3 stroke-[3]" />
+                              {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
                             </div>
                             <span className="truncate">{title}</span>
                           </div>
