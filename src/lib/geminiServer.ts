@@ -104,11 +104,21 @@ export interface GeminiModelCandidate {
 // Vercel Serverless Function timeout (10s on hobby plan) safe: individual timeouts strictly under 8.5s
 export const FAST_GEMINI_CANDIDATES: GeminiModelCandidate[] = [
   {
-    model: 'gemini-1.5-flash',
+    model: 'gemini-3.8-flash',
+    thinkingConfig: { thinkingBudget: 0 },
     timeoutMs: 8500,
   },
   {
-    model: 'gemini-1.5-flash-latest',
+    model: 'gemini-2.5-flash',
+    thinkingConfig: { thinkingBudget: 0 },
+    timeoutMs: 8500,
+  },
+  {
+    model: 'gemini-3.5-flash-lite',
+    timeoutMs: 7000,
+  },
+  {
+    model: 'gemini-1.5-flash',
     timeoutMs: 8500,
   },
 ];

@@ -3661,10 +3661,17 @@ export default function Home() {
                 {/* Page Photo Capture / Direct Source Sentence & Paste Card */}
                 <div className="bg-gradient-to-r from-brand-50 to-brand-100/40 p-3 sm:p-3.5 rounded-xl border border-brand-200">
                   <div className="flex items-center justify-between gap-2 mb-2">
-                    <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 shrink-0">
-                      <BookOpen className="w-4 h-4 text-brand-600" />
-                      <span>원문 문장</span>
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 shrink-0">
+                        <BookOpen className="w-4 h-4 text-brand-600" />
+                        <span>원문 문장</span>
+                      </span>
+                      {process.env.NEXT_PUBLIC_BUILD_TIME && (
+                        <span className="text-[10px] text-indigo-700 bg-indigo-50 border border-indigo-200 px-1.5 py-0.5 rounded-md font-mono hidden sm:inline" title="배포 버전">
+                          v {process.env.NEXT_PUBLIC_BUILD_TIME}
+                        </span>
+                      )}
+                    </div>
                     <div className="flex items-center gap-1 shrink-0">
                       {pageOcrText ? (
                         <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
@@ -5688,7 +5695,14 @@ export default function Home() {
       {/* Footer */}
       <footer className="py-6 border-t border-slate-200/80 bg-white text-center text-xs text-slate-500">
         <div className="max-w-5xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <p>© {new Date().getFullYear()} 원서. 문장. 단어 (divivid). All rights reserved.</p>
+          <div className="text-left">
+            <p>© {new Date().getFullYear()} 원서. 문장. 단어 (divivid). All rights reserved.</p>
+            {process.env.NEXT_PUBLIC_BUILD_TIME && (
+              <p className="text-[11px] text-indigo-600 font-semibold mt-0.5">
+                🚀 배포 버전: <span className="font-mono">{process.env.NEXT_PUBLIC_BUILD_TIME}</span>
+              </p>
+            )}
+          </div>
           <div className="flex items-center gap-4 text-[11px] font-semibold text-slate-600">
             <a href="https://divivid.com" target="_blank" rel="noreferrer" className="hover:text-indigo-600 transition">
               divivid.com
@@ -6829,7 +6843,10 @@ export default function Home() {
             </div>
 
             {/* Footer */}
-            <div className="p-4 border-t border-slate-100 flex justify-end bg-slate-50/50">
+            <div className="p-4 border-t border-slate-100 flex items-center justify-between bg-slate-50/50 text-[11px] text-slate-500">
+              <span className="font-mono text-indigo-700 font-medium">
+                {process.env.NEXT_PUBLIC_BUILD_TIME ? `배포 버전: ${process.env.NEXT_PUBLIC_BUILD_TIME}` : ''}
+              </span>
               <button
                 type="button"
                 onClick={() => setIsSettingsOpen(false)}
