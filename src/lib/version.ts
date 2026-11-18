@@ -1,2 +1,2 @@
-export const APP_BUILD_VERSION = 'v2026.11.19-09 (11/19 08:10 KST)';
-export const APP_BUILD_SUMMARY = '4초 지연 백그라운드 로컬 Tesseract 예열 적용';
+export const APP_BUILD_VERSION = 'v2026.11.19-10 (11/19 08:18 KST)';
+export const APP_BUILD_SUMMARY = '실시간 초 카운트 복원 & 상세 카드 데이터 송수신 시간/합계 검산 추가';

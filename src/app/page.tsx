@@ -381,6 +381,19 @@ export default function Home() {
   const [ocrDetectedNotice, setOcrDetectedNotice] = useState<string | null>(null);
   const [ocrTimingStats, setOcrTimingStats] = useState<OcrTimingStats | null>(null);
   const [isOcrTimingExpanded, setIsOcrTimingExpanded] = useState<boolean>(false);
+  const [ocrElapsedMs, setOcrElapsedMs] = useState<number>(0);
+
+  useEffect(() => {
+    if (!isOcrProcessing) {
+      setOcrElapsedMs(0);
+      return;
+    }
+    const start = performance.now();
+    const timer = setInterval(() => {
+      setOcrElapsedMs(Math.round(performance.now() - start));
+    }, 100);
+    return () => clearInterval(timer);
+  }, [isOcrProcessing]);
   const [detectedCandidateSentences, setDetectedCandidateSentences] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -4227,9 +4240,16 @@ export default function Home() {
 
                   {isSourceProcessing ? (
                     <div className="py-2.5 px-3 bg-white/95 rounded-xl border border-indigo-200 shadow-xs space-y-1 animate-pulse">
-                      <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-800">
-                        <RotateCw className="w-3.5 h-3.5 animate-spin text-indigo-600 shrink-0" />
-                        <span>백그라운드에서 {sourceProcessTaskName || '원문'} 분석 중...</span>
+                      <div className="flex items-center justify-between text-xs font-bold text-indigo-800 gap-2">
+                        <div className="flex items-center gap-1.5 min-w-0">
+                          <RotateCw className="w-3.5 h-3.5 animate-spin text-indigo-600 shrink-0" />
+                          <span className="truncate">백그라운드에서 {sourceProcessTaskName || '원문'} 분석 중...</span>
+                        </div>
+                        {isOcrProcessing && (
+                          <span className="font-mono text-indigo-600 font-black text-xs shrink-0">
+                            ⏱️ {(ocrElapsedMs / 1000).toFixed(1)}초
+                          </span>
+                        )}
                       </div>
                       <p className="text-[11px] text-slate-500">
                         기다리지 말고 아래 단어를 바로 입력하세요! 분석 완료 시 문장이 자동 연결됩니다.
@@ -4302,42 +4322,67 @@ export default function Home() {
                         </div>
                       )}
 
-                      {/* ⏱️ 단계별 처리 시간 진단 카드 (기본 접힘 - 상세 버튼 클릭 시에만 펼침) */}
-                      {ocrTimingStats && isOcrTimingExpanded && (
-                        <div className="bg-slate-900 text-slate-100 rounded-xl p-3 text-xs font-mono shadow-sm border border-slate-800 space-y-2 animate-fade-in">
-                          <div className="flex items-center justify-between border-b border-slate-800 pb-1.5 gap-2">
-                            <div className="flex items-center gap-1.5 font-bold text-slate-200 min-w-0">
-                              <Activity className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                              <span className="truncate">⏱️ 단계별 실시간 소요 시간 ({APP_BUILD_VERSION.split(' ')[0]})</span>
-                            </div>
-                            <span className="px-2 py-0.5 rounded-full text-[11px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0">
-                              총 {(ocrTimingStats.totalMs / 1000).toFixed(2)}초
-                            </span>
-                          </div>
+                      {/* ⏱️ 단계별 처리 시간 진단 카드 (기본 접힘 - 상세 버튼 클릭 시에만 펼침, 각 항목 합계 === 총 소요 시간) */}
+                      {ocrTimingStats && isOcrTimingExpanded && (() => {
+                        const totalSec = Number((ocrTimingStats.totalMs / 1000).toFixed(2));
+                        const compressSec = Number((ocrTimingStats.compressionMs / 1000).toFixed(2));
+                        const geminiServerSec = Number(((ocrTimingStats.serverDurationMs || 0) / 1000).toFixed(2));
+                        const tesseractSec = Number(((ocrTimingStats.tesseractMs || 0) / 1000).toFixed(2));
+                        const repairSec = Number(((ocrTimingStats.repairMs || 0) / 1000).toFixed(2));
+                        const transferSec = Number(
+                          Math.max(0, totalSec - compressSec - geminiServerSec - tesseractSec - repairSec).toFixed(2)
+                        );
+                        const sumParts = [
+                          compressSec.toFixed(2),
+                          transferSec.toFixed(2),
+                          ...(geminiServerSec > 0 ? [geminiServerSec.toFixed(2)] : []),
+                          ...(tesseractSec > 0 ? [tesseractSec.toFixed(2)] : []),
+                          ...(repairSec > 0 ? [repairSec.toFixed(2)] : []),
+                        ];
 
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
-                            <div className="bg-slate-800/70 p-2 rounded-lg border border-slate-700/50 space-y-0.5">
-                              <div className="text-slate-400 font-bold flex items-center justify-between">
-                                <span>1. 🖼️ 이미지 압축</span>
-                                <span className="text-amber-300 font-black">{(ocrTimingStats.compressionMs / 1000).toFixed(2)}초</span>
+                        return (
+                          <div className="bg-slate-900 text-slate-100 rounded-xl p-3 text-xs font-mono shadow-sm border border-slate-800 space-y-2 animate-fade-in">
+                            <div className="flex items-center justify-between border-b border-slate-800 pb-1.5 gap-2">
+                              <div className="flex items-center gap-1.5 font-bold text-slate-200 min-w-0">
+                                <Activity className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                                <span className="truncate">⏱️ 단계별 소요 시간 ({APP_BUILD_VERSION.split(' ')[0]})</span>
                               </div>
-                              <div className="text-[10px] text-slate-400">
-                                용량: {ocrTimingStats.originalFileSizeKb}KB ➔ {ocrTimingStats.compressedSizeKb}KB
-                              </div>
-                              {ocrTimingStats.originalDimensions && (
-                                <div className="text-[10px] text-slate-400">
-                                  해상도: {ocrTimingStats.originalDimensions} ➔ {ocrTimingStats.compressedDimensions}
+                              <span className="px-2 py-0.5 rounded-full text-[11px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0">
+                                총 {totalSec.toFixed(2)}초
+                              </span>
+                            </div>
+
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-[11px]">
+                              <div className="bg-slate-800/70 p-2 rounded-lg border border-slate-700/50 space-y-0.5">
+                                <div className="text-slate-400 font-bold flex items-center justify-between">
+                                  <span>1. 🖼️ 이미지 압축</span>
+                                  <span className="text-amber-300 font-black">{compressSec.toFixed(2)}초</span>
                                 </div>
-                              )}
+                                <div className="text-[10px] text-slate-400">
+                                  용량: {ocrTimingStats.originalFileSizeKb}KB ➔ {ocrTimingStats.compressedSizeKb}KB
+                                </div>
+                                {ocrTimingStats.originalDimensions && (
+                                  <div className="text-[10px] text-slate-400">
+                                    해상도: {ocrTimingStats.originalDimensions} ➔ {ocrTimingStats.compressedDimensions}
+                                  </div>
+                                )}
+                              </div>
+
+                              <div className="bg-slate-800/70 p-2 rounded-lg border border-slate-700/50 space-y-0.5">
+                                <div className="text-slate-400 font-bold flex items-center justify-between">
+                                  <span>2. 📡 데이터 송수신 (네트워크)</span>
+                                  <span className="text-sky-300 font-black">{transferSec.toFixed(2)}초</span>
+                                </div>
+                                <div className="text-[10px] text-slate-400">
+                                  총 시간에서 압축·AI·로컬 처리를 제외한 순수 업/다운로드 시간
+                                </div>
+                              </div>
                             </div>
 
-                            <div className="bg-slate-800/70 p-2 rounded-lg border border-slate-700/50 space-y-0.5">
+                            <div className="bg-slate-800/70 p-2 rounded-lg border border-slate-700/50 text-[11px] space-y-0.5">
                               <div className="text-slate-400 font-bold flex items-center justify-between">
-                                <span>2. ⚡ AI Vision 전송/응답</span>
-                                <span className="text-cyan-300 font-black">{(ocrTimingStats.networkMs / 1000).toFixed(2)}초</span>
-                              </div>
-                              <div className="text-[10px] text-slate-400">
-                                서버 Gemini: {ocrTimingStats.serverDurationMs ? `${(ocrTimingStats.serverDurationMs / 1000).toFixed(2)}초` : 'N/A'}
+                                <span>3. 🤖 AI Vision 서버 처리</span>
+                                <span className="text-cyan-300 font-black">{geminiServerSec.toFixed(2)}초</span>
                               </div>
                               <div className="text-[10px] text-slate-400 break-all">
                                 모델: {ocrTimingStats.modelUsed || 'default'}
@@ -4353,35 +4398,42 @@ export default function Home() {
                                 </div>
                               )}
                             </div>
-                          </div>
 
-                          {ocrTimingStats.tesseractMs ? (
-                            <div className="bg-rose-950/50 p-2 rounded-lg border border-rose-800/60 text-[11px] text-rose-300 space-y-0.5">
-                              <div className="font-bold flex items-center justify-between text-rose-200">
-                                <span>3. ⚠️ 로컬 Tesseract 폴백 동작함!</span>
-                                <span className="font-black">{(ocrTimingStats.tesseractMs / 1000).toFixed(2)}초</span>
-                              </div>
-                              <div className="text-[10px] text-rose-300/80">
-                                사유: {ocrTimingStats.visionError || 'Vision API 실패/타임아웃'}
-                              </div>
-                            </div>
-                          ) : null}
-
-                          {ocrTimingStats.repairMs ? (
-                            <div className="bg-indigo-950/50 p-2 rounded-lg border border-indigo-800/60 text-[11px] text-indigo-300 space-y-0.5">
-                              <div className="flex items-center justify-between">
-                                <span>4. ✨ Gemini 텍스트 문맥 복원 ({ocrTimingStats.repairModelUsed || 'gemini'})</span>
-                                <span className="font-black text-indigo-200">{(ocrTimingStats.repairMs / 1000).toFixed(2)}초</span>
-                              </div>
-                              {ocrTimingStats.repairAttemptLogs && ocrTimingStats.repairAttemptLogs.length > 0 && (
-                                <div className="text-[9.5px] text-indigo-200/80 break-all">
-                                  시도: {ocrTimingStats.repairAttemptLogs.join(' ➔ ')}
+                            {tesseractSec > 0 ? (
+                              <div className="bg-rose-950/50 p-2 rounded-lg border border-rose-800/60 text-[11px] text-rose-300 space-y-0.5">
+                                <div className="font-bold flex items-center justify-between text-rose-200">
+                                  <span>4. ⚠️ 로컬 Tesseract 폴백</span>
+                                  <span className="font-black">{tesseractSec.toFixed(2)}초</span>
                                 </div>
-                              )}
+                                <div className="text-[10px] text-rose-300/80">
+                                  사유: {ocrTimingStats.visionError || 'Vision API 실패/타임아웃'}
+                                </div>
+                              </div>
+                            ) : null}
+
+                            {repairSec > 0 ? (
+                              <div className="bg-indigo-950/50 p-2 rounded-lg border border-indigo-800/60 text-[11px] text-indigo-300 space-y-0.5">
+                                <div className="flex items-center justify-between">
+                                  <span>5. ✨ Gemini 텍스트 문맥 복원 ({ocrTimingStats.repairModelUsed || 'gemini'})</span>
+                                  <span className="font-black text-indigo-200">{repairSec.toFixed(2)}초</span>
+                                </div>
+                                {ocrTimingStats.repairAttemptLogs && ocrTimingStats.repairAttemptLogs.length > 0 && (
+                                  <div className="text-[9.5px] text-indigo-200/80 break-all">
+                                    시도: {ocrTimingStats.repairAttemptLogs.join(' ➔ ')}
+                                  </div>
+                                )}
+                              </div>
+                            ) : null}
+
+                            <div className="pt-1 border-t border-slate-800 flex items-center justify-between text-[10px] text-slate-400">
+                              <span>검산 합계</span>
+                              <span className="text-emerald-300 font-bold">
+                                {sumParts.join(' + ')} = {totalSec.toFixed(2)}초
+                              </span>
                             </div>
-                          ) : null}
-                        </div>
-                      )}
+                          </div>
+                        );
+                      })()}
 
                       {/* 원문 문장 칸 (직접 붙여넣기 및 편집 가능) */}
                       <div className="relative">

@@ -284,13 +284,14 @@ export async function extractTextWithAI(
   const globalStart = performance.now();
   const pipelineSteps: OcrStepLog[] = [];
   const apiKey = customApiKey || getStoredGeminiKey();
+  const usedPrecompressed = Boolean(precompressedData && precompressedData.base64);
 
-  const primary: ProcessedImageData =
-    precompressedData && precompressedData.base64
-      ? precompressedData
-      : await fileToBase64(file);
+  const primary: ProcessedImageData = usedPrecompressed
+    ? (precompressedData as ProcessedImageData)
+    : await fileToBase64(file);
 
   const compressionMs = primary.compressionMs || 0;
+  const precompressedOffsetMs = usedPrecompressed ? compressionMs : 0;
   const originalFileSizeKb = primary.originalSizeKb || Math.round((file.size || 0) / 1024);
   const compressedSizeKb = primary.compressedSizeKb || Math.round((primary.base64.length * 0.75) / 1024);
 
@@ -366,7 +367,7 @@ export async function extractTextWithAI(
         recordAiUsage(1);
         const detected = data.markedWords || data.underlinedWords;
         const markedWords: string[] = Array.isArray(detected) ? detected : [];
-        const totalMs = Math.round(performance.now() - globalStart);
+        const totalMs = Math.round(precompressedOffsetMs + (performance.now() - globalStart));
 
         pipelineSteps.push({
           step: '2. Gemini Vision 호출 & 응답',
@@ -471,7 +472,7 @@ export async function extractTextWithAI(
         status: 'ok',
         detail: `모델: ${repairModelUsed || 'gemini'}`,
       });
-      const totalMs = Math.round(performance.now() - globalStart);
+      const totalMs = Math.round(precompressedOffsetMs + (performance.now() - globalStart));
       return {
         text: aiRepairedMeta.cleanedText,
         method: 'gemini_repair',
@@ -500,7 +501,7 @@ export async function extractTextWithAI(
     }
   }
 
-  const totalMs = Math.round(performance.now() - globalStart);
+  const totalMs = Math.round(precompressedOffsetMs + (performance.now() - globalStart));
   return {
     text: heuristicCleaned,
     method: 'tesseract',
