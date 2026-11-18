@@ -136,7 +136,7 @@ Output strictly valid JSON in this exact structure without markdown backticks:
         responseMimeType: 'application/json',
         candidates: [
           { model: 'gemini-1.5-flash', timeoutMs: 8500 },
-          { model: 'gemini-2.0-flash', timeoutMs: 8500 },
+          { model: 'gemini-1.5-flash-latest', timeoutMs: 8500 },
         ],
       });
 

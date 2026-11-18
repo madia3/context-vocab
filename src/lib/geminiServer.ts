@@ -108,12 +108,8 @@ export const FAST_GEMINI_CANDIDATES: GeminiModelCandidate[] = [
     timeoutMs: 8500,
   },
   {
-    model: 'gemini-2.0-flash',
+    model: 'gemini-1.5-flash-latest',
     timeoutMs: 8500,
-  },
-  {
-    model: 'gemini-2.0-flash-lite',
-    timeoutMs: 7000,
   },
 ];
 
@@ -243,6 +239,13 @@ export async function callGeminiWithFallback(options: {
         }
       } else {
         lastError = await res.text();
+
+        // If a model is not found or unsupported, clear last successful model memory
+        if (res.status === 404 || lastError.includes('not found') || lastError.includes('not supported') || lastError.includes('deprecated')) {
+          if (lastSuccessfulModelName === candidate.model) {
+            lastSuccessfulModelName = null;
+          }
+        }
 
         // Early abort ONLY if API Key is definitively invalid (do not waste time trying other models)
         if (

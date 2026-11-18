@@ -679,8 +679,8 @@ Return strictly valid JSON:
           responseMimeType: 'application/json',
           temperature: 0.0,
           candidates: [
-            { model: 'gemini-2.5-flash-lite', thinkingConfig: { thinkingBudget: 0 }, timeoutMs: 2800 },
-            { model: 'gemini-2.0-flash', timeoutMs: 2800 },
+            { model: 'gemini-1.5-flash', timeoutMs: 2800 },
+            { model: 'gemini-1.5-flash-latest', timeoutMs: 2800 },
           ],
         });
 
