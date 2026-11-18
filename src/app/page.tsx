@@ -581,6 +581,7 @@ export default function Home() {
   const [ttsRate, setTtsRate] = useState<number>(1.25);
   const [geminiApiKey, setGeminiApiKey] = useState('');
   const [geminiKeyInput, setGeminiKeyInput] = useState('');
+  const [isServerGeminiReady, setIsServerGeminiReady] = useState(false);
   const [aiUsageStats, setAiUsageStats] = useState<AiUsageStats>(() => getAiUsageStats());
 
   useEffect(() => {
@@ -928,6 +929,16 @@ export default function Home() {
         setGeminiApiKey(savedGeminiKey);
         setGeminiKeyInput(savedGeminiKey);
       }
+
+      // Vercel 서버 전역 GEMINI_API_KEY 활성화 여부 확인
+      fetch('/api/ai/test-key')
+        .then((res) => res.json())
+        .then((data) => {
+          if (data?.serverConfigured) {
+            setIsServerGeminiReady(true);
+          }
+        })
+        .catch(() => {});
     }
   }, []);
 
@@ -6372,10 +6383,10 @@ export default function Home() {
                         <Sparkles className="w-3.5 h-3.5 text-slate-700" />
                         <span>Google Gemini AI 비전 & 문맥 분석</span>
                       </h4>
-                      {geminiApiKey ? (
+                      {geminiApiKey || isServerGeminiReady ? (
                         <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1">
                           <Check className="w-2.5 h-2.5" />
-                          <span>연동 활성화됨</span>
+                          <span>{geminiApiKey ? '개인 키 연동됨' : '서버 AI 활성화됨 🚀'}</span>
                         </span>
                       ) : (
                         <span className="text-[10px] bg-slate-200 text-slate-700 font-bold px-2 py-0.5 rounded-full">
@@ -6383,6 +6394,12 @@ export default function Home() {
                         </span>
                       )}
                     </div>
+                    {isServerGeminiReady && !geminiApiKey && (
+                      <div className="p-2.5 bg-emerald-50/90 rounded-xl border border-emerald-200 text-[11px] text-emerald-900 font-medium leading-relaxed">
+                        ✨ <strong>서버 전역 Gemini AI가 활성화되어 있습니다.</strong><br />
+                        Vercel 환경 변수가 감지되어 개인 키를 입력하지 않아도 책 사진 고정밀 OCR 및 밑줄/동그라미 단어 자동 등록이 모든 기기에서 즉시 작동합니다.
+                      </div>
+                    )}
                     <ul className="space-y-1.5 text-[11px] text-slate-700 leading-relaxed pl-1 pt-1">
                       <li className="flex items-start gap-1.5">
                         <span className="text-brand-600 font-bold">1.</span>

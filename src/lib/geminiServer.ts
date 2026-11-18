@@ -101,23 +101,19 @@ export interface GeminiModelCandidate {
 }
 
 // Fast models on Google Generative Language v1beta API (prioritized by official availability & speed)
+// Vercel Serverless Function timeout (10s on hobby plan) safe: individual timeouts strictly under 8.5s
 export const FAST_GEMINI_CANDIDATES: GeminiModelCandidate[] = [
   {
     model: 'gemini-2.0-flash',
-    timeoutMs: 10000,
+    timeoutMs: 8500,
   },
   {
     model: 'gemini-1.5-flash',
-    timeoutMs: 10000,
+    timeoutMs: 8500,
   },
   {
     model: 'gemini-2.0-flash-lite',
-    timeoutMs: 8000,
-  },
-  {
-    model: 'gemini-2.5-flash',
-    thinkingConfig: { thinkingBudget: 0 },
-    timeoutMs: 10000,
+    timeoutMs: 7000,
   },
 ];
 
@@ -284,6 +280,16 @@ export async function callGeminiWithFallback(options: {
     } catch (err: any) {
       lastError = err?.message || String(err);
     }
+  }
+
+  // If client-provided key failed due to invalid key or auth error, and server environment has a fallback key, retry once with server env key
+  const serverEnvKey = process.env.GEMINI_API_KEY?.trim();
+  if (serverEnvKey && apiKey !== serverEnvKey && (lastError.includes('API_KEY_INVALID') || lastError.includes('401') || lastError.includes('403'))) {
+    console.warn('Client-provided Gemini API key failed with auth error, falling back to server GEMINI_API_KEY...');
+    return callGeminiWithFallback({
+      ...options,
+      apiKey: serverEnvKey,
+    });
   }
 
   return {

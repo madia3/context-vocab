@@ -10,6 +10,13 @@ import {
 
 export const runtime = 'nodejs';
 
+export async function GET() {
+  const serverKey = process.env.GEMINI_API_KEY?.trim() || '';
+  return NextResponse.json({
+    serverConfigured: Boolean(serverKey && serverKey.length >= 10),
+  });
+}
+
 export async function POST(req: NextRequest) {
   try {
     const rateLimit = checkRateLimit(req, 15);
