@@ -2388,30 +2388,8 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Right Utility Controls (AI Badge, Google Auth & Settings) */}
+          {/* Right Utility Controls (Login & Settings) */}
           <div className="flex items-center gap-1.5 shrink-0">
-            {geminiApiKey ? (
-              <button
-                type="button"
-                onClick={() => openSettingsWithTab('ai')}
-                className="text-xs bg-brand-50 hover:bg-brand-100 text-brand-700 border border-brand-200 px-2 sm:px-2.5 py-1.5 rounded-xl flex items-center gap-1 font-bold transition cursor-pointer"
-                title="Google Gemini AI 연결됨 (설정 열기)"
-              >
-                <Bot className="w-3.5 h-3.5 text-brand-600" />
-                <span className="hidden sm:inline">AI 켜짐</span>
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => openSettingsWithTab('ai')}
-                className="text-xs bg-gradient-to-r from-brand-600 to-brand-500 text-white px-2 sm:px-2.5 py-1.5 rounded-xl flex items-center gap-1 font-bold shadow-xs hover:opacity-95 transition cursor-pointer"
-                title="Google Gemini AI 무료 연동 (설정 열기)"
-              >
-                <Sparkles className="w-3.5 h-3.5 text-[#F3D372]" />
-                <span className="hidden sm:inline">AI 연동</span>
-              </button>
-            )}
-
             {/* Google Authentication (Login or User Profile) */}
             {currentUser ? (
               <div className="relative">
