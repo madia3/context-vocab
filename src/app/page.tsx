@@ -7313,7 +7313,7 @@ export default function Home() {
                           )}
                           <span>
                             {pingResult.ok
-                              ? `정상 응답! Google API 지연 시간: ${pingResult.durationMs}ms | 응답 모델: ${pingResult.modelUsed || 'gemini-2.5-flash'}`
+                              ? `정상 응답! Google API 지연 시간: ${pingResult.durationMs}ms | 응답 모델: ${pingResult.modelUsed || 'gemini-2.0-flash'}`
                               : `진단 실패: ${pingResult.error || '연결 오류'}`}
                           </span>
                         </div>
@@ -7423,7 +7423,7 @@ export default function Home() {
                           <div className="p-2.5 bg-white rounded-xl border border-slate-200/80">
                             <div className="text-[11px] text-slate-500 font-medium">현재 작동 중인 AI 모델</div>
                             <div className="font-mono font-bold text-indigo-700 mt-0.5">
-                              {serverUsageReport?.lastActiveModel || 'gemini-2.5-flash'} (자동 폴백)
+                              {serverUsageReport?.lastActiveModel || 'gemini-2.0-flash'} (자동 폴백)
                             </div>
                           </div>
                         </div>

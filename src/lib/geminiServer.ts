@@ -98,30 +98,47 @@ function extractCookieValue(cookieHeader: string | null, name: string): string {
 
 export interface GeminiModelCandidate {
   model: string;
+  apiVersion?: 'v1' | 'v1beta';
   thinkingConfig?: Record<string, any>;
   timeoutMs: number;
 }
 
-// Fast models on Google Generative Language v1beta API (prioritized by official availability & speed)
-// Vercel Serverless Function timeout (10s on hobby plan) safe: individual timeouts strictly under 8.5s
+// Officially supported Google Generative Language API models (compatible with both legacy AIza... and new AQ... keys)
 export const FAST_GEMINI_CANDIDATES: GeminiModelCandidate[] = [
+  // 1. Google flagship Gemini 2.0 Flash (Fastest, latest generation, supports vision & text)
   {
-    model: 'gemini-3.8-flash',
-    thinkingConfig: { thinkingBudget: 0 },
+    model: 'gemini-2.0-flash',
+    apiVersion: 'v1beta',
     timeoutMs: 8500,
   },
   {
-    model: 'gemini-2.5-flash',
-    thinkingConfig: { thinkingBudget: 0 },
+    model: 'gemini-2.0-flash',
+    apiVersion: 'v1',
     timeoutMs: 8500,
   },
-  {
-    model: 'gemini-3.5-flash-lite',
-    timeoutMs: 7000,
-  },
+  // 2. Google Gemini 1.5 Flash (Stable v1 endpoint)
   {
     model: 'gemini-1.5-flash',
+    apiVersion: 'v1',
     timeoutMs: 8500,
+  },
+  // 3. Google Gemini 2.0 Flash Lite (Ultra fast)
+  {
+    model: 'gemini-2.0-flash-lite',
+    apiVersion: 'v1beta',
+    timeoutMs: 7000,
+  },
+  // 4. Google Gemini 1.5 Flash (v1beta endpoint)
+  {
+    model: 'gemini-1.5-flash',
+    apiVersion: 'v1beta',
+    timeoutMs: 8500,
+  },
+  // 5. Google Gemini 1.5 Pro
+  {
+    model: 'gemini-1.5-pro',
+    apiVersion: 'v1',
+    timeoutMs: 9000,
   },
 ];
 
@@ -324,7 +341,7 @@ export function getServerUsageReport(): ServerUsageReport {
     remainingCalls,
     usagePercent,
     rpmLimit: 15,
-    lastActiveModel: usage.lastActiveModel || lastSuccessfulModelName || 'gemini-2.5-flash',
+    lastActiveModel: usage.lastActiveModel || lastSuccessfulModelName || 'gemini-2.0-flash',
     lastCallAt: usage.lastCallAt,
     byEndpoint: usage.byEndpoint,
     recentLogs: usage.recentLogs || [],
@@ -429,6 +446,57 @@ export function resolveServerGeminiKey(req: Request, explicitKey?: string): stri
   return fromServerEnv || '';
 }
 
+async function autoDiscoverWorkingModelAndCall(options: {
+  apiKey: string;
+  parts: any[];
+  generationConfig: Record<string, any>;
+}): Promise<{ ok: boolean; text: string; rawData?: any; modelUsed?: string } | null> {
+  const { apiKey, parts, generationConfig } = options;
+  for (const ver of ['v1', 'v1beta']) {
+    try {
+      const listUrl = `https://generativelanguage.googleapis.com/${ver}/models?key=${encodeURIComponent(apiKey)}`;
+      const listRes = await fetch(listUrl, { signal: AbortSignal.timeout(4500) });
+      if (listRes.ok) {
+        const listData = await listRes.json();
+        const models: any[] = listData.models || [];
+        const supported = models.filter(
+          (m) => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent')
+        );
+        const target =
+          supported.find((m) => m.name.includes('gemini-2.0-flash')) ||
+          supported.find((m) => m.name.includes('gemini-1.5-flash')) ||
+          supported.find((m) => m.name.includes('flash')) ||
+          supported[0];
+
+        if (target) {
+          const modelClean = target.name.replace(/^models\//, '');
+          const callUrl = `https://generativelanguage.googleapis.com/${ver}/models/${modelClean}:generateContent?key=${encodeURIComponent(apiKey)}`;
+          const genRes = await fetch(callUrl, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            signal: AbortSignal.timeout(8500),
+            body: JSON.stringify({ contents: [{ parts }], generationConfig }),
+          });
+          if (genRes.ok) {
+            const genData = await genRes.json();
+            const genText = genData.candidates?.[0]?.content?.parts?.[0]?.text || '';
+            if (genText) {
+              lastSuccessfulModelName = modelClean;
+              return {
+                ok: true,
+                text: genText,
+                rawData: genData,
+                modelUsed: modelClean,
+              };
+            }
+          }
+        }
+      }
+    } catch {}
+  }
+  return null;
+}
+
 export async function callGeminiWithFallback(options: {
   apiKey: string;
   parts: any[];
@@ -471,7 +539,8 @@ export async function callGeminiWithFallback(options: {
 
   for (const candidate of orderedCandidates) {
     try {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${candidate.model}:generateContent?key=${encodeURIComponent(cleanApiKey)}`;
+      const apiVer = candidate.apiVersion || 'v1beta';
+      const url = `https://generativelanguage.googleapis.com/${apiVer}/models/${candidate.model}:generateContent?key=${encodeURIComponent(cleanApiKey)}`;
       const generationConfig: Record<string, any> = {
         temperature,
       };
@@ -518,6 +587,44 @@ export async function callGeminiWithFallback(options: {
         }
       } else {
         lastError = await res.text();
+
+        // If a model is not found on v1beta, immediately try the stable v1 endpoint for the same model
+        if ((res.status === 404 || lastError.includes('not found') || lastError.includes('not supported')) && apiVer === 'v1beta') {
+          try {
+            const v1Url = `https://generativelanguage.googleapis.com/v1/models/${candidate.model}:generateContent?key=${encodeURIComponent(cleanApiKey)}`;
+            const retryV1 = await fetch(v1Url, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              signal: AbortSignal.timeout(candidate.timeoutMs),
+              body: JSON.stringify({
+                contents: [{ parts }],
+                generationConfig,
+              }),
+            });
+            if (retryV1.ok) {
+              const v1Data = await retryV1.json();
+              const v1Text = v1Data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+              if (v1Text) {
+                lastSuccessfulModelName = candidate.model;
+                const durationMs = Date.now() - startTime;
+                recordServerUsage({
+                  isServerKey,
+                  endpoint,
+                  model: candidate.model,
+                  status: 'ok',
+                  durationMs,
+                });
+                return {
+                  ok: true,
+                  text: v1Text,
+                  rawData: v1Data,
+                  modelUsed: candidate.model,
+                  durationMs,
+                };
+              }
+            }
+          } catch {}
+        }
 
         // If a model is not found or unsupported, clear last successful model memory
         if (res.status === 404 || lastError.includes('not found') || lastError.includes('not supported') || lastError.includes('deprecated')) {
@@ -575,6 +682,42 @@ export async function callGeminiWithFallback(options: {
       }
     } catch (err: any) {
       lastError = err?.message || String(err);
+    }
+  }
+
+  // If all specific candidates failed due to model name/version mismatch (not auth failure),
+  // auto-discover working models from Google ModelService dynamically
+  if (
+    !lastError.includes('API_KEY_INVALID') &&
+    !lastError.includes('401') &&
+    (lastError.includes('not found') || lastError.includes('not supported') || lastError.includes('404'))
+  ) {
+    const fallbackGenConfig: Record<string, any> = { temperature };
+    if (responseMimeType) fallbackGenConfig.responseMimeType = responseMimeType;
+    if (typeof maxOutputTokens === 'number') fallbackGenConfig.maxOutputTokens = maxOutputTokens;
+
+    const dynamicDiscovery = await autoDiscoverWorkingModelAndCall({
+      apiKey: cleanApiKey,
+      parts,
+      generationConfig: fallbackGenConfig,
+    });
+
+    if (dynamicDiscovery && dynamicDiscovery.ok) {
+      const durationMs = Date.now() - startTime;
+      recordServerUsage({
+        isServerKey,
+        endpoint,
+        model: dynamicDiscovery.modelUsed || 'gemini-auto',
+        status: 'ok',
+        durationMs,
+      });
+      return {
+        ok: true,
+        text: dynamicDiscovery.text,
+        rawData: dynamicDiscovery.rawData,
+        modelUsed: dynamicDiscovery.modelUsed,
+        durationMs,
+      };
     }
   }
 
