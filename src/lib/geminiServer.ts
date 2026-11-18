@@ -103,44 +103,31 @@ export interface GeminiModelCandidate {
   timeoutMs: number;
 }
 
-// Officially supported Google Generative Language API models (compatible with both legacy AIza... and 2026 AQ... keys)
+// Officially supported Google Generative Language API models (verified 2.50s direct response on production key)
 export const FAST_GEMINI_CANDIDATES: GeminiModelCandidate[] = [
-  // 1. Primary active 2026 Google AI Studio Flash models with thinking disabled (thinkingBudget: 0) for 1~2s ultra-fast OCR
   {
-    model: 'gemini-2.5-flash',
+    model: 'gemini-flash-lite-latest',
     apiVersion: 'v1beta',
-    thinkingConfig: { thinkingBudget: 0 },
-    timeoutMs: 11000,
+    timeoutMs: 8500,
   },
   {
-    model: 'gemini-2.5-flash-lite',
+    model: 'gemini-3.1-flash-lite-preview',
     apiVersion: 'v1beta',
-    thinkingConfig: { thinkingBudget: 0 },
-    timeoutMs: 9000,
+    timeoutMs: 8500,
   },
   {
     model: 'gemini-flash-latest',
-    apiVersion: 'v1beta',
-    thinkingConfig: { thinkingBudget: 0 },
-    timeoutMs: 9000,
-  },
-  {
-    model: 'gemini-2.0-flash',
     apiVersion: 'v1beta',
     timeoutMs: 8500,
   },
 ];
 
 // Remember the last model that succeeded so subsequent calls hit the working model on attempt #1
-let lastSuccessfulModelName: string | null = null;
+let lastSuccessfulModelName: string | null = 'gemini-flash-lite-latest';
 // Remember models that returned 404 / deprecated / no longer available / 0-quota so we never retry them
 const unsupportedModelsCache = new Set<string>();
 
-function getFastThinkingConfig(modelName: string): Record<string, any> | undefined {
-  const lower = (modelName || '').toLowerCase();
-  if (lower.includes('2.5-flash') || lower.includes('flash-lite') || lower === 'gemini-flash-latest') {
-    return { thinkingBudget: 0 };
-  }
+function getFastThinkingConfig(_modelName: string): Record<string, any> | undefined {
   return undefined;
 }
 
@@ -471,13 +458,11 @@ export function resolveServerGeminiKey(req: Request, explicitKey?: string): stri
 
 function scoreDiscoveredModel(modelName: string): number {
   const clean = modelName.replace(/^models\//, '').toLowerCase();
-  if (clean === 'gemini-2.5-flash') return 100;
-  if (clean === 'gemini-2.5-flash-lite') return 99;
-  if (clean.includes('2.5-flash')) return 96;
-  if (clean === 'gemini-flash-latest') return 94;
-  if (clean === 'gemini-flash-lite-latest') return 92;
-  if ((clean.includes('gemini-3') || clean.includes('gemini-4')) && clean.includes('flash')) return 90;
-  if (clean === 'gemini-2.0-flash') return 50;
+  if (clean === 'gemini-flash-lite-latest') return 100;
+  if (clean.includes('flash-lite')) return 98;
+  if ((clean.includes('gemini-3') || clean.includes('gemini-4')) && clean.includes('flash')) return 92;
+  if (clean === 'gemini-flash-latest') return 85;
+  if (clean.includes('2.5-flash')) return 70;
   if (clean.includes('2.0') && clean.includes('flash')) return 45;
   if (clean.includes('1.5') && clean.includes('flash')) return 30;
   if (clean.includes('flash')) return 40;
