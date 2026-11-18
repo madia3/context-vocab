@@ -687,8 +687,28 @@ export async function callGeminiWithFallback(options: {
       }
     };
 
+    // 전체 레이스 안전 타임아웃 (15초): 어떤 상황에서도 서버 함수가 60초까지 행(hang) 걸리지 않도록 보장
+    const globalRaceTimeout = setTimeout(() => {
+      if (!resolved) {
+        resolved = true;
+        cleanupAll();
+        attemptLogs.push('전체 레이스 제한시간(15s) 초과');
+        resolveRace({ ok: false, text: '', lastError: latestError || 'AI 응답 제한시간(15초) 초과' });
+      }
+    }, 15000);
+    activeTimers.add(globalRaceTimeout);
+
     const launchNextModel = async () => {
-      if (resolved || fatalAuthError || launchedModels.size >= MAX_PARALLEL_MODELS) {
+      if (resolved || fatalAuthError) {
+        return;
+      }
+
+      if (launchedModels.size >= MAX_PARALLEL_MODELS) {
+        if (inFlightCount === 0 && !resolved) {
+          resolved = true;
+          cleanupAll();
+          resolveRace({ ok: false, text: '', lastError: latestError || '모든 병렬 후보 모델 응답 실패' });
+        }
         return;
       }
 
@@ -776,6 +796,8 @@ export async function callGeminiWithFallback(options: {
               modelUsed: candidate.model,
             });
             return;
+          } else {
+            attemptLogs.push(`${candidate.model}: 빈 응답 (${((Date.now() - callStart) / 1000).toFixed(2)}s)`);
           }
         } else {
           const errText = await res.text();

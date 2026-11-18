@@ -1,2 +1,2 @@
-export const APP_BUILD_VERSION = 'v2026.11.19-07 (11/19 07:52 KST)';
-export const APP_BUILD_SUMMARY = '카메라 버튼 하단 버전/요약 텍스트 제거 (푸터에만 유지)';
+export const APP_BUILD_VERSION = 'v2026.11.19-08 (11/19 08:00 KST)';
+export const APP_BUILD_SUMMARY = '병렬 레이스 데드락(60초 멈춤) 수정 & 중복 이미지 전송 제거(업로드 50% 절감)';

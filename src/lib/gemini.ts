@@ -325,8 +325,6 @@ export async function extractTextWithAI(
       },
       signal: AbortSignal.timeout(22000),
       body: JSON.stringify({
-        base64: primary.base64,
-        mimeType: primary.mimeType,
         images: imagesToSend,
       }),
     });
