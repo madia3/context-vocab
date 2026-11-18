@@ -3722,13 +3722,12 @@ export default function Home() {
                   <button
                     type="button"
                     onClick={() => setSelectedBookFilter('all')}
-                    className={`px-3 py-1.5 text-xs font-bold rounded-xl whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                    className={`px-3 py-1.5 text-xs font-bold rounded-xl whitespace-nowrap transition cursor-pointer flex items-center justify-center shrink-0 ${
                       selectedBookFilter === 'all'
                         ? 'bg-indigo-600 text-white shadow-xs'
                         : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                     }`}
                   >
-                    <Layers className="w-3.5 h-3.5" />
                     <span>전체 ({vocabulary.length})</span>
                   </button>
                   {availableBookTitles.map((title) => {
@@ -3742,13 +3741,12 @@ export default function Home() {
                           setSelectedBookFilter(title);
                           touchBookUsage(title);
                         }}
-                        className={`px-3 py-1.5 text-xs font-bold rounded-xl whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 shrink-0 ${
+                        className={`px-3 py-1.5 text-xs font-bold rounded-xl whitespace-nowrap transition cursor-pointer flex items-center justify-center shrink-0 ${
                           isSelected
                             ? 'bg-indigo-600 text-white shadow-xs'
                             : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
                         }`}
                       >
-                        <BookMarked className="w-3.5 h-3.5" />
                         <span>{title} ({count})</span>
                       </button>
                     );
@@ -4155,78 +4153,136 @@ export default function Home() {
         {/* TAB 3: 5-CHOICE QUIZ */}
         {/* ========================================= */}
         {activeTab === 'quiz' && (
-          <section className="max-w-2xl mx-auto space-y-4">
-            {/* 단어장 선택 & 퀴즈 모드 선택 바 */}
-            <div className="bg-white/80 backdrop-blur-md p-2.5 rounded-2xl border border-slate-200/80 shadow-xs flex flex-wrap items-center justify-between gap-2">
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs font-bold text-slate-500 shrink-0">단어장:</span>
-                <select
-                  value={selectedBookFilter}
-                  onChange={(e) => {
-                    const newBook = e.target.value;
-                    setSelectedBookFilter(newBook);
-                    startQuiz(newBook, quizMode);
-                  }}
-                  className="text-xs font-bold bg-slate-100 hover:bg-slate-200/80 border border-slate-200 rounded-xl px-2.5 py-1.5 text-slate-800 focus:outline-hidden cursor-pointer"
-                >
-                  <option value="all">전체 단어장 ({vocabulary.length}단어)</option>
-                  {availableBookTitles.map((title) => {
-                    const count = vocabulary.filter((v) => (v.bookTitle || '기본 단어장') === title).length;
-                    return (
-                      <option key={title} value={title}>
-                        {title} ({count}단어)
-                      </option>
-                    );
-                  })}
-                </select>
+          <section className="max-w-2xl mx-auto w-full min-w-0 space-y-3.5">
+            {/* 단어장 선택 & 퀴즈 모드 컨트롤러 바 */}
+            <div className="bg-white/95 backdrop-blur-md p-3 sm:p-4 rounded-2xl border border-slate-200 shadow-xs space-y-2.5 w-full max-w-full overflow-hidden">
+              {/* 1. 단어장 선택 드롭다운 */}
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 w-full max-w-full">
+                <div className="flex items-center justify-between sm:justify-start gap-2 shrink-0">
+                  <span className="text-xs font-bold text-slate-700">단어장 선택</span>
+                  <span className="text-[11px] text-slate-400 font-medium">
+                    (총 {vocabulary.length}단어)
+                  </span>
+                </div>
+
+                <div className="relative w-full sm:w-72 max-w-full min-w-0">
+                  <select
+                    value={selectedBookFilter}
+                    onChange={(e) => {
+                      const newBook = e.target.value;
+                      setSelectedBookFilter(newBook);
+                      if (newBook !== 'all') {
+                        touchBookUsage(newBook);
+                      }
+                      startQuiz(newBook, quizMode);
+                    }}
+                    className="w-full text-xs font-bold bg-slate-100 hover:bg-slate-200/80 text-slate-800 border border-slate-200 rounded-xl px-3 py-2 pr-8 truncate focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer appearance-none transition"
+                  >
+                    <option value="all">전체 단어장 ({vocabulary.length}단어)</option>
+                    {availableBookTitles.map((title) => {
+                      const count = vocabulary.filter((v) => (v.bookTitle || '기본 단어장') === title).length;
+                      return (
+                        <option key={title} value={title}>
+                          {title} ({count}단어)
+                        </option>
+                      );
+                    })}
+                  </select>
+                  <div className="absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                    <ChevronDown className="w-3.5 h-3.5" />
+                  </div>
+                </div>
               </div>
 
-              {/* 퀴즈 모드 선택 버튼들 */}
-              <div className="flex items-center gap-1 overflow-x-auto no-scrollbar">
+              {/* 2. 단어장 빠른 가로 칩 목록 (화면 너비 내에서 부드럽게 스크롤) */}
+              <div className="w-full min-w-0 overflow-x-auto pb-0.5 pt-0.5 no-scrollbar flex items-center gap-1.5">
                 <button
                   type="button"
-                  onClick={() => startQuiz(selectedBookFilter, 'smart')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 whitespace-nowrap shrink-0 ${
-                    quizMode === 'smart'
+                  onClick={() => {
+                    setSelectedBookFilter('all');
+                    startQuiz('all', quizMode);
+                  }}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-xl whitespace-nowrap transition cursor-pointer shrink-0 ${
+                    selectedBookFilter === 'all'
                       ? 'bg-indigo-600 text-white shadow-xs'
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
+                      : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
                   }`}
                 >
-                  <span>🧠 스마트 복습</span>
+                  전체 ({vocabulary.length})
                 </button>
-                <button
-                  type="button"
-                  onClick={() => startQuiz(selectedBookFilter, 'wrong')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 whitespace-nowrap shrink-0 ${
-                    quizMode === 'wrong'
-                      ? 'bg-rose-600 text-white shadow-xs'
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                  }`}
-                >
-                  <span>🔥 오답 격파</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => startQuiz(selectedBookFilter, 'recent')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 whitespace-nowrap shrink-0 ${
-                    quizMode === 'recent'
-                      ? 'bg-amber-500 text-white shadow-xs'
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                  }`}
-                >
-                  <span>🆕 최근 단어</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => startQuiz(selectedBookFilter, 'all')}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 whitespace-nowrap shrink-0 ${
-                    quizMode === 'all'
-                      ? 'bg-slate-800 text-white shadow-xs'
-                      : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                  }`}
-                >
-                  <span>🎲 전체 랜덤</span>
-                </button>
+                {availableBookTitles.map((title) => {
+                  const count = vocabulary.filter((v) => (v.bookTitle || '기본 단어장') === title).length;
+                  const isSelected = selectedBookFilter === title;
+                  return (
+                    <button
+                      key={title}
+                      type="button"
+                      onClick={() => {
+                        setSelectedBookFilter(title);
+                        touchBookUsage(title);
+                        startQuiz(title, quizMode);
+                      }}
+                      className={`px-3 py-1.5 text-xs font-bold rounded-xl whitespace-nowrap transition cursor-pointer shrink-0 ${
+                        isSelected
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                      }`}
+                    >
+                      {title} ({count})
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* 3. 출제 방식 (퀴즈 모드) */}
+              <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-1.5 w-full min-w-0">
+                <span className="text-[11px] font-bold text-slate-400 shrink-0">출제 방식:</span>
+                <div className="flex-1 min-w-0 overflow-x-auto no-scrollbar flex items-center gap-1">
+                  <button
+                    type="button"
+                    onClick={() => startQuiz(selectedBookFilter, 'smart')}
+                    className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer ${
+                      quizMode === 'smart'
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    <span>🧠 스마트 복습</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => startQuiz(selectedBookFilter, 'wrong')}
+                    className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer ${
+                      quizMode === 'wrong'
+                        ? 'bg-rose-600 text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    <span>🔥 오답 격파</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => startQuiz(selectedBookFilter, 'recent')}
+                    className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer ${
+                      quizMode === 'recent'
+                        ? 'bg-amber-500 text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    <span>🆕 최근 단어</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => startQuiz(selectedBookFilter, 'all')}
+                    className={`px-2.5 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1 whitespace-nowrap shrink-0 cursor-pointer ${
+                      quizMode === 'all'
+                        ? 'bg-slate-800 text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                    }`}
+                  >
+                    <span>🎲 전체 랜덤</span>
+                  </button>
+                </div>
               </div>
             </div>
 
@@ -4263,8 +4319,7 @@ export default function Home() {
                   <>
                     <div className="text-center py-3 border-b border-slate-100">
                       <div className="mb-2 flex items-center justify-center gap-1.5 flex-wrap">
-                        <span className="text-[11px] bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full font-bold inline-flex items-center gap-1">
-                          <BookMarked className="w-3 h-3" />
+                        <span className="text-[11px] bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full font-bold inline-flex items-center">
                           <span>{currentQuizItem.bookTitle || '기본 단어장'}</span>
                         </span>
                         {/* 학습 상태 태그 배지들 */}
