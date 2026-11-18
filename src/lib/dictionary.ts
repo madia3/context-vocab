@@ -349,14 +349,25 @@ export async function lookupDictionary(rawWord: string): Promise<DictSearchResul
         data.meanings &&
         data.meanings.length > 0
       ) {
-        // Sanitize out crowdsourced errors & dummy placeholders
-        const validMeanings = data.meanings.filter(
-          (m) =>
-            m.def &&
-            m.pos !== '직접입력' &&
-            !m.def.includes('직접 입력') &&
-            !['성업', '큐브 뷰', '큐브뷰', '번역', 'matecat', 'mymemory'].includes(m.def.trim().toLowerCase())
-        );
+        // Sanitize out crowdsourced errors & dummy placeholders and guarantee standard POS
+        const validMeanings = data.meanings
+          .filter(
+            (m) =>
+              m.def &&
+              m.pos !== '직접입력' &&
+              !m.def.includes('직접 입력') &&
+              !['성업', '큐브 뷰', '큐브뷰', '번역', 'matecat', 'mymemory'].includes(m.def.trim().toLowerCase())
+          )
+          .map((m) => {
+            let p = (m.pos || '').trim();
+            if (!p || p === '단어' || p === '품사') {
+              if (/(하다|되다|이다|다)$/.test(m.def.trim())) p = '동사';
+              else if (/(한|적인|로운|스런|스러운|의)$/.test(m.def.trim())) p = '형용사';
+              else if (/(하게|히|으로)$/.test(m.def.trim())) p = '부사';
+              else p = '명사';
+            }
+            return { ...m, pos: p };
+          });
         if (validMeanings.length > 0) {
           const sanitized = { ...data, meanings: validMeanings };
           clientDictCache.set(word, sanitized);
@@ -379,13 +390,37 @@ export async function lookupDictionary(rawWord: string): Promise<DictSearchResul
       const meanings: MeaningOption[] = [];
       const seenDefs = new Set<string>();
 
-      // 1순위: 최우선 대표 기본 번역 뜻 (예: perspective -> '관점')
+      // 1순위: 최우선 대표 기본 번역 뜻 (예: thrive -> '번창하다' -> '동사')
       if (gData[0]?.[0]?.[0]) {
         const main = String(gData[0][0][0]).trim();
         if (main && !['성업', '큐브 뷰', '큐브뷰', '번역'].includes(main)) {
+          // gData[1]에서 해당 단어의 실제 품사 탐색 (예: "verb" -> "동사")
+          let mainPos = '';
+          if (gData[1] && Array.isArray(gData[1])) {
+            for (const entry of gData[1]) {
+              const pEn = String(entry[0] || '').toLowerCase();
+              const pKo = POS_MAP[pEn] || pEn;
+              const defs = entry[1] || [];
+              if (defs.some((d: any) => String(d || '').trim() === main)) {
+                mainPos = pKo;
+                break;
+              }
+            }
+            if (!mainPos && gData[1].length > 0) {
+              const firstEn = String(gData[1][0][0] || '').toLowerCase();
+              mainPos = POS_MAP[firstEn] || firstEn;
+            }
+          }
+          if (!mainPos || mainPos === '단어') {
+            if (/(하다|되다|이다|다)$/.test(main)) mainPos = '동사';
+            else if (/(한|적인|로운|스런|스러운|의)$/.test(main)) mainPos = '형용사';
+            else if (/(하게|히|으로)$/.test(main)) mainPos = '부사';
+            else mainPos = '명사';
+          }
+
           seenDefs.add(main);
           meanings.push({
-            pos: '단어',
+            pos: mainPos,
             def: main,
           });
         }

@@ -282,9 +282,10 @@ export async function extractTextWithAI(
 export interface MatchedSentenceItem {
   sentence: string;
   matchedWord?: string;
+  sentenceTranslation?: string;
 }
 
-// AI로 단어의 원형/복수형/시제 변화형을 문맥에서 파악하여 해당 원문 문장(복수 문장 포함) 및 최적의 문맥 뜻 적출
+// AI로 단어의 원형/복수형/시제 변화형을 문맥에서 파악하여 해당 원문 문장(복수 문장 포함), 최적의 문맥 뜻 및 자연스러운 한글 해석 동시 적출
 // (imageSource가 주어지면 원본 이미지를 직접 보고 100% 무결점으로 핀포인트 추출!)
 export async function findSentenceWithAI(
   pageText: string,
@@ -297,6 +298,7 @@ export async function findSentenceWithAI(
   found: boolean;
   sentence: string;
   matchedWord?: string;
+  sentenceTranslation?: string;
   allMatches: MatchedSentenceItem[];
   method: 'gemini' | 'rule';
   bestMeaningIndex?: number;
@@ -331,7 +333,7 @@ export async function findSentenceWithAI(
         const rawList =
           Array.isArray(data.allMatches) && data.allMatches.length > 0
             ? data.allMatches
-            : [{ sentence: data.sentence.trim(), matchedWord: data.matchedWord }];
+            : [{ sentence: data.sentence.trim(), matchedWord: data.matchedWord, sentenceTranslation: data.sentenceTranslation }];
 
         const seenNorm = new Set<string>();
         const matches: MatchedSentenceItem[] = [];
@@ -341,7 +343,11 @@ export async function findSentenceWithAI(
           const norm = sent.toLowerCase().replace(/[^a-z0-9]/g, '');
           if (sent && norm.length > 5 && !seenNorm.has(norm)) {
             seenNorm.add(norm);
-            matches.push({ sentence: sent, matchedWord: m.matchedWord });
+            matches.push({
+              sentence: sent,
+              matchedWord: m.matchedWord,
+              sentenceTranslation: m.sentenceTranslation || data.sentenceTranslation,
+            });
           }
         });
 
@@ -349,6 +355,7 @@ export async function findSentenceWithAI(
           found: true,
           sentence: data.sentence.trim(),
           matchedWord: data.matchedWord,
+          sentenceTranslation: data.sentenceTranslation ? String(data.sentenceTranslation).trim() : undefined,
           allMatches: matches,
           method: 'gemini',
           bestMeaningIndex: typeof data.bestMeaningIndex === 'number' ? data.bestMeaningIndex : undefined,

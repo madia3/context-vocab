@@ -1263,6 +1263,7 @@ export default function Home() {
                 }
                 updateWordEntry(entry.id, {
                   context: matchRes.sentence,
+                  sentenceTranslation: matchRes.sentenceTranslation || entry.sentenceTranslation || undefined,
                   foundCandidateSentences: uniqueSentences,
                   candidateSentences: uniqueSentences,
                   selectedMeaning: bestDef || entry.selectedMeaning,
@@ -1272,8 +1273,10 @@ export default function Home() {
                       ? `✨ 본문 분석 완료! '${w}'가 쓰인 문장(${uniqueSentences.length}개)과 최적 뜻이 자동 연결되었습니다.`
                       : `✨ 본문 분석 완료! 원문 속 실제 문장이 자동으로 연결되었습니다.`,
                 });
-                // 💡 원문 문장 연결 시 문장 한글 해석 자동 생성
-                handleTranslateContextSentence(entry.id, matchRes.sentence, true);
+                // 💡 문장 매칭 시 함께 반환된 AI 번역이 없는 경우에만 보조 자동 번역 실행
+                if (matchRes.sentence && !matchRes.sentenceTranslation) {
+                  handleTranslateContextSentence(entry.id, matchRes.sentence, true);
+                }
               }
             });
           }
@@ -1748,6 +1751,23 @@ export default function Home() {
               }
             }
 
+            // 💡 품사가 '단어'이거나 비어있는 경우 한국어 문법 어미 규칙으로 정확한 품사(동사/명사/형용사/부사) 자동 보정
+            if (activeDict.meanings) {
+              activeDict = {
+                ...activeDict,
+                meanings: activeDict.meanings.map((m) => {
+                  let p = (m.pos || '').trim();
+                  if (!p || p === '단어' || p === '품사') {
+                    if (/(하다|되다|이다|다)$/.test(m.def.trim())) p = '동사';
+                    else if (/(한|적인|로운|스런|스러운|의)$/.test(m.def.trim())) p = '형용사';
+                    else if (/(하게|히|으로)$/.test(m.def.trim())) p = '부사';
+                    else p = '명사';
+                  }
+                  return { ...m, pos: p };
+                }),
+              };
+            }
+
             // AI가 문맥을 분석하여 선택해준 최적의 뜻 인덱스 또는 뜻 적용
             let bestIdx = 0;
             if (
@@ -1783,7 +1803,18 @@ export default function Home() {
               };
             } else if (activeDict.meanings[bestIdx] && isValidMeaningDef(activeDict.meanings[bestIdx].def)) {
               selectedDef = activeDict.meanings[bestIdx].def;
-              selectedPos = activeDict.meanings[bestIdx].pos;
+              selectedPos = matchRes.bestPos || activeDict.meanings[bestIdx].pos;
+              if (matchRes.bestPos && (!activeDict.meanings[bestIdx].pos || activeDict.meanings[bestIdx].pos === '단어')) {
+                activeDict.meanings[bestIdx].pos = matchRes.bestPos;
+              }
+            }
+
+            // '단어' 방지 최종 보정
+            if (!selectedPos || selectedPos === '단어' || selectedPos === '품사') {
+              if (/(하다|되다|이다|다)$/.test(selectedDef.trim())) selectedPos = '동사';
+              else if (/(한|적인|로운|스런|스러운|의)$/.test(selectedDef.trim())) selectedPos = '형용사';
+              else if (/(하게|히|으로)$/.test(selectedDef.trim())) selectedPos = '부사';
+              else selectedPos = '명사';
             }
 
             const isFormChanged = wordToSearch.toLowerCase() !== finalLemma;
@@ -1797,6 +1828,8 @@ export default function Home() {
               : `${sourcePrefix}${formChangeMsg}원문 문맥에 가장 적절한 뜻('${selectedDef}')이 자동 선택되었습니다!`;
 
             const matchedFinalSentence = matchRes.sentence || uniqueSentences[0] || '';
+            const matchedFinalTranslation = matchRes.sentenceTranslation || '';
+
             updateWordEntry(entryId, {
               word: finalLemma,
               dictResult: activeDict,
@@ -1805,11 +1838,12 @@ export default function Home() {
               foundCandidateSentences: uniqueSentences,
               candidateSentences: uniqueSentences,
               context: matchedFinalSentence,
+              sentenceTranslation: matchedFinalTranslation || undefined,
               ocrDetectedNotice: noticeText,
             });
 
-            // 💡 문장 한글 해석 기본 자동 생성
-            if (matchedFinalSentence) {
+            // 💡 문장 매칭 시 함께 생성된 AI 한글 해석이 없는 경우에만 보조 번역 호출
+            if (matchedFinalSentence && !matchedFinalTranslation) {
               handleTranslateContextSentence(entryId, matchedFinalSentence, true);
             }
           } else {
@@ -4241,49 +4275,62 @@ export default function Home() {
                                   </div>
 
                                   <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
-                                    {validMeanings.map((m, idx) => (
-                                      <label
-                                        key={idx}
-                                        onClick={() => {
-                                          updateWordEntry(entry.id, {
-                                            selectedMeaning: m.def,
-                                            selectedPos: m.pos,
-                                          });
-                                        }}
-                                        className={`flex items-start gap-2.5 p-2 rounded-lg border cursor-pointer transition text-xs shadow-2xs ${
-                                          entry.selectedMeaning === m.def
-                                            ? 'border-indigo-600 bg-indigo-50/60 font-bold'
-                                            : 'border-slate-200 bg-white hover:border-indigo-300'
-                                        }`}
-                                      >
-                                        <input
-                                          type="radio"
-                                          name={`meaningRadio_${entry.id}`}
-                                          checked={entry.selectedMeaning === m.def}
-                                          onChange={() => {
+                                    {validMeanings.map((m, idx) => {
+                                      const displayPos =
+                                        !m.pos || m.pos === '단어' || m.pos === '품사'
+                                          ? /(하다|되다|이다|다)$/.test(m.def.trim())
+                                            ? '동사'
+                                            : /(한|적인|로운|스런|스러운|의)$/.test(m.def.trim())
+                                            ? '형용사'
+                                            : /(하게|히|으로)$/.test(m.def.trim())
+                                            ? '부사'
+                                            : '명사'
+                                          : m.pos;
+
+                                      return (
+                                        <label
+                                          key={idx}
+                                          onClick={() => {
                                             updateWordEntry(entry.id, {
                                               selectedMeaning: m.def,
-                                              selectedPos: m.pos,
+                                              selectedPos: displayPos,
                                             });
                                           }}
-                                          className="mt-0.5 accent-indigo-600"
-                                        />
-                                        <div className="flex-1 flex items-center justify-between gap-1.5">
-                                          <div>
-                                            <span className={`inline-block px-2 py-0.5 font-bold rounded-md text-[10px] mr-1.5 border ${getPosBadgeColor(m.pos)}`}>
-                                              {m.pos}
-                                            </span>
-                                            <span className="text-slate-900">{m.def}</span>
+                                          className={`flex items-start gap-2.5 p-2 rounded-lg border cursor-pointer transition text-xs shadow-2xs ${
+                                            entry.selectedMeaning === m.def
+                                              ? 'border-indigo-600 bg-indigo-50/60 font-bold'
+                                              : 'border-slate-200 bg-white hover:border-indigo-300'
+                                          }`}
+                                        >
+                                          <input
+                                            type="radio"
+                                            name={`meaningRadio_${entry.id}`}
+                                            checked={entry.selectedMeaning === m.def}
+                                            onChange={() => {
+                                              updateWordEntry(entry.id, {
+                                                selectedMeaning: m.def,
+                                                selectedPos: displayPos,
+                                              });
+                                            }}
+                                            className="mt-0.5 accent-indigo-600"
+                                          />
+                                          <div className="flex-1 flex items-center justify-between gap-1.5">
+                                            <div>
+                                              <span className={`inline-block px-2 py-0.5 font-bold rounded-md text-[10px] mr-1.5 border ${getPosBadgeColor(displayPos)}`}>
+                                                {displayPos}
+                                              </span>
+                                              <span className="text-slate-900">{m.def}</span>
+                                            </div>
+                                            {entry.selectedMeaning === m.def && (
+                                              <span className="text-[10px] text-indigo-700 bg-indigo-100/90 border border-indigo-200 px-1.5 py-0.5 rounded-full font-bold shrink-0 flex items-center gap-0.5">
+                                                <Sparkles className="w-2.5 h-2.5 text-indigo-600" />
+                                                <span>AI 추천 선택</span>
+                                              </span>
+                                            )}
                                           </div>
-                                          {entry.selectedMeaning === m.def && (
-                                            <span className="text-[10px] text-indigo-700 bg-indigo-100/90 border border-indigo-200 px-1.5 py-0.5 rounded-full font-bold shrink-0 flex items-center gap-0.5">
-                                              <Sparkles className="w-2.5 h-2.5 text-indigo-600" />
-                                              <span>AI 추천 선택</span>
-                                            </span>
-                                          )}
-                                        </div>
-                                      </label>
-                                    ))}
+                                        </label>
+                                      );
+                                    })}
                                   </div>
 
                                   {/* 원하는 뜻이 없을 때 직접 입력 */}

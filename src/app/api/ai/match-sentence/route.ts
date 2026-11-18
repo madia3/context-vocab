@@ -57,8 +57,9 @@ CRITICAL INSTRUCTIONS:
    - Set "lemma" to the restored base dictionary word (e.g. "category", "like", "publish", "question") and "matchedWord" to the exact word in the sentence.
 3. Transcribe the EXACT, COMPLETE, UNCUT original sentence containing the word with 100% accuracy (do NOT hallucinate, fix any OCR typos or hyphenated line-breaks naturally).
 4. If the word appears multiple times in different sentences, transcribe ALL matching sentences into "allMatches".
-5. Select the best Korean definition index for this context (or provide the accurate contextual Korean meaning in "bestMeaningDef" and part-of-speech in "bestPos" if the word was recovered from an OCR typo), with a concise 1-sentence explanation in "aiExplanation".
-6. If the word does NOT appear at all, set "found": false.
+5. Select the best Korean definition index for this context (or provide the accurate contextual Korean meaning in "bestMeaningDef" and standard part-of-speech in "bestPos" like "동사", "명사", "형용사", "부사"), with a concise 1-sentence explanation in "aiExplanation".
+6. Translate the found English sentence into natural, fluent Korean in "sentenceTranslation". (Preserve natural literary flow and context).
+7. If the word does NOT appear at all, set "found": false.
 
 Return strictly valid JSON:
 {
@@ -66,12 +67,13 @@ Return strictly valid JSON:
   "lemma": "base lemma",
   "sentence": "Exact complete sentence",
   "matchedWord": "exact word form found",
+  "sentenceTranslation": "자연스러운 문맥 맞춤 한국어 해석",
   "allMatches": [
-    { "sentence": "Exact complete sentence 1", "matchedWord": "word1" }
+    { "sentence": "Exact complete sentence 1", "matchedWord": "word1", "sentenceTranslation": "한국어 해석" }
   ],
   "bestMeaningIndex": 0,
   "bestMeaningDef": "가장 어울리는 한국어 뜻",
-  "bestPos": "품사",
+  "bestPos": "동사",
   "aiExplanation": "이 문맥에서는 ~라는 의미로 쓰였습니다."
 }`;
 
@@ -148,16 +150,18 @@ Return strictly valid JSON:
 
         // 중복 문장 완전 제거 (공백/따옴표/특수문자 정규화 기준)
         const seenNorm = new Set<string>();
-        const dedupedMatches: { sentence: string; matchedWord?: string }[] = [];
+        const dedupedMatches: { sentence: string; matchedWord?: string; sentenceTranslation?: string }[] = [];
 
         const primarySent = String(parsed.sentence || '').trim();
         const normPrimary = primarySent.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const primaryTrans = parsed.sentenceTranslation ? String(parsed.sentenceTranslation).trim() : undefined;
 
         if (primarySent && normPrimary.length > 5) {
           seenNorm.add(normPrimary);
           dedupedMatches.push({
             sentence: primarySent,
             matchedWord: parsed.matchedWord,
+            sentenceTranslation: primaryTrans,
           });
         }
 
@@ -170,12 +174,14 @@ Return strictly valid JSON:
               dedupedMatches.push({
                 sentence: s,
                 matchedWord: m.matchedWord || parsed.matchedWord,
+                sentenceTranslation: m.sentenceTranslation ? String(m.sentenceTranslation).trim() : primaryTrans,
               });
             }
           }
         }
 
         parsed.sentence = primarySent;
+        parsed.sentenceTranslation = primaryTrans;
         parsed.allMatches = dedupedMatches;
       }
       return NextResponse.json(parsed);

@@ -622,13 +622,37 @@ export async function GET(request: NextRequest) {
   if (gData) {
     const seenDefs = new Set<string>();
 
-    // 1순위: 최우선 대표 기본 번역 뜻 (예: perspective -> '관점')
+    // 1순위: 최우선 대표 기본 번역 뜻 (예: perspective -> '관점' -> '명사', thrive -> '번창하다' -> '동사')
     if (gData[0]?.[0]?.[0]) {
       const mainDef = String(gData[0][0][0]).trim();
       if (isValidKoreanDefinition(mainDef)) {
+        // gData[1]에서 해당 단어의 실제 품사 탐색
+        let resolvedPos = '';
+        if (gData[1] && Array.isArray(gData[1])) {
+          for (const entry of gData[1]) {
+            const pEn = String(entry[0] || '').toLowerCase();
+            const pKo = POS_MAP[pEn] || pEn;
+            const defs = entry[1] || [];
+            if (defs.some((d: any) => String(d || '').trim() === mainDef)) {
+              resolvedPos = pKo;
+              break;
+            }
+          }
+          if (!resolvedPos && gData[1].length > 0) {
+            const firstEn = String(gData[1][0][0] || '').toLowerCase();
+            resolvedPos = POS_MAP[firstEn] || resolvedPos;
+          }
+        }
+        if (!resolvedPos || resolvedPos === '단어' || resolvedPos === '품사') {
+          if (/(하다|되다|이다|다)$/.test(mainDef)) resolvedPos = '동사';
+          else if (/(한|적인|로운|스런|스러운|의)$/.test(mainDef)) resolvedPos = '형용사';
+          else if (/(하게|히|으로)$/.test(mainDef)) resolvedPos = '부사';
+          else resolvedPos = fallbackPos || '명사';
+        }
+
         seenDefs.add(mainDef);
         meanings.push({
-          pos: fallbackPos,
+          pos: resolvedPos,
           def: mainDef,
         });
       }
