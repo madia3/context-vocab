@@ -538,7 +538,35 @@ function getUserStorageKey(userId?: string): string {
   return userId ? `context_vocab_user_${userId}` : GUEST_STORAGE_KEY;
 }
 
-export const GLOBAL_CLEAN_RESET_VERSION = 'v20261118_clean_30_all_v4';
+export const GLOBAL_CLEAN_RESET_VERSION = 'v20261118_clean_30_korean_trans_v5';
+
+/**
+ * 단어 항목의 한글 문장 해석(sentenceTranslation)이 누락되었을 때
+ * 30개 기본 프리셋(INITIAL_SAMPLES)에서 단어 및 문맥 문장을 매칭하여 한글 해석을 복원합니다.
+ */
+export function ensureSentenceTranslation(item: {
+  word?: string;
+  contextSentence?: string;
+  sentenceTranslation?: string | null;
+}): string {
+  if (typeof item.sentenceTranslation === 'string' && item.sentenceTranslation.trim().length > 0) {
+    return item.sentenceTranslation.trim();
+  }
+  const cleanWord = (item.word || '').trim().toLowerCase();
+  if (!cleanWord) return '';
+
+  const cleanContext = (item.contextSentence || '').trim().toLowerCase();
+  const sample =
+    INITIAL_SAMPLES.find(
+      (s) =>
+        s.word.toLowerCase() === cleanWord &&
+        cleanContext &&
+        s.contextSentence.trim().toLowerCase() === cleanContext
+    ) ||
+    INITIAL_SAMPLES.find((s) => s.word.toLowerCase() === cleanWord);
+
+  return sample?.sentenceTranslation || '';
+}
 
 /**
  * 단어 목록을 가져옵니다.
@@ -601,37 +629,57 @@ export async function fetchVocabulary(targetUser?: User | null): Promise<VocabIt
           localStorage.setItem(`context_vocab_seeded_${user.id}`, 'true');
         }
 
-        const formatted: VocabItem[] = data.map((row: any) => ({
-          id: row.id,
-          word: row.word,
-          phonetic: row.phonetic || '',
-          partOfSpeech: row.part_of_speech || '',
-          selectedMeaning: row.selected_meaning,
-          allMeanings: row.all_meanings || [],
-          contextSentence: row.context_sentence || '',
-          sentenceTranslation: row.sentence_translation || '',
-          candidateSentences: row.candidate_sentences || [],
-          sourceMemo: row.source_memo || '',
-          bookTitle: row.book_title || row.source_memo || '기본 단어장',
-          quizCount: row.quiz_count || 0,
-          correctCount: row.correct_count || 0,
-          wrongCount: row.wrong_count || 0,
-          consecutiveCorrect: row.consecutive_correct || 0,
-          lastQuizDate: row.last_quiz_date || undefined,
-          date: row.created_at ? row.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
-          created_at: row.created_at,
-          user_id: row.user_id,
-        }));
+        // 로컬 캐시에서 기존 번역본 색인
+        const localStr = typeof window !== 'undefined' ? localStorage.getItem(storageKey) : null;
+        let localItems: VocabItem[] = [];
+        if (localStr) {
+          try {
+            localItems = JSON.parse(localStr);
+          } catch {}
+        }
+        const localById = new Map<string, VocabItem>(localItems.map((l) => [l.id, l]));
+        const localByWord = new Map<string, VocabItem>(localItems.map((l) => [String(l.word || '').toLowerCase(), l]));
+
+        const formatted: VocabItem[] = data.map((row: any) => {
+          const localMatch = localById.get(row.id) || localByWord.get(String(row.word || '').toLowerCase());
+          const directTranslation =
+            typeof row.sentence_translation === 'string' && row.sentence_translation.trim()
+              ? row.sentence_translation.trim()
+              : (localMatch?.sentenceTranslation?.trim() || '');
+
+          const finalTranslation =
+            directTranslation ||
+            ensureSentenceTranslation({
+              word: row.word,
+              contextSentence: row.context_sentence,
+              sentenceTranslation: directTranslation,
+            });
+
+          return {
+            id: row.id,
+            word: row.word,
+            phonetic: row.phonetic || '',
+            partOfSpeech: row.part_of_speech || '',
+            selectedMeaning: row.selected_meaning,
+            allMeanings: row.all_meanings || [],
+            contextSentence: row.context_sentence || '',
+            sentenceTranslation: finalTranslation,
+            candidateSentences: row.candidate_sentences || [],
+            sourceMemo: row.source_memo || '',
+            bookTitle: row.book_title || row.source_memo || '기본 단어장',
+            quizCount: row.quiz_count || 0,
+            correctCount: row.correct_count || 0,
+            wrongCount: row.wrong_count || 0,
+            consecutiveCorrect: row.consecutive_correct || 0,
+            lastQuizDate: row.last_quiz_date || undefined,
+            date: row.created_at ? row.created_at.slice(0, 10) : new Date().toISOString().slice(0, 10),
+            created_at: row.created_at,
+            user_id: row.user_id,
+          };
+        });
 
         if (typeof window !== 'undefined') {
           // 로컬 캐시와 병합하여 최신 상태 유지 (샘플 더미 제외)
-          const localStr = localStorage.getItem(storageKey);
-          let localItems: VocabItem[] = [];
-          if (localStr) {
-            try {
-              localItems = JSON.parse(localStr);
-            } catch {}
-          }
           const serverIds = new Set(formatted.map((f) => f.id));
           const unsynced = localItems.filter(
             (l) => !serverIds.has(l.id) && !String(l.id).startsWith('sample_')
@@ -674,13 +722,10 @@ export async function fetchVocabulary(targetUser?: User | null): Promise<VocabIt
                 }
                 return [];
               }
-              // 기존 캐시된 샘플 단어들의 sentenceTranslation 누락 시 INITIAL_SAMPLES 기준으로 자동 보강
+              // 기존 캐시된 단어들의 sentenceTranslation 누락 시 INITIAL_SAMPLES 기준으로 자동 복원
               cleaned.forEach((item: any) => {
-                if (!item.sentenceTranslation && item.id?.startsWith('sample_')) {
-                  const sample = INITIAL_SAMPLES.find((s) => s.id === item.id);
-                  if (sample?.sentenceTranslation) {
-                    item.sentenceTranslation = sample.sentenceTranslation;
-                  }
+                if (!item.sentenceTranslation) {
+                  item.sentenceTranslation = ensureSentenceTranslation(item);
                 }
               });
               if (cleaned.length !== parsed.length) {
@@ -688,6 +733,7 @@ export async function fetchVocabulary(targetUser?: User | null): Promise<VocabIt
               }
               return cleaned.map((item: any) => ({
                 ...item,
+                sentenceTranslation: ensureSentenceTranslation(item),
                 bookTitle: item.bookTitle || item.sourceMemo || '기본 단어장',
                 quizCount: item.quizCount || 0,
                 correctCount: item.correctCount || 0,
@@ -695,6 +741,11 @@ export async function fetchVocabulary(targetUser?: User | null): Promise<VocabIt
                 consecutiveCorrect: item.consecutiveCorrect || 0,
               }));
             }
+            parsed.forEach((item: any) => {
+              if (!item.sentenceTranslation) {
+                item.sentenceTranslation = ensureSentenceTranslation(item);
+              }
+            });
             return parsed;
           }
         }
@@ -1569,7 +1620,7 @@ export async function loadSamplesForUser(userId: string): Promise<VocabItem[]> {
     selectedMeaning: row.selected_meaning,
     allMeanings: row.all_meanings,
     contextSentence: row.context_sentence,
-    sentenceTranslation: row.sentence_translation || '',
+    sentenceTranslation: row.sentence_translation || ensureSentenceTranslation(row) || '',
     candidateSentences: row.candidate_sentences,
     sourceMemo: row.source_memo,
     bookTitle: row.book_title,
