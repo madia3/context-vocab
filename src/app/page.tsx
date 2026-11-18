@@ -1627,6 +1627,12 @@ export default function Home() {
 
   // Save All Words to Vocabulary
   async function handleSaveAllWords() {
+    if (!currentUser) {
+      alert('단어를 내 단어장에 등록하고 저장하려면 먼저 로그인이 필요합니다.');
+      setIsAuthModalOpen(true);
+      return;
+    }
+
     const validEntries = wordEntries.filter(
       (e) => (e.dictResult?.word || e.word.trim()) && isValidMeaningDef(e.selectedMeaning)
     );
@@ -1693,6 +1699,12 @@ export default function Home() {
 
   // Save Single Word Entry to Vocabulary (신규 등록 및 기존 단어 문맥 누적 병합 지원)
   async function handleSaveSingleWordEntry(entryId: string) {
+    if (!currentUser) {
+      alert('단어를 내 단어장에 등록하고 저장하려면 먼저 로그인이 필요합니다.');
+      setIsAuthModalOpen(true);
+      return;
+    }
+
     const entry = wordEntries.find((e) => e.id === entryId);
     if (!entry) return;
 
@@ -1772,6 +1784,11 @@ export default function Home() {
 
   // Delete Item
   async function handleDeleteWord(id: string) {
+    if (!currentUser) {
+      alert('단어를 삭제하려면 먼저 로그인이 필요합니다.');
+      setIsAuthModalOpen(true);
+      return;
+    }
     if (!confirm('이 단어를 단어장에서 삭제할까요?')) return;
     await deleteVocabularyItem(id, currentUser?.id);
     await loadData(currentUser);
@@ -1780,6 +1797,11 @@ export default function Home() {
   // Open Delete Book Modal
   function handleOpenDeleteBookModal(title: string) {
     if (!title || title === 'all') return;
+    if (!currentUser) {
+      alert('단어장을 삭제하려면 먼저 로그인이 필요합니다.');
+      setIsAuthModalOpen(true);
+      return;
+    }
     setBookToDelete(title);
     setDeleteBookAction('move');
     const others = availableBookTitles.filter((t) => t !== title);
@@ -5237,9 +5259,14 @@ export default function Home() {
                       <button
                         type="button"
                         onClick={async () => {
+                          if (!currentUser) {
+                            alert('단어를 삭제하려면 먼저 로그인이 필요합니다.');
+                            setIsAuthModalOpen(true);
+                            return;
+                          }
                           if (!confirm('모든 단어를 비울까요? 되돌릴 수 없습니다.')) return;
-                          await clearAllVocab();
-                          await loadData();
+                          await clearAllVocab(currentUser?.id);
+                          await loadData(currentUser);
                           setIsSettingsOpen(false);
                         }}
                         className="px-3 py-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-xl font-bold text-xs transition cursor-pointer"
