@@ -3799,18 +3799,6 @@ export default function Home() {
                     {currentUser && (
                       <button
                         type="button"
-                        onClick={handleSyncWordsToCloud}
-                        disabled={isSyncingWords}
-                        className="w-full text-left px-3 py-2 hover:bg-indigo-50 text-indigo-700 font-semibold rounded-xl flex items-center gap-2 transition cursor-pointer border-t border-slate-100"
-                      >
-                        <Database className="w-3.5 h-3.5" />
-                        <span>{isSyncingWords ? '동기화 중...' : '게스트 단어 내 계정으로 가져오기'}</span>
-                      </button>
-                    )}
-
-                    {currentUser && (
-                      <button
-                        type="button"
                         onClick={handleSignOut}
                         className="w-full text-left px-3 py-2 hover:bg-rose-50 text-rose-600 font-bold rounded-xl flex items-center gap-2 transition cursor-pointer border-t border-slate-100"
                       >
