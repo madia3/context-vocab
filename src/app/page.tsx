@@ -187,6 +187,7 @@ interface WordEntryItem {
   selectedPos: string;
   customMeaning: string;
   isSearchingDict: boolean;
+  isAnalyzingContext?: boolean; // 💡 AI가 문맥 문장, 최적 뜻, 한글 해석을 분석 중인 상태
   liveCandidates: SuggestionItem[];
   foundCandidateSentences?: string[];
   candidateSentences: string[];
@@ -205,6 +206,7 @@ function createWordEntryItem(init?: Partial<WordEntryItem>): WordEntryItem {
     selectedPos: '',
     customMeaning: '',
     isSearchingDict: false,
+    isAnalyzingContext: false,
     liveCandidates: [],
     foundCandidateSentences: [],
     candidateSentences: [],
@@ -1236,6 +1238,7 @@ export default function Home() {
           const w = (entry.word || entry.dictResult?.word || '').trim();
           const needsRealSentence = !entry.context || (entry.candidateSentences && entry.candidateSentences.length === 0);
           if (w && needsRealSentence) {
+            updateWordEntry(entry.id, { isAnalyzingContext: true });
             findSentenceWithAI(
               result.text,
               w,
@@ -1268,6 +1271,7 @@ export default function Home() {
                   candidateSentences: uniqueSentences,
                   selectedMeaning: bestDef || entry.selectedMeaning,
                   selectedPos: bestPos || entry.selectedPos,
+                  isAnalyzingContext: false,
                   ocrDetectedNotice:
                     uniqueSentences.length > 1
                       ? `✨ 본문 분석 완료! '${w}'가 쓰인 문장(${uniqueSentences.length}개)과 최적 뜻이 자동 연결되었습니다.`
@@ -1277,7 +1281,11 @@ export default function Home() {
                 if (matchRes.sentence && !matchRes.sentenceTranslation) {
                   handleTranslateContextSentence(entry.id, matchRes.sentence, true);
                 }
+              } else {
+                updateWordEntry(entry.id, { isAnalyzingContext: false });
               }
+            }).catch(() => {
+              updateWordEntry(entry.id, { isAnalyzingContext: false });
             });
           }
         });
@@ -1673,6 +1681,7 @@ export default function Home() {
     updateWordEntry(entryId, {
       word: lemmaCandidate,
       isSearchingDict: true,
+      isAnalyzingContext: true,
       dictResult: null,
       selectedMeaning: '',
       selectedPos: '',
@@ -1697,6 +1706,10 @@ export default function Home() {
       const initialDef = validMeanings.length > 0 ? validMeanings[0].def : '';
       const initialPos = validMeanings.length > 0 ? validMeanings[0].pos : '';
 
+      const hasSourceToMatch = Boolean(
+        pageOcrText || currentSourceImageRef.current || currentSourceImage || isSourceProcessing
+      );
+
       // ⚡️ 즉시 사전 결과 화면에 노출 & 로딩 스피너 즉시 해제! (체감 대기시간 0초대 달성)
       updateWordEntry(entryId, {
         word: lemmaCandidate,
@@ -1706,7 +1719,8 @@ export default function Home() {
         },
         selectedMeaning: initialDef,
         selectedPos: initialPos,
-        isSearchingDict: false, // 💡 사전 로딩 완료! 즉시 뜻 목록 선택 가능
+        isSearchingDict: false, // 💡 사전 로딩 완료!
+        isAnalyzingContext: hasSourceToMatch,
         context: entry?.context || defaultExample,
         candidateSentences: [],
         ocrDetectedNotice: isSourceProcessing
@@ -1840,6 +1854,7 @@ export default function Home() {
               context: matchedFinalSentence,
               sentenceTranslation: matchedFinalTranslation || undefined,
               ocrDetectedNotice: noticeText,
+              isAnalyzingContext: false,
             });
 
             // 💡 문장 매칭 시 함께 생성된 AI 한글 해석이 없는 경우에만 보조 번역 호출
@@ -1856,6 +1871,7 @@ export default function Home() {
             updateWordEntry(entryId, {
               context: defaultExample,
               ocrDetectedNotice: noticeMsg,
+              isAnalyzingContext: false,
             });
 
             // 💡 기본 예문 한글 해석 자동 생성
@@ -1865,12 +1881,14 @@ export default function Home() {
           }
         } catch (mErr) {
           console.warn('Sentence match error:', mErr);
-          updateWordEntry(entryId, { ocrDetectedNotice: null });
+          updateWordEntry(entryId, { ocrDetectedNotice: null, isAnalyzingContext: false });
         }
+      } else {
+        updateWordEntry(entryId, { isAnalyzingContext: false });
       }
     } catch (e) {
       console.error(e);
-      updateWordEntry(entryId, { isSearchingDict: false });
+      updateWordEntry(entryId, { isSearchingDict: false, isAnalyzingContext: false });
     }
   }
 
@@ -2092,6 +2110,8 @@ export default function Home() {
           ...newEntries[0],
           word: lemma,
           sourceMemo: currentMemo,
+          isSearchingDict: true,
+          isAnalyzingContext: true,
         };
         entriesToSearch.push({ id: targetId, word: rawW });
         startIdx = 1;
@@ -2104,6 +2124,8 @@ export default function Home() {
         const item = createWordEntryItem({
           word: lemma,
           sourceMemo: currentMemo,
+          isSearchingDict: true,
+          isAnalyzingContext: true,
         });
         newEntries.push(item);
         entriesToSearch.push({ id: item.id, word: rawW });
@@ -4015,20 +4037,48 @@ export default function Home() {
                         </div>
                         <div className="flex items-center gap-1.5 shrink-0">
                           {/* 단어별 빠른 저장 버튼 */}
-                          <button
-                            type="button"
-                            onClick={() => handleSaveSingleWordEntry(entry.id)}
-                            disabled={!((entry.dictResult?.word || entry.word.trim()) && isValidMeaningDef(entry.selectedMeaning))}
-                            className={`text-xs font-bold px-2.5 sm:px-3 py-1 rounded-xl shadow-2xs transition flex items-center gap-1 cursor-pointer ${
-                              (entry.dictResult?.word || entry.word.trim()) && isValidMeaningDef(entry.selectedMeaning)
-                                ? 'bg-slate-900 hover:bg-slate-800 text-white active:scale-95'
-                                : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                            }`}
-                            title="이 단어를 단어장에 바로 저장합니다"
-                          >
-                            <Check className="w-3.5 h-3.5" />
-                            <span>저장</span>
-                          </button>
+                          {(() => {
+                            const isAnalyzing =
+                              entry.isSearchingDict ||
+                              entry.isAnalyzingContext ||
+                              isSourceProcessing ||
+                              translatingSentenceId === entry.id;
+
+                            const canSave =
+                              !isAnalyzing &&
+                              Boolean(entry.dictResult?.word || entry.word.trim()) &&
+                              isValidMeaningDef(entry.selectedMeaning);
+
+                            return (
+                              <button
+                                type="button"
+                                onClick={() => handleSaveSingleWordEntry(entry.id)}
+                                disabled={!canSave}
+                                className={`text-xs font-bold px-2.5 sm:px-3 py-1 rounded-xl shadow-2xs transition flex items-center gap-1.5 ${
+                                  canSave
+                                    ? 'bg-slate-900 hover:bg-slate-800 text-white cursor-pointer active:scale-95'
+                                    : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                                }`}
+                                title={
+                                  isAnalyzing
+                                    ? 'AI가 원문 문맥 및 한글 해석을 분석 중입니다. 완료 후 저장할 수 있습니다.'
+                                    : '이 단어를 단어장에 바로 저장합니다'
+                                }
+                              >
+                                {isAnalyzing ? (
+                                  <>
+                                    <RotateCw className="w-3 h-3 animate-spin text-slate-500" />
+                                    <span>AI 분석 중...</span>
+                                  </>
+                                ) : (
+                                  <>
+                                    <Check className="w-3.5 h-3.5" />
+                                    <span>저장</span>
+                                  </>
+                                )}
+                              </button>
+                            );
+                          })()}
                           {wordEntries.length > 1 && (
                             <button
                               type="button"
@@ -4709,19 +4759,43 @@ export default function Home() {
                             <span className="text-slate-400">💡 한국어 뜻을 선택하거나 직접 입력하면 단어장에 즉시 저장할 수 있습니다.</span>
                           )}
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => handleSaveSingleWordEntry(entry.id)}
-                          disabled={!((entry.dictResult?.word || entry.word.trim()) && isValidMeaningDef(entry.selectedMeaning))}
-                          className={`w-full sm:w-auto font-bold px-4 py-2 text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 shrink-0 ${
-                            (entry.dictResult?.word || entry.word.trim()) && isValidMeaningDef(entry.selectedMeaning)
-                              ? 'bg-slate-900 hover:bg-slate-800 text-white cursor-pointer active:scale-95'
-                              : 'bg-slate-200 text-slate-400 cursor-not-allowed'
-                          }`}
-                        >
-                          <Check className="w-3.5 h-3.5" />
-                          <span>&apos;{entry.word || entry.dictResult?.word || `단어 #${index + 1}`}&apos; 저장하기</span>
-                        </button>
+                        {(() => {
+                          const isAnalyzing =
+                            entry.isSearchingDict ||
+                            entry.isAnalyzingContext ||
+                            isSourceProcessing ||
+                            translatingSentenceId === entry.id;
+
+                          const canSave =
+                            !isAnalyzing &&
+                            Boolean(entry.dictResult?.word || entry.word.trim()) &&
+                            isValidMeaningDef(entry.selectedMeaning);
+
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => handleSaveSingleWordEntry(entry.id)}
+                              disabled={!canSave}
+                              className={`w-full sm:w-auto font-bold px-4 py-2 text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 shrink-0 ${
+                                canSave
+                                  ? 'bg-slate-900 hover:bg-slate-800 text-white cursor-pointer active:scale-95'
+                                  : 'bg-slate-200 text-slate-400 cursor-not-allowed'
+                              }`}
+                            >
+                              {isAnalyzing ? (
+                                <>
+                                  <RotateCw className="w-3.5 h-3.5 animate-spin text-slate-500" />
+                                  <span>AI 분석 중...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Check className="w-3.5 h-3.5" />
+                                  <span>&apos;{entry.word || entry.dictResult?.word || `단어 #${index + 1}`}&apos; 저장하기</span>
+                                </>
+                              )}
+                            </button>
+                          );
+                        })()}
                       </div>
                     </div>
                   ))}
@@ -4739,33 +4813,55 @@ export default function Home() {
 
                 {/* Bulk Save Section */}
                 {(() => {
-                  const validCount = wordEntries.filter(
-                    (e) => (e.dictResult?.word || e.word.trim()) && e.selectedMeaning
-                  ).length;
+                  const isAnyAnalyzing =
+                    wordEntries.some(
+                      (e) => e.isSearchingDict || e.isAnalyzingContext || translatingSentenceId === e.id
+                    ) || isSourceProcessing;
+
+                  const readyEntries = wordEntries.filter(
+                    (e) =>
+                      Boolean(e.dictResult?.word || e.word.trim()) &&
+                      isValidMeaningDef(e.selectedMeaning) &&
+                      !e.isSearchingDict &&
+                      !e.isAnalyzingContext &&
+                      translatingSentenceId !== e.id &&
+                      !isSourceProcessing
+                  );
+                  const readyCount = readyEntries.length;
+
                   return (
                     <div className="pt-3 mt-4 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
                       <div className="text-xs text-slate-500 text-center sm:text-left">
-                        작성 중인 <span className="font-bold text-indigo-600">{wordEntries.length}개</span> 등록칸 중{' '}
-                        <span className="font-bold text-emerald-600">{validCount}개</span> 단어 저장 준비 완료
+                        {isAnyAnalyzing ? (
+                          <span className="text-indigo-600 font-medium flex items-center justify-center sm:justify-start gap-1.5">
+                            <RotateCw className="w-3.5 h-3.5 animate-spin text-indigo-600" />
+                            <span>AI가 단어 뜻, 원문 문맥 및 한글 해석을 분석 중입니다...</span>
+                          </span>
+                        ) : (
+                          <span>
+                            작성 중인 <span className="font-bold text-indigo-600">{wordEntries.length}개</span> 등록칸 중{' '}
+                            <span className="font-bold text-emerald-600">{readyCount}개</span> 단어 저장 준비 완료
+                          </span>
+                        )}
                       </div>
                       <button
                         type="button"
                         onClick={handleSaveAllWords}
-                        disabled={validCount === 0 || isSavingAwaitingSource}
+                        disabled={readyCount === 0 || isAnyAnalyzing || isSavingAwaitingSource}
                         className={`w-full sm:w-auto font-bold px-6 py-2.5 text-xs rounded-xl shadow-md transition flex items-center justify-center gap-1.5 ${
-                          validCount > 0
+                          readyCount > 0 && !isAnyAnalyzing
                             ? 'bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer'
                             : 'bg-slate-300 text-slate-500 cursor-not-allowed'
                         }`}
                       >
-                        {isSavingAwaitingSource ? (
+                        {isAnyAnalyzing || isSavingAwaitingSource ? (
                           <>
                             <RotateCw className="w-3.5 h-3.5 animate-spin" />
-                            <span>원문 문장 분석 대기 중...</span>
+                            <span>AI 분석 중...</span>
                           </>
                         ) : (
                           <span>
-                            ⭐ [{selectedTargetBooks.length > 1 ? `${selectedTargetBooks[0]} 외 ${selectedTargetBooks.length - 1}개 (${selectedTargetBooks.length}개 단어장 동시 저장)` : (selectedTargetBooks[0] || inputBookTitle || '기본 단어장')}]에 {validCount > 1 ? `${validCount}개 단어 일괄 ` : '단어 '}저장하기
+                            ⭐ [{selectedTargetBooks.length > 1 ? `${selectedTargetBooks[0]} 외 ${selectedTargetBooks.length - 1}개 (${selectedTargetBooks.length}개 단어장 동시 저장)` : (selectedTargetBooks[0] || inputBookTitle || '기본 단어장')}]에 {readyCount > 1 ? `${readyCount}개 단어 일괄 ` : '단어 '}저장하기
                           </span>
                         )}
                       </button>
