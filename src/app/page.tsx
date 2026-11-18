@@ -43,6 +43,7 @@ import {
   getStoredGeminiKey,
   setStoredGeminiKey,
   fileToBase64,
+  type OcrEngineType,
 } from '@/lib/gemini';
 import { fireConfetti } from '@/lib/confetti';
 import {
@@ -332,6 +333,11 @@ export default function Home() {
 
   // OCR & Web Source State (현재 로드된 페이지/웹문서 텍스트 & 캐시)
   const [pageOcrText, setPageOcrText] = useState<string>('');
+  const [lastOcrEngineInfo, setLastOcrEngineInfo] = useState<{
+    method: 'gemini_vision' | 'gemini_repair' | 'tesseract' | 'web';
+    label: string;
+    failureReason?: string;
+  } | null>(null);
   const [isOcrProcessing, setIsOcrProcessing] = useState(false);
   const [ocrProgress, setOcrProgress] = useState(0);
   const [ocrDetectedNotice, setOcrDetectedNotice] = useState<string | null>(null);
@@ -1184,7 +1190,16 @@ export default function Home() {
   function startBackgroundSourceAnalysis(
     taskName: string,
     sourceType: 'camera' | 'web',
-    processFn: () => Promise<{ text: string; title?: string; sourceUrl?: string; sentenceCount?: number; markedWords?: string[] }>
+    processFn: () => Promise<{
+      text: string;
+      title?: string;
+      sourceUrl?: string;
+      sentenceCount?: number;
+      markedWords?: string[];
+      method?: OcrEngineType;
+      engineLabel?: string;
+      failureReason?: string;
+    }>
   ) {
     setIsSourceProcessing(true);
     setSourceProcessTaskName(taskName);
@@ -1194,6 +1209,18 @@ export default function Home() {
         const result = await processFn();
         setPageOcrText(result.text);
         setLoadedSourceType(sourceType);
+        if (sourceType === 'camera' && result.method) {
+          setLastOcrEngineInfo({
+            method: result.method,
+            label: result.engineLabel || (result.method === 'gemini_vision' ? 'Gemini Vision AI' : result.method === 'gemini_repair' ? 'Gemini AI 텍스트 복원' : 'Tesseract (로컬 기본)'),
+            failureReason: result.failureReason,
+          });
+        } else if (sourceType === 'web') {
+          setLastOcrEngineInfo({
+            method: 'web',
+            label: result.title || '웹 기사 본문',
+          });
+        }
         if (result.title) {
           setLoadedWebTitle(result.title);
         }
@@ -1363,7 +1390,7 @@ export default function Home() {
         }
 
         // AI가 2장의 사진을 직접 보고 전후 관계를 스스로 판단해 잘린 문장을 완벽하게 이어붙임
-        const { text: extractedText, markedWords, method } = await extractTextWithAI(
+        const ocrRes = await extractTextWithAI(
           file,
           geminiApiKey,
           imgData,
@@ -1371,17 +1398,35 @@ export default function Home() {
         );
         setOcrProgress(100);
 
-        if (method === 'tesseract' && !geminiApiKey) {
+        if (ocrRes.method === 'tesseract') {
           triggerToast(
-            '기본 OCR 모드로 작동 ⚠️',
-            '서버 및 개인 API 키가 없어 기본 인식기(Tesseract)로 동작했습니다. 오타 없는 고정밀 인식을 위해 설정에서 Gemini API 키를 등록해 주세요.'
+            '⚠️ Tesseract (로컬 기본) 동작',
+            ocrRes.failureReason
+              ? `AI 호출 실패 (${ocrRes.failureReason})로 기본 로컬 인식기가 동작했습니다.`
+              : 'AI 키 미설정 또는 호출 오류로 기본 로컬 인식기가 동작했습니다.'
+          );
+        } else if (ocrRes.method === 'gemini_vision') {
+          triggerToast(
+            '🤖 Gemini Vision AI 인식 완료!',
+            '초고정밀 AI 비전으로 오타 없이 본문과 밑줄/동그라미를 감지했습니다.'
+          );
+        } else {
+          triggerToast(
+            '✨ Gemini AI 문맥 복원 완료!',
+            '로컬 추출 텍스트의 오타와 깨진 글자를 AI가 매끄럽게 교정했습니다.'
           );
         }
 
         // 현재 단어장별 스토리지에 최신 2장 사진과 추출 텍스트 영구 보관
-        saveBookSourceData(inputBookTitle, updatedImages, extractedText);
+        saveBookSourceData(inputBookTitle, updatedImages, ocrRes.text);
 
-        return { text: extractedText, markedWords };
+        return {
+          text: ocrRes.text,
+          markedWords: ocrRes.markedWords,
+          method: ocrRes.method,
+          engineLabel: ocrRes.engineLabel,
+          failureReason: ocrRes.failureReason,
+        };
       }
     );
   }
@@ -1946,6 +1991,7 @@ export default function Home() {
 
       if (restoredText) {
         setPageOcrText(restoredText);
+        setLastOcrEngineInfo({ method: 'gemini_repair', label: 'Gemini AI 문맥 복원 (오타 교정됨)' });
         if (typeof window !== 'undefined') {
           localStorage.setItem('context_vocab_cached_page_ocr', restoredText);
         }
@@ -3649,6 +3695,58 @@ export default function Home() {
                     </div>
                   ) : (
                     <div className="space-y-2">
+                      {/* OCR 엔진 표시 뱃지 (AI Vision vs Tesseract 명확화) */}
+                      {lastOcrEngineInfo && (
+                        <div
+                          className={`p-2 sm:p-2.5 rounded-xl border text-xs flex items-center justify-between gap-2 transition ${
+                            lastOcrEngineInfo.method === 'gemini_vision'
+                              ? 'bg-emerald-50 border-emerald-300 text-emerald-900 shadow-2xs'
+                              : lastOcrEngineInfo.method === 'gemini_repair'
+                              ? 'bg-indigo-50 border-indigo-300 text-indigo-900 shadow-2xs'
+                              : lastOcrEngineInfo.method === 'web'
+                              ? 'bg-slate-100 border-slate-300 text-slate-800'
+                              : 'bg-amber-50 border-amber-300 text-amber-900 shadow-2xs'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 min-w-0">
+                            {lastOcrEngineInfo.method === 'gemini_vision' ? (
+                              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0 animate-pulse" />
+                            ) : lastOcrEngineInfo.method === 'gemini_repair' ? (
+                              <Sparkles className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                            ) : lastOcrEngineInfo.method === 'web' ? (
+                              <Globe className="w-3.5 h-3.5 text-slate-600 shrink-0" />
+                            ) : (
+                              <AlertCircle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                            )}
+                            <div className="truncate">
+                              <span className="font-bold text-[11px] sm:text-xs">
+                                {lastOcrEngineInfo.method === 'gemini_vision' && '🤖 Google Gemini Vision AI (고정밀)'}
+                                {lastOcrEngineInfo.method === 'gemini_repair' && '✨ Gemini AI 문맥 복원 (오타 교정됨)'}
+                                {lastOcrEngineInfo.method === 'tesseract' && '⚠️ Tesseract.js (무료 로컬 기본 엔진)'}
+                                {lastOcrEngineInfo.method === 'web' && '🌐 웹 기사 스크래퍼'}
+                              </span>
+                              {lastOcrEngineInfo.failureReason && (
+                                <span className="block sm:inline sm:ml-1 text-[10px] text-amber-800 font-semibold">
+                                  (AI 실패 사유: {lastOcrEngineInfo.failureReason})
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          {lastOcrEngineInfo.method === 'tesseract' && (
+                            <button
+                              type="button"
+                              onClick={() => handleAiCleanPageText()}
+                              className="px-2 py-1 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white rounded-lg font-bold text-[10px] sm:text-[11px] shrink-0 shadow-xs cursor-pointer flex items-center gap-1"
+                              title="Tesseract가 잘못 읽은 글자를 Gemini AI로 깔끔하게 교정합니다"
+                            >
+                              <Sparkles className="w-3 h-3" />
+                              <span>AI 오타 교정 🪄</span>
+                            </button>
+                          )}
+                        </div>
+                      )}
+
                       {/* 원문 문장 칸 (직접 붙여넣기 및 편집 가능) */}
                       <div className="relative">
                         <textarea

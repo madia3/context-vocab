@@ -181,13 +181,23 @@ export async function repairOcrTextWithAI(
   return null;
 }
 
+export type OcrEngineType = 'gemini_vision' | 'gemini_repair' | 'tesseract';
+
+export interface OcrExtractionResult {
+  text: string;
+  method: OcrEngineType;
+  markedWords: string[];
+  engineLabel: string;
+  failureReason?: string;
+}
+
 // AI Vision으로 책 페이지 문장 고정밀 인식 & 밑줄/동그라미 친 단어 시각적 감지 (1장 또는 2장 연속 페이지 지원)
 export async function extractTextWithAI(
   file: File | Blob,
   customApiKey?: string,
   precompressedData?: { base64: string; mimeType: string } | null,
   allImages?: { base64: string; mimeType: string }[]
-): Promise<{ text: string; method: 'gemini' | 'tesseract'; markedWords: string[] }> {
+): Promise<OcrExtractionResult> {
   const apiKey = customApiKey || getStoredGeminiKey();
 
   const primary =
@@ -201,6 +211,8 @@ export async function extractTextWithAI(
       : primary.base64
       ? [primary]
       : [];
+
+  let visionError: string | undefined;
 
   // 1. Gemini Vision OCR 우선 시도 (2장일 경우 전후 관계 자동 파악 및 잘린 문장 완벽 결합)
   try {
@@ -223,11 +235,21 @@ export async function extractTextWithAI(
         recordAiUsage(1);
         const detected = data.markedWords || data.underlinedWords;
         const markedWords: string[] = Array.isArray(detected) ? detected : [];
-        return { text: data.text.trim(), method: 'gemini', markedWords };
+        return {
+          text: data.text.trim(),
+          method: 'gemini_vision',
+          markedWords,
+          engineLabel: 'Gemini Vision AI (고정밀)',
+        };
       }
+    } else {
+      const errData = await res.json().catch(() => ({}));
+      visionError = errData?.error || `HTTP ${res.status}`;
+      console.warn('AI Vision OCR 1차 호출 실패 응답:', res.status, visionError);
     }
-  } catch (err) {
-    console.warn('AI Vision OCR 1차 호출 실패:', err);
+  } catch (err: any) {
+    visionError = err?.message || '네트워크 오류';
+    console.warn('AI Vision OCR 1차 호출 네트워크 에러:', err);
   }
 
   // 2. Vision 실패 시 로컬 Tesseract로 1차 추출 후 -> Gemini 초고속(1.5초) 텍스트 문맥 복원으로 오타 완벽 제거!
@@ -238,11 +260,23 @@ export async function extractTextWithAI(
   if (heuristicCleaned && heuristicCleaned.length > 10) {
     const aiRepaired = await repairOcrTextWithAI(heuristicCleaned, apiKey);
     if (aiRepaired) {
-      return { text: aiRepaired, method: 'gemini', markedWords: [] };
+      return {
+        text: aiRepaired,
+        method: 'gemini_repair',
+        markedWords: [],
+        engineLabel: 'Gemini AI 텍스트 복원',
+        failureReason: visionError,
+      };
     }
   }
 
-  return { text: heuristicCleaned, method: 'tesseract', markedWords: [] };
+  return {
+    text: heuristicCleaned,
+    method: 'tesseract',
+    markedWords: [],
+    engineLabel: 'Tesseract (로컬 기본)',
+    failureReason: visionError,
+  };
 }
 
 export interface MatchedSentenceItem {
