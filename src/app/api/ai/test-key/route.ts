@@ -50,10 +50,11 @@ export async function POST(req: NextRequest) {
 
     const res = await callGeminiWithFallback({
       apiKey: keyToTest,
-      parts: [{ text: 'Hi' }],
+      parts: [{ text: 'Respond with OK.' }],
       temperature: 0.0,
       responseMimeType: 'text/plain',
-      maxOutputTokens: 10,
+      maxOutputTokens: 100,
+      endpoint: 'test-key',
     });
 
     if (res.ok) {
@@ -81,9 +82,11 @@ export async function POST(req: NextRequest) {
     let errorMessage = '유효하지 않은 API 키이거나 모델 호출에 실패했습니다.';
     if (res.lastError) {
       if (res.lastError.includes('API_KEY_INVALID')) {
-        errorMessage = '유효하지 않은 API 키입니다. Google AI Studio에서 발급받은 키(AIzaSy...)를 정확히 복사했는지 확인해 주세요.';
+        errorMessage = '유효하지 않은 API 키입니다. Google AI Studio(aistudio.google.com)에서 발급받은 키(AQ... 또는 AIza...)를 정확히 복사했는지 확인해 주세요.';
       } else if (res.lastError.includes('RESOURCE_EXHAUSTED')) {
         errorMessage = 'Gemini API 무료 요청 한도(RPM/RPD)가 초과되었습니다. 잠시 후 다시 시도해 주세요.';
+      } else if (res.lastError.includes('not found') || res.lastError.includes('not supported') || res.lastError.includes('404')) {
+        errorMessage = 'Google API 오류: 계정에서 지원하는 Gemini 모델을 찾지 못했습니다. Google AI Studio(aistudio.google.com)에서 새 API Key를 발급받아 교체해 주세요.';
       } else if (res.lastError.includes('Timeout') || res.lastError.includes('abort') || res.lastError.includes('aborted')) {
         errorMessage = 'Google API 응답 시간 초과 (네트워크 지연). 잠시 후 다시 시도해 주세요.';
       } else {

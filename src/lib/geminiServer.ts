@@ -105,40 +105,62 @@ export interface GeminiModelCandidate {
 
 // Officially supported Google Generative Language API models (compatible with both legacy AIza... and new AQ... keys)
 export const FAST_GEMINI_CANDIDATES: GeminiModelCandidate[] = [
-  // 1. Google flagship Gemini 2.0 Flash (Fastest, latest generation, supports vision & text)
+  // 1. Google flagship Gemini 2.5 Flash (Primary model on modern Google AI Studio accounts)
+  {
+    model: 'gemini-2.5-flash',
+    apiVersion: 'v1beta',
+    timeoutMs: 9000,
+    thinkingConfig: { thinkingBudget: 0 },
+  },
+  // 2. Google Gemini 2.0 Flash (Fast & ultra reliable)
   {
     model: 'gemini-2.0-flash',
     apiVersion: 'v1beta',
     timeoutMs: 8500,
   },
-  {
-    model: 'gemini-2.0-flash',
-    apiVersion: 'v1',
-    timeoutMs: 8500,
-  },
-  // 2. Google Gemini 1.5 Flash (Stable v1 endpoint)
+  // 3. Google Gemini 1.5 Flash (v1beta)
   {
     model: 'gemini-1.5-flash',
-    apiVersion: 'v1',
+    apiVersion: 'v1beta',
     timeoutMs: 8500,
   },
-  // 3. Google Gemini 2.0 Flash Lite (Ultra fast)
+  // 4. Google Gemini 2.5 Flash Lite
+  {
+    model: 'gemini-2.5-flash-lite',
+    apiVersion: 'v1beta',
+    timeoutMs: 7500,
+    thinkingConfig: { thinkingBudget: 0 },
+  },
+  // 5. Google Gemini 2.0 Flash Lite
   {
     model: 'gemini-2.0-flash-lite',
     apiVersion: 'v1beta',
     timeoutMs: 7000,
   },
-  // 4. Google Gemini 1.5 Flash (v1beta endpoint)
+  // 6. Google Gemini 1.5 Flash (v1 endpoint fallback for older restricted keys)
   {
     model: 'gemini-1.5-flash',
-    apiVersion: 'v1beta',
+    apiVersion: 'v1',
     timeoutMs: 8500,
   },
-  // 5. Google Gemini 1.5 Pro
+  // 7. Google Gemini 1.5 Flash 8B
+  {
+    model: 'gemini-1.5-flash-8b',
+    apiVersion: 'v1beta',
+    timeoutMs: 7000,
+  },
+  // 8. Google Gemini 1.5 Pro (v1beta)
   {
     model: 'gemini-1.5-pro',
-    apiVersion: 'v1',
-    timeoutMs: 9000,
+    apiVersion: 'v1beta',
+    timeoutMs: 9500,
+  },
+  // 9. Google Gemini 2.5 Pro (v1beta)
+  {
+    model: 'gemini-2.5-pro',
+    apiVersion: 'v1beta',
+    timeoutMs: 9500,
+    thinkingConfig: { thinkingBudget: 0 },
   },
 ];
 
@@ -452,10 +474,16 @@ async function autoDiscoverWorkingModelAndCall(options: {
   generationConfig: Record<string, any>;
 }): Promise<{ ok: boolean; text: string; rawData?: any; modelUsed?: string } | null> {
   const { apiKey, parts, generationConfig } = options;
-  for (const ver of ['v1', 'v1beta']) {
+  for (const ver of ['v1beta', 'v1']) {
     try {
       const listUrl = `https://generativelanguage.googleapis.com/${ver}/models?key=${encodeURIComponent(apiKey)}`;
-      const listRes = await fetch(listUrl, { signal: AbortSignal.timeout(4500) });
+      const listRes = await fetch(listUrl, {
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': apiKey,
+        },
+        signal: AbortSignal.timeout(5000),
+      });
       if (listRes.ok) {
         const listData = await listRes.json();
         const models: any[] = listData.models || [];
@@ -463,6 +491,7 @@ async function autoDiscoverWorkingModelAndCall(options: {
           (m) => Array.isArray(m.supportedGenerationMethods) && m.supportedGenerationMethods.includes('generateContent')
         );
         const target =
+          supported.find((m) => m.name.includes('gemini-2.5-flash')) ||
           supported.find((m) => m.name.includes('gemini-2.0-flash')) ||
           supported.find((m) => m.name.includes('gemini-1.5-flash')) ||
           supported.find((m) => m.name.includes('flash')) ||
@@ -473,7 +502,10 @@ async function autoDiscoverWorkingModelAndCall(options: {
           const callUrl = `https://generativelanguage.googleapis.com/${ver}/models/${modelClean}:generateContent?key=${encodeURIComponent(apiKey)}`;
           const genRes = await fetch(callUrl, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': apiKey,
+            },
             signal: AbortSignal.timeout(8500),
             body: JSON.stringify({ contents: [{ parts }], generationConfig }),
           });
@@ -556,7 +588,10 @@ export async function callGeminiWithFallback(options: {
 
       const res = await fetch(url, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          'x-goog-api-key': cleanApiKey,
+        },
         signal: AbortSignal.timeout(candidate.timeoutMs),
         body: JSON.stringify({
           contents: [{ parts }],
@@ -594,7 +629,10 @@ export async function callGeminiWithFallback(options: {
             const v1Url = `https://generativelanguage.googleapis.com/v1/models/${candidate.model}:generateContent?key=${encodeURIComponent(cleanApiKey)}`;
             const retryV1 = await fetch(v1Url, {
               method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
+              headers: {
+                'Content-Type': 'application/json',
+                'x-goog-api-key': cleanApiKey,
+              },
               signal: AbortSignal.timeout(candidate.timeoutMs),
               body: JSON.stringify({
                 contents: [{ parts }],
@@ -649,7 +687,10 @@ export async function callGeminiWithFallback(options: {
 
           const retryRes = await fetch(url, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              'x-goog-api-key': cleanApiKey,
+            },
             signal: AbortSignal.timeout(candidate.timeoutMs),
             body: JSON.stringify({
               contents: [{ parts }],
@@ -777,7 +818,7 @@ export async function pingServerGeminiKey(): Promise<{
     parts: [{ text: 'Ping. Reply OK.' }],
     temperature: 0.0,
     responseMimeType: 'text/plain',
-    maxOutputTokens: 5,
+    maxOutputTokens: 100,
     endpoint: 'admin-ping',
   });
 
