@@ -1732,36 +1732,38 @@ export default function Home() {
 
     const bookToSave = inputBookTitle.trim() || '기본 단어장';
 
-    for (const entry of validEntries) {
-      const finalWord = entry.dictResult?.word || entry.word.trim();
-      const matchedContext =
-        entry.context.trim() || `This sentence illustrates the word ${finalWord}.`;
-      const finalCandidates =
-        entry.candidateSentences.length > 0
-          ? Array.from(new Set([matchedContext, ...entry.candidateSentences]))
-          : [matchedContext];
+    await Promise.all(
+      validEntries.map((entry, idx) => {
+        const finalWord = entry.dictResult?.word || entry.word.trim();
+        const matchedContext =
+          entry.context.trim() || `This sentence illustrates the word ${finalWord}.`;
+        const finalCandidates =
+          entry.candidateSentences.length > 0
+            ? Array.from(new Set([matchedContext, ...entry.candidateSentences]))
+            : [matchedContext];
 
-      const newItem: VocabItem = {
-        id: `${currentUser?.id ? currentUser.id + '_' : ''}vocab_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
-        word: finalWord,
-        phonetic: entry.dictResult?.phonetic || '',
-        partOfSpeech: entry.selectedPos || '단어',
-        selectedMeaning: entry.selectedMeaning,
-        allMeanings: entry.dictResult ? entry.dictResult.meanings.map((m) => m.def) : [entry.selectedMeaning],
-        contextSentence: matchedContext,
-        candidateSentences: finalCandidates,
-        sourceMemo: entry.sourceMemo.trim() || (loadedWebTitle ? loadedWebTitle : '원서 메모'),
-        bookTitle: bookToSave,
-        quizCount: 0,
-        correctCount: 0,
-        wrongCount: 0,
-        consecutiveCorrect: 0,
-        date: new Date().toISOString().slice(0, 10),
-        user_id: currentUser?.id,
-      };
+        const newItem: VocabItem = {
+          id: `${currentUser?.id ? currentUser.id + '_' : ''}vocab_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}`,
+          word: finalWord,
+          phonetic: entry.dictResult?.phonetic || '',
+          partOfSpeech: entry.selectedPos || '단어',
+          selectedMeaning: entry.selectedMeaning,
+          allMeanings: entry.dictResult ? entry.dictResult.meanings.map((m) => m.def) : [entry.selectedMeaning],
+          contextSentence: matchedContext,
+          candidateSentences: finalCandidates,
+          sourceMemo: entry.sourceMemo.trim() || (loadedWebTitle ? loadedWebTitle : '원서 메모'),
+          bookTitle: bookToSave,
+          quizCount: 0,
+          correctCount: 0,
+          wrongCount: 0,
+          consecutiveCorrect: 0,
+          date: new Date().toISOString().slice(0, 10),
+          user_id: currentUser?.id,
+        };
 
-      await saveOrMergeVocabularyItem(newItem, currentUser?.id);
-    }
+        return saveOrMergeVocabularyItem(newItem, currentUser?.id);
+      })
+    );
 
     await loadData(currentUser);
 
@@ -2232,34 +2234,47 @@ export default function Home() {
     setupQuestion(nextIdx, quizList);
   }
 
-  // Highlight word helper (불규칙 변화형, 복수형(-ies, -es, -s), 시제 변화, 대소문자 완벽 대응)
+  // Highlight word helper (불규칙 변화형, 복수형(-ies, -es, -s), 시제 변화, 대소문자 완벽 대응 + 정규식 캐싱)
+  const highlightRegexCacheRef = useRef<Map<string, { splitRegex: RegExp; matchRegex: RegExp } | null>>(new Map());
+
   function renderHighlightedContext(text: string, word: string) {
     if (!text || !word) return text;
     const base = word.trim().toLowerCase();
     if (!base) return text;
 
-    const lemma = extractLemmaCandidate(base);
-    const allVariantsSet = new Set<string>([
-      base,
-      lemma,
-      ...generateWordVariants(base),
-      ...(lemma ? generateWordVariants(lemma) : []),
-    ]);
+    let cachedRegex = highlightRegexCacheRef.current.get(base);
+    if (cachedRegex === undefined) {
+      const lemma = extractLemmaCandidate(base);
+      const allVariantsSet = new Set<string>([
+        base,
+        lemma,
+        ...generateWordVariants(base),
+        ...(lemma ? generateWordVariants(lemma) : []),
+      ]);
 
-    const escapedVariants = Array.from(allVariantsSet)
-      .filter((v) => v && v.length > 0)
-      .map((v) => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
-      .sort((a, b) => b.length - a.length);
+      const escapedVariants = Array.from(allVariantsSet)
+        .filter((v) => v && v.length > 0)
+        .map((v) => v.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'))
+        .sort((a, b) => b.length - a.length);
 
-    if (escapedVariants.length === 0) return text;
+      if (escapedVariants.length === 0) {
+        highlightRegexCacheRef.current.set(base, null);
+        return text;
+      }
 
-    const pattern = `\\b(?:${escapedVariants.join('|')})[a-zA-Z]*\\b`;
-    const splitRegex = new RegExp(`(${pattern})`, 'gi');
-    const matchRegex = new RegExp(`^${pattern}$`, 'i');
+      const pattern = `\\b(?:${escapedVariants.join('|')})[a-zA-Z]*\\b`;
+      cachedRegex = {
+        splitRegex: new RegExp(`(${pattern})`, 'gi'),
+        matchRegex: new RegExp(`^${pattern}$`, 'i'),
+      };
+      highlightRegexCacheRef.current.set(base, cachedRegex);
+    }
 
-    const parts = text.split(splitRegex);
+    if (!cachedRegex) return text;
+
+    const parts = text.split(cachedRegex.splitRegex);
     return parts.map((part, i) =>
-      matchRegex.test(part) ? (
+      cachedRegex!.matchRegex.test(part) ? (
         <span key={i} className="highlight-word">
           {part}
         </span>

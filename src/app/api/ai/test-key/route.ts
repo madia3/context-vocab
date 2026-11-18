@@ -1,17 +1,21 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { callGeminiWithFallback } from '@/lib/geminiServer';
+import { callGeminiWithFallback, checkRateLimit, resolveServerGeminiKey } from '@/lib/geminiServer';
 
 export const runtime = 'nodejs';
 
 export async function POST(req: NextRequest) {
   try {
+    const rateLimit = checkRateLimit(req, 15);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { ok: false, error: '요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.' },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSec) } }
+      );
+    }
+
     const { apiKey } = await req.json();
 
-    const keyToTest =
-      apiKey ||
-      req.headers.get('x-gemini-key') ||
-      process.env.GEMINI_API_KEY ||
-      process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+    const keyToTest = resolveServerGeminiKey(req, apiKey);
 
     if (!keyToTest) {
       return NextResponse.json({ ok: false, error: 'API 키가 전달되지 않았습니다.' }, { status: 400 });

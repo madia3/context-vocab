@@ -530,11 +530,13 @@ export async function fetchVocabulary(targetUser?: User | null): Promise<VocabIt
       if (error) {
         console.warn('Supabase fetch error, fallback to local storage:', error);
       } else if (data) {
-        // 신규 유저 초기 세팅: 저장된 단어가 0개인 경우 초기 3개 단어장(30단어) 자동 세팅
+        // 신규 유저 초기 세팅: 저장된 단어가 0개이고 아직 초기 세팅 이력이 없는 경우에만 3개 단어장(30단어) 자동 세팅
         if (data.length === 0) {
           const seededKey = `context_vocab_seeded_${user.id}`;
-          const isSeeded = typeof window !== 'undefined' ? localStorage.getItem(seededKey) : null;
-          if (!isSeeded) {
+          const isLocalSeeded = typeof window !== 'undefined' ? localStorage.getItem(seededKey) === 'true' : false;
+          const isMetaSeeded = Boolean(user.user_metadata?.vocab_seeded);
+
+          if (!isLocalSeeded && !isMetaSeeded) {
             if (typeof window !== 'undefined') {
               localStorage.setItem(seededKey, 'true');
             }
@@ -542,7 +544,11 @@ export async function fetchVocabulary(targetUser?: User | null): Promise<VocabIt
             if (seeded && seeded.length > 0) {
               return seeded;
             }
+          } else if (typeof window !== 'undefined' && !isLocalSeeded) {
+            localStorage.setItem(seededKey, 'true');
           }
+        } else if (typeof window !== 'undefined') {
+          localStorage.setItem(`context_vocab_seeded_${user.id}`, 'true');
         }
 
         const formatted: VocabItem[] = data.map((row: any) => ({
@@ -567,7 +573,7 @@ export async function fetchVocabulary(targetUser?: User | null): Promise<VocabIt
         }));
 
         if (typeof window !== 'undefined') {
-          // 로컬 캐시와 병합하여 최신 상태 유지
+          // 로컬 캐시와 병합하여 최신 상태 유지 (샘플 더미 제외)
           const localStr = localStorage.getItem(storageKey);
           let localItems: VocabItem[] = [];
           if (localStr) {
@@ -576,7 +582,9 @@ export async function fetchVocabulary(targetUser?: User | null): Promise<VocabIt
             } catch {}
           }
           const serverIds = new Set(formatted.map((f) => f.id));
-          const unsynced = localItems.filter((l) => !serverIds.has(l.id));
+          const unsynced = localItems.filter(
+            (l) => !serverIds.has(l.id) && !String(l.id).startsWith('sample_')
+          );
           const merged = [...unsynced, ...formatted];
           localStorage.setItem(storageKey, JSON.stringify(merged));
           return merged;
@@ -619,6 +627,7 @@ export async function fetchVocabulary(targetUser?: User | null): Promise<VocabIt
               consecutiveCorrect: item.consecutiveCorrect || 0,
             }));
           }
+          return parsed;
         }
       } catch (e) {
         console.error(e);
@@ -698,13 +707,14 @@ export async function addVocabularyItem(item: VocabItem, userId?: string): Promi
 }
 
 /**
- * 단어를 추가하거나, 이미 등록된 단어인 경우 관련 원문 문장(candidateSentences)을 누적 병합합니다.
+ * 단어를 추가하거나, 동일한 단어장(bookTitle) 내에 이미 등록된 단어인 경우 관련 원문 문장(candidateSentences)을 누적 병합합니다.
  */
 export async function saveOrMergeVocabularyItem(
   item: VocabItem,
   userId?: string
 ): Promise<{ isMerged: boolean; item: VocabItem; totalSentences: number }> {
   const targetWord = item.word.trim().toLowerCase();
+  const targetBook = item.bookTitle?.trim() || '기본 단어장';
   const storageKey = getUserStorageKey(userId);
 
   let existingItem: VocabItem | null = null;
@@ -715,15 +725,18 @@ export async function saveOrMergeVocabularyItem(
     if (local) {
       try {
         currentList = JSON.parse(local);
-        // 동일 단어(대소문자 무관) 탐색
-        existingItem = currentList.find(
-          (v) => v.word.trim().toLowerCase() === targetWord
-        ) || null;
+        // 동일 단어장 내 동일 단어(대소문자 무관) 우선 탐색
+        existingItem =
+          currentList.find(
+            (v) =>
+              v.word.trim().toLowerCase() === targetWord &&
+              (v.bookTitle?.trim() || '기본 단어장') === targetBook
+          ) || null;
       } catch {}
     }
   }
 
-  // 1. 이미 등록되어 있는 단어인 경우 -> 관련 문장 누적 병합!
+  // 1. 이미 해당 단어장에 등록되어 있는 단어인 경우 -> 관련 문장 누적 병합!
   if (existingItem) {
     const newContext = item.contextSentence?.trim() || '';
     const existingSentences = existingItem.candidateSentences || [];
@@ -768,7 +781,7 @@ export async function saveOrMergeVocabularyItem(
       allMeanings: mergedMeanings,
       selectedMeaning: item.selectedMeaning || existingItem.selectedMeaning,
       partOfSpeech: item.partOfSpeech || existingItem.partOfSpeech,
-      bookTitle: item.bookTitle || existingItem.bookTitle,
+      bookTitle: targetBook,
     };
 
     // 로컬 스토리지 업데이트
@@ -789,6 +802,7 @@ export async function saveOrMergeVocabularyItem(
             all_meanings: mergedItem.allMeanings,
             selected_meaning: mergedItem.selectedMeaning,
             part_of_speech: mergedItem.partOfSpeech,
+            book_title: mergedItem.bookTitle,
           })
           .eq('id', mergedItem.id)
           .eq('user_id', userId);
@@ -805,11 +819,11 @@ export async function saveOrMergeVocabularyItem(
   }
 
   // 2. 신규 단어인 경우 -> 일반 추가
-  await addVocabularyItem(item, userId);
+  await addVocabularyItem({ ...item, bookTitle: targetBook }, userId);
   return {
     isMerged: false,
-    item,
-    totalSentences: (item.candidateSentences?.length || 1),
+    item: { ...item, bookTitle: targetBook },
+    totalSentences: item.candidateSentences?.length || 1,
   };
 }
 
@@ -854,7 +868,7 @@ export async function updateQuizStat(id: string, isCorrect: boolean, userId?: st
     }
   }
 
-  if (checkIsSupabaseConfigured() && supabase) {
+  if (checkIsSupabaseConfigured() && supabase && userId) {
     try {
       await supabase
         .from('vocab_words')
@@ -865,7 +879,8 @@ export async function updateQuizStat(id: string, isCorrect: boolean, userId?: st
           consecutive_correct: nextCons,
           last_quiz_date: todayStr,
         })
-        .eq('id', id);
+        .eq('id', id)
+        .eq('user_id', userId);
     } catch (e) {
       console.warn('Supabase update stat exception:', e);
     }
@@ -898,12 +913,13 @@ export async function updateVocabularyContext(
     }
   }
 
-  if (checkIsSupabaseConfigured() && supabase) {
+  if (checkIsSupabaseConfigured() && supabase && userId) {
     try {
       await supabase
         .from('vocab_words')
         .update({ context_sentence: newContextSentence })
-        .eq('id', id);
+        .eq('id', id)
+        .eq('user_id', userId);
     } catch (e) {
       console.warn('Supabase update context exception:', e);
     }
@@ -929,9 +945,13 @@ export async function deleteVocabularyItem(id: string, userId?: string): Promise
     }
   }
 
-  if (checkIsSupabaseConfigured() && supabase) {
+  if (checkIsSupabaseConfigured() && supabase && userId) {
     try {
-      await supabase.from('vocab_words').delete().eq('id', id);
+      await supabase
+        .from('vocab_words')
+        .delete()
+        .eq('id', id)
+        .eq('user_id', userId);
     } catch (err) {
       console.warn('Supabase delete exception:', err);
     }
@@ -971,21 +991,18 @@ export async function moveWordsToAnotherBook(
     }
   }
 
-  // Supabase 동기화
-  if (checkIsSupabaseConfigured() && supabase) {
+  // Supabase 동기화 (로그인된 사용자의 단어만 변경)
+  if (checkIsSupabaseConfigured() && supabase && userId) {
     try {
       let query = supabase
         .from('vocab_words')
-        .update({ book_title: normalizedTarget });
+        .update({ book_title: normalizedTarget })
+        .eq('user_id', userId);
 
       if (sourceBook === '기본 단어장') {
         query = query.or('book_title.eq.기본 단어장,book_title.is.null');
       } else {
         query = query.eq('book_title', sourceBook);
-      }
-
-      if (userId) {
-        query = query.eq('user_id', userId);
       }
 
       const { error } = await query;
@@ -1025,19 +1042,18 @@ export async function deleteWordsByBook(
     }
   }
 
-  // Supabase 동기화
-  if (checkIsSupabaseConfigured() && supabase) {
+  // Supabase 동기화 (로그인된 사용자의 단어만 삭제)
+  if (checkIsSupabaseConfigured() && supabase && userId) {
     try {
-      let query = supabase.from('vocab_words').delete();
+      let query = supabase
+        .from('vocab_words')
+        .delete()
+        .eq('user_id', userId);
 
       if (bookTitle === '기본 단어장') {
         query = query.or('book_title.eq.기본 단어장,book_title.is.null');
       } else {
         query = query.eq('book_title', bookTitle);
-      }
-
-      if (userId) {
-        query = query.eq('user_id', userId);
       }
 
       const { error } = await query;
@@ -1053,7 +1069,8 @@ export async function deleteWordsByBook(
 }
 
 /**
- * 로그인하지 않은 게스트 상태에서 저장해둔 단어들을 현재 로그인한 유저 계정으로 동기화(업로드)합니다.
+ * 로그인하지 않은 게스트 상태에서 직접 추가해둔 단어들을 현재 로그인한 유저 계정으로 동기화(업로드)합니다.
+ * (기본 제공 샘플 단어인 sample_* / seed_* 항목은 중복 등록되지 않도록 자동 제외)
  */
 export async function syncGuestWordsToUser(userId: string): Promise<number> {
   if (!checkIsSupabaseConfigured() || !supabase || !userId) return 0;
@@ -1063,10 +1080,21 @@ export async function syncGuestWordsToUser(userId: string): Promise<number> {
     if (!guestLocal) return 0;
 
     const guestWords: VocabItem[] = JSON.parse(guestLocal);
-    if (!guestWords || guestWords.length === 0) return 0;
+    if (!Array.isArray(guestWords) || guestWords.length === 0) return 0;
+
+    // 기본 샘플 단어(sample_*, seed_*)는 제외하고, 게스트가 직접 추가한 커스텀 단어만 필터링
+    const customGuestWords = guestWords.filter(
+      (w) =>
+        w &&
+        w.id &&
+        !String(w.id).startsWith('sample_') &&
+        !String(w.id).startsWith('seed_')
+    );
+
+    if (customGuestWords.length === 0) return 0;
 
     // Supabase에 배치 추가
-    const toInsert = guestWords.map((w) => ({
+    const toInsert = customGuestWords.map((w) => ({
       id: `${userId}_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
       user_id: userId,
       word: w.word,
@@ -1090,6 +1118,9 @@ export async function syncGuestWordsToUser(userId: string): Promise<number> {
       console.warn('Sync error:', error);
       return 0;
     }
+
+    // 동기화 완료 후 게스트 스토리지는 기본 샘플 상태로 초기화하여 중복 재동기화 방지
+    localStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(INITIAL_SAMPLES));
 
     return toInsert.length;
   } catch (err) {
@@ -1128,6 +1159,8 @@ export async function loadSamplesForUser(userId: string): Promise<VocabItem[]> {
       if (error) {
         console.warn('loadSamplesForUser supabase upsert error:', error);
       }
+      // 다른 기기/브라우저에서 로그인하더라도 이미 초기 샘플이 세팅되었음을 user_metadata에 기록
+      supabase.auth.updateUser({ data: { vocab_seeded: true } }).catch(() => {});
     } catch (e) {
       console.warn('loadSamplesForUser supabase exception:', e);
     }
@@ -1156,6 +1189,7 @@ export async function loadSamplesForUser(userId: string): Promise<VocabItem[]> {
   const storageKey = getUserStorageKey(userId);
   if (typeof window !== 'undefined') {
     localStorage.setItem(storageKey, JSON.stringify(formatted));
+    localStorage.setItem(`context_vocab_seeded_${userId}`, 'true');
   }
 
   return formatted;
@@ -1172,20 +1206,19 @@ export async function resetWithSamples(): Promise<VocabItem[]> {
 }
 
 /**
- * 단어장 전체 삭제
+ * 단어장 전체 삭제 (로그인한 사용자의 단어만 안전하게 삭제)
  */
 export async function clearAllVocab(userId?: string): Promise<void> {
   const storageKey = getUserStorageKey(userId);
   if (typeof window !== 'undefined') {
     localStorage.setItem(storageKey, JSON.stringify([]));
+    if (userId) {
+      localStorage.setItem(`context_vocab_seeded_${userId}`, 'true');
+    }
   }
-  if (checkIsSupabaseConfigured() && supabase) {
+  if (checkIsSupabaseConfigured() && supabase && userId) {
     try {
-      if (userId) {
-        await supabase.from('vocab_words').delete().eq('user_id', userId);
-      } else {
-        await supabase.from('vocab_words').delete().neq('id', '');
-      }
+      await supabase.from('vocab_words').delete().eq('user_id', userId);
     } catch (e) {
       console.warn('Supabase clear error:', e);
     }

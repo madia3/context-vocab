@@ -1,25 +1,33 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { callGeminiWithFallback } from '@/lib/geminiServer';
+import { callGeminiWithFallback, checkRateLimit, resolveServerGeminiKey } from '@/lib/geminiServer';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   try {
+    const rateLimit = checkRateLimit(req, 20);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: '요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.' },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSec) } }
+      );
+    }
+
     const { base64, mimeType, images, fallbackRawText } = await req.json();
 
     // 1장 또는 최대 2장(전후 페이지) 이미지 지원
     const imageList: { base64: string; mimeType?: string }[] = [];
     if (Array.isArray(images) && images.length > 0) {
       images.slice(0, 2).forEach((img: any) => {
-        if (img?.base64 && typeof img.base64 === 'string' && img.base64.length > 50) {
+        if (img?.base64 && typeof img.base64 === 'string' && img.base64.length > 50 && img.base64.length <= 12_000_000) {
           imageList.push({
             base64: img.base64.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, ''),
             mimeType: img.mimeType || 'image/jpeg',
           });
         }
       });
-    } else if (base64 && typeof base64 === 'string' && base64.length > 50) {
+    } else if (base64 && typeof base64 === 'string' && base64.length > 50 && base64.length <= 12_000_000) {
       imageList.push({
         base64: base64.replace(/^data:image\/[a-zA-Z0-9+.-]+;base64,/, ''),
         mimeType: mimeType || 'image/jpeg',
@@ -33,10 +41,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Image base64 data or fallbackRawText is required' }, { status: 400 });
     }
 
-    const apiKey =
-      req.headers.get('x-gemini-key') ||
-      process.env.GEMINI_API_KEY ||
-      process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+    const apiKey = resolveServerGeminiKey(req);
 
     if (!apiKey) {
       return NextResponse.json(

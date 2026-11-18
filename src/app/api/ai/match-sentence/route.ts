@@ -1,11 +1,19 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { callGeminiWithFallback } from '@/lib/geminiServer';
+import { callGeminiWithFallback, checkRateLimit, resolveServerGeminiKey } from '@/lib/geminiServer';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
   try {
+    const rateLimit = checkRateLimit(req, 40);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: '요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.' },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSec) } }
+      );
+    }
+
     const { pageText, word, meanings, imageBase64, mimeType, contextHint } = await req.json();
 
     if ((!pageText && !imageBase64) || !word || typeof word !== 'string') {
@@ -16,10 +24,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Image payload too large' }, { status: 413 });
     }
 
-    const apiKey =
-      req.headers.get('x-gemini-key') ||
-      process.env.GEMINI_API_KEY ||
-      process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+    const apiKey = resolveServerGeminiKey(req);
 
     if (!apiKey) {
       return NextResponse.json(

@@ -1,12 +1,12 @@
-import Tesseract from 'tesseract.js';
 import lemmatizer from 'wink-lemmatizer';
 
-// 영어 원서 페이지 이미지에서 텍스트를 고정밀 추출
+// 영어 원서 페이지 이미지에서 텍스트를 고정밀 추출 (동적 임포트로 초기 번들 용량 대폭 절감)
 export async function extractTextFromPageImage(
   imageFile: File | Blob,
   onProgress?: (progress: number) => void
 ): Promise<string> {
   try {
+    const { default: Tesseract } = await import('tesseract.js');
     const result = await Tesseract.recognize(imageFile, 'eng', {
       logger: (m) => {
         if (m.status === 'recognizing text' && onProgress) {
@@ -71,10 +71,15 @@ const COMMON_IRREGULARS: Record<string, string[]> = {
   begin: ['begins', 'began', 'begun', 'beginning'],
 };
 
-// 단어의 다양한 변화형(복수형, 시제, 분사형, 파생형) 생성
+const variantsCache = new Map<string, string[]>();
+
+// 단어의 다양한 변화형(복수형, 시제, 분사형, 파생형) 생성 (메모이제이션 캐시 적용)
 export function generateWordVariants(baseWord: string): string[] {
   const w = baseWord.trim().toLowerCase();
   if (!w) return [];
+
+  const cached = variantsCache.get(w);
+  if (cached) return cached;
 
   const set = new Set<string>();
   set.add(w);
@@ -124,7 +129,10 @@ export function generateWordVariants(baseWord: string): string[] {
   set.add(w + 'tion');
   set.add(w + 'ness');
 
-  return Array.from(set);
+  const result = Array.from(set);
+  if (variantsCache.size > 2000) variantsCache.clear();
+  variantsCache.set(w, result);
+  return result;
 }
 
 // 본문 텍스트를 개별 문장 배열로 정교하게 분리 (약어 Mr., e.g., i.e. 보존 및 따옴표 처리)
@@ -374,11 +382,23 @@ const IE_NOUNS_MAP: Record<string, string> = {
   hippies: 'hippie',
 };
 
-// 복수형, 과거형, 진행형, 3인칭 단수 등을 단어장 등록용 '원형(Lemma)'으로 복원
+const lemmaCache = new Map<string, string>();
+
+// 복수형, 과거형, 진행형, 3인칭 단수 등을 단어장 등록용 '원형(Lemma)'으로 복원 (메모이제이션 캐시 적용)
 export function extractLemmaCandidate(rawWord: string): string {
   const w = rawWord.trim().toLowerCase();
   if (w.length <= 2) return w;
 
+  const cached = lemmaCache.get(w);
+  if (cached) return cached;
+
+  const result = computeLemmaCandidate(w);
+  if (lemmaCache.size > 3000) lemmaCache.clear();
+  lemmaCache.set(w, result);
+  return result;
+}
+
+function computeLemmaCandidate(w: string): string {
   // 1. 고유 형태 보존 (본래 s, ing, ed, ier, est 등으로 끝나는 고유 기본 어휘)
   if (WORDS_NATURALLY_ENDING_IN_S.has(w)) return w;
   if (WORDS_NATURALLY_ENDING_IN_ING.has(w)) return w;

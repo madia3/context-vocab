@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
       return new NextResponse(new Uint8Array(cached.buffer), {
         headers: {
           'Content-Type': 'audio/mpeg',
-          'Cache-Control': 'public, max-age=86400, stale-while-revalidate=604800',
+          'Cache-Control': 'public, s-maxage=86400, max-age=86400, stale-while-revalidate=604800',
           'X-TTS-Source': 'cache',
         },
       });
@@ -37,7 +37,7 @@ export async function GET(req: NextRequest) {
       try {
         const dictRes = await fetch(
           `https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(text.toLowerCase())}`,
-          { signal: AbortSignal.timeout(1800) }
+          { signal: AbortSignal.timeout(1200) }
         );
         if (dictRes.ok) {
           const dictData = await dictRes.json();
@@ -53,7 +53,7 @@ export async function GET(req: NextRequest) {
               ) || phonetics.find((p: any) => p.audio && p.audio.endsWith('.mp3'));
 
             if (matchAudio?.audio) {
-              const audioRes = await fetch(matchAudio.audio, { signal: AbortSignal.timeout(2500) });
+              const audioRes = await fetch(matchAudio.audio, { signal: AbortSignal.timeout(1800) });
               if (audioRes.ok) {
                 const arrayBuffer = await audioRes.arrayBuffer();
                 const buffer = Buffer.from(arrayBuffer);
@@ -67,7 +67,7 @@ export async function GET(req: NextRequest) {
                 return new NextResponse(new Uint8Array(buffer), {
                   headers: {
                     'Content-Type': 'audio/mpeg',
-                    'Cache-Control': 'public, max-age=86400, stale-while-revalidate=604800',
+                    'Cache-Control': 'public, s-maxage=86400, max-age=86400, stale-while-revalidate=604800',
                     'X-TTS-Source': 'dictionary-human-recording',
                   },
                 });
@@ -92,7 +92,7 @@ export async function GET(req: NextRequest) {
           'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
         Accept: '*/*',
       },
-      signal: AbortSignal.timeout(4500),
+      signal: AbortSignal.timeout(4000),
     });
 
     if (!res.ok) {
@@ -111,7 +111,7 @@ export async function GET(req: NextRequest) {
     return new NextResponse(new Uint8Array(buffer), {
       headers: {
         'Content-Type': 'audio/mpeg',
-        'Cache-Control': 'public, max-age=86400, stale-while-revalidate=604800',
+        'Cache-Control': 'public, s-maxage=86400, max-age=86400, stale-while-revalidate=604800',
         'X-TTS-Source': 'google-neural',
       },
     });

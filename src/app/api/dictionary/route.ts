@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { callGeminiWithFallback } from '@/lib/geminiServer';
+import { callGeminiWithFallback, resolveServerGeminiKey } from '@/lib/geminiServer';
 
 export const runtime = 'nodejs';
 
@@ -583,26 +583,38 @@ export async function GET(request: NextRequest) {
       fallbackPos = POS_MAP[pEn] || pEn;
     }
 
+    // 대표 품사(fallbackPos)와 일치하는 예문을 1순위로 탐색하고, 없으면 단어 포함 예문을 선택
+    let posMatchedExample = '';
+    let wordMatchedExample = '';
+
     for (const entry of pData) {
       if (entry.meanings && Array.isArray(entry.meanings)) {
         for (const m of entry.meanings) {
+          const mPosKo = POS_MAP[String(m.partOfSpeech || '').toLowerCase()] || '';
           if (m.definitions && Array.isArray(m.definitions)) {
             for (const def of m.definitions) {
               if (def.example && typeof def.example === 'string' && def.example.trim()) {
                 const ex = def.example.trim();
-                if (ex.toLowerCase().includes(word)) {
-                  exampleSentence = ex;
-                  break;
-                } else if (!exampleSentence) {
+                const hasWord = ex.toLowerCase().includes(word);
+                if (hasWord && mPosKo === fallbackPos && !posMatchedExample) {
+                  posMatchedExample = ex;
+                }
+                if (hasWord && !wordMatchedExample) {
+                  wordMatchedExample = ex;
+                }
+                if (!exampleSentence) {
                   exampleSentence = ex;
                 }
               }
             }
           }
-          if (exampleSentence && exampleSentence.toLowerCase().includes(word)) break;
         }
       }
-      if (exampleSentence && exampleSentence.toLowerCase().includes(word)) break;
+    }
+    if (posMatchedExample) {
+      exampleSentence = posMatchedExample;
+    } else if (wordMatchedExample) {
+      exampleSentence = wordMatchedExample;
     }
   }
 
@@ -645,8 +657,7 @@ export async function GET(request: NextRequest) {
 
   // 3. High-Accuracy AI Lexicographer Fallback via Gemini (표준 영한 사전 수준의 품사별 뜻 & 예문)
   if (meanings.length === 0) {
-    const clientKey = request.headers.get('x-gemini-key');
-    const geminiKey = clientKey || process.env.GEMINI_API_KEY || process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+    const geminiKey = resolveServerGeminiKey(request);
     if (geminiKey) {
       try {
         const aiPrompt = `You are a standard English-Korean dictionary (like Naver/Daum English Dictionary).
@@ -741,7 +752,7 @@ Return strictly valid JSON:
 
   return NextResponse.json(result, {
     headers: {
-      'Cache-Control': 'public, max-age=86400, stale-while-revalidate=604800',
+      'Cache-Control': 'public, s-maxage=86400, max-age=86400, stale-while-revalidate=604800',
     },
   });
 }

@@ -1,8 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cleanArticleTextHeuristic } from '@/lib/cleanText';
-import { callGeminiWithFallback } from '@/lib/geminiServer';
+import { callGeminiWithFallback, checkRateLimit, resolveServerGeminiKey } from '@/lib/geminiServer';
 
 export const runtime = 'nodejs';
+
+function isPrivateOrInternalHost(hostname: string): boolean {
+  const host = hostname.toLowerCase();
+  return (
+    host === 'localhost' ||
+    host === '127.0.0.1' ||
+    host === '::1' ||
+    host === '[::1]' ||
+    host === '0.0.0.0' ||
+    host.endsWith('.local') ||
+    host.endsWith('.internal') ||
+    /^10\.\d+\.\d+\.\d+$/.test(host) ||
+    /^192\.168\.\d+\.\d+$/.test(host) ||
+    /^172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+$/.test(host) ||
+    /^169\.254\.\d+\.\d+$/.test(host)
+  );
+}
 
 // 빠른 응답을 위한 메모리 캐시 (10분 TTL)
 interface CacheEntry {
@@ -170,6 +187,14 @@ function cleanHtmlContentFast(html: string): { title: string; cleanText: string 
 
 export async function POST(req: NextRequest) {
   try {
+    const rateLimit = checkRateLimit(req, 30);
+    if (!rateLimit.allowed) {
+      return NextResponse.json(
+        { error: '요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.' },
+        { status: 429, headers: { 'Retry-After': String(rateLimit.retryAfterSec) } }
+      );
+    }
+
     const { url } = await req.json();
 
     if (!url || typeof url !== 'string') {
@@ -188,20 +213,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'http 또는 https 웹페이지만 불러올 수 있습니다.' }, { status: 400 });
     }
 
-    const host = parsedUrl.hostname.toLowerCase();
-    const isPrivateHost =
-      host === 'localhost' ||
-      host === '127.0.0.1' ||
-      host === '::1' ||
-      host === '0.0.0.0' ||
-      host.endsWith('.local') ||
-      host.endsWith('.internal') ||
-      /^10\.\d+\.\d+\.\d+$/.test(host) ||
-      /^192\.168\.\d+\.\d+$/.test(host) ||
-      /^172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+$/.test(host) ||
-      /^169\.254\.\d+\.\d+$/.test(host);
-
-    if (isPrivateHost) {
+    if (isPrivateOrInternalHost(parsedUrl.hostname)) {
       return NextResponse.json({ error: '보안 정책상 내부망이나 로컬 주소는 접근할 수 없습니다.' }, { status: 403 });
     }
 
@@ -231,6 +243,24 @@ export async function POST(req: NextRequest) {
       signal: AbortSignal.timeout(5000),
     });
 
+    // 리다이렉트 이후 최종 URL에 대한 SSRF 2차 검증
+    if (response.url) {
+      try {
+        const finalUrl = new URL(response.url);
+        if (
+          (finalUrl.protocol !== 'http:' && finalUrl.protocol !== 'https:') ||
+          isPrivateOrInternalHost(finalUrl.hostname)
+        ) {
+          return NextResponse.json(
+            { error: '보안 정책상 내부망으로 리다이렉트되는 주소는 접근할 수 없습니다.' },
+            { status: 403 }
+          );
+        }
+      } catch {
+        // ignore URL parse error on response.url
+      }
+    }
+
     if (!response.ok) {
       return NextResponse.json(
         { error: `웹페이지를 불러오지 못했습니다. (HTTP 상태코드: ${response.status})` },
@@ -238,7 +268,30 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const html = await response.text();
+    const contentType = (response.headers.get('content-type') || '').toLowerCase();
+    if (
+      contentType &&
+      !contentType.includes('text/html') &&
+      !contentType.includes('text/plain') &&
+      !contentType.includes('application/xhtml+xml') &&
+      !contentType.includes('application/xml')
+    ) {
+      return NextResponse.json(
+        { error: '웹 문서(HTML/텍스트) 형식의 주소만 불러올 수 있습니다.' },
+        { status: 415 }
+      );
+    }
+
+    const contentLength = Number(response.headers.get('content-length') || '0');
+    if (contentLength > 2_500_000) {
+      return NextResponse.json(
+        { error: '웹페이지 용량이 너무 큽니다. 본문 텍스트를 직접 복사해서 붙여넣어 주세요.' },
+        { status: 413 }
+      );
+    }
+
+    const rawHtml = await response.text();
+    const html = rawHtml.length > 2_000_000 ? rawHtml.slice(0, 2_000_000) : rawHtml;
 
     // 초고속 규칙/휴리스틱 기반 기사 본문 추출 (약 10ms 소요)
     const { title, cleanText } = cleanHtmlContentFast(html);
@@ -248,10 +301,7 @@ export async function POST(req: NextRequest) {
     // 만약 규칙 기반 추출로 충분한 본문(80자 이상)을 찾았다면, 느린 AI 호출 없이 즉시 반환! (0.3~0.7초 만에 완료)
     if (!finalCleanText || finalCleanText.length < 80) {
       // 규칙 기반 추출 실패 시(특수한 SPA 구조 등)에만 초고속 Gemini Lite 모델로 긴급 복구
-      const apiKey =
-        req.headers.get('x-gemini-key') ||
-        process.env.GEMINI_API_KEY ||
-        process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+      const apiKey = resolveServerGeminiKey(req);
 
       if (apiKey && html.length > 200) {
         try {
