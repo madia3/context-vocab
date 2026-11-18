@@ -5576,23 +5576,18 @@ export default function Home() {
                                 : 'hover:bg-slate-50 text-slate-700'
                             }`}
                           >
-                            <div
-                              onClick={() => toggleBookCheckbox(title)}
-                              className="flex items-center gap-2.5 min-w-0 flex-1 cursor-pointer pr-2 select-none"
-                            >
-                              <input
-                                type="checkbox"
-                                checked={isChecked}
-                                onChange={() => {}}
-                                className="w-4 h-4 rounded text-indigo-600 border-slate-300 focus:ring-indigo-500 cursor-pointer pointer-events-none shrink-0"
-                              />
-                              <span className="truncate">{title}</span>
-                            </div>
-
-                            <div className="flex items-center gap-1.5 shrink-0">
-                              <span className="text-[11px] px-2 py-0.5 rounded-full font-semibold bg-slate-100 text-slate-600">
-                                {count}단어
-                              </span>
+                            <div className="flex items-center gap-2 min-w-0 flex-1 pr-2">
+                              <div
+                                onClick={() => toggleBookCheckbox(title)}
+                                className="flex items-center cursor-pointer shrink-0"
+                              >
+                                <input
+                                  type="checkbox"
+                                  checked={isChecked}
+                                  onChange={() => {}}
+                                  className="w-4 h-4 rounded text-indigo-600 border-slate-300 focus:ring-indigo-500 cursor-pointer pointer-events-none shrink-0"
+                                />
+                              </div>
                               <button
                                 type="button"
                                 onClick={(e) => {
@@ -5600,10 +5595,22 @@ export default function Home() {
                                   selectOnlyBook(title);
                                 }}
                                 title="이 단어장만 단독 보기"
-                                className="text-[10px] px-1.5 py-0.5 font-bold text-slate-500 hover:text-indigo-600 hover:bg-white rounded transition cursor-pointer border border-transparent hover:border-slate-200"
+                                className="text-[10px] px-1.5 py-0.5 font-bold text-slate-600 hover:text-indigo-700 bg-white border border-slate-200 hover:border-indigo-300 rounded-md transition cursor-pointer shrink-0 active:scale-95 shadow-2xs"
                               >
                                 단독
                               </button>
+                              <span
+                                onClick={() => toggleBookCheckbox(title)}
+                                className="truncate cursor-pointer select-none flex-1 min-w-0"
+                              >
+                                {title}
+                              </span>
+                            </div>
+
+                            <div className="flex items-center shrink-0">
+                              <span className="text-[11px] px-2 py-0.5 rounded-full font-semibold bg-slate-100 text-slate-600">
+                                {count}단어
+                              </span>
                             </div>
                           </div>
                         );
