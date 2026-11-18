@@ -436,6 +436,10 @@ export default function Home() {
   // Floating Toast State
   const [toast, setToast] = useState<{ show: boolean; title: string; subtitle?: string } | null>(null);
 
+  // 화면 전환 / 앱 백그라운드 복귀 시 퀴즈 및 탭 상태 유지용 Ref
+  const initialLoadedRef = useRef(false);
+  const lastLoadedUserIdRef = useRef<string | null | undefined>(undefined);
+
   // 단어장 삭제 모달 상태
   const [isDeleteBookModalOpen, setIsDeleteBookModalOpen] = useState(false);
   const [bookToDelete, setBookToDelete] = useState<string>('');
@@ -561,13 +565,15 @@ export default function Home() {
     setVocabulary(list);
     setIsLoaded(true);
 
-    if (isInitial) {
-      if (!userToUse && list.length > 0) {
+    // 오직 첫 페이지 접속 시에만 초기 퀴즈를 셋업하며,
+    // 화면 포커스 복귀나 백그라운드 토큰 갱신 시에는 기존 화면(풀던 퀴즈 등)을 절대 리셋하지 않음!
+    if (isInitial && !initialLoadedRef.current) {
+      initialLoadedRef.current = true;
+      if (list.length > 0) {
         setActiveTab('quiz');
-        setSelectedBookFilter('원서 첫걸음: 어린 왕자');
-        startQuiz('원서 첫걸음: 어린 왕자', 'smart', list);
-      } else if (userToUse) {
-        setActiveTab('list');
+        const defaultBook = list[0]?.bookTitle || '원서 첫걸음: 어린 왕자';
+        setSelectedBookFilter(defaultBook);
+        startQuiz(defaultBook, 'smart', list);
       }
     }
   }
@@ -611,28 +617,36 @@ export default function Home() {
     const client = getSupabaseClient();
     if (client) {
       client.auth.getUser().then(({ data: { user } }) => {
-        setCurrentUser(user ?? null);
-        loadData(user ?? null, true);
+        const u = user ?? null;
+        setCurrentUser(u);
+        lastLoadedUserIdRef.current = u?.id || null;
+        loadData(u, true);
       });
 
       const {
         data: { subscription },
       } = client.auth.onAuthStateChange(async (event, session) => {
         const user = session?.user ?? null;
+        const previousUserId = lastLoadedUserIdRef.current;
+        const isUserSwitched = previousUserId !== undefined && previousUserId !== (user?.id || null);
+        lastLoadedUserIdRef.current = user?.id || null;
+
         setCurrentUser(user);
 
         if (event === 'PASSWORD_RECOVERY') {
           setAuthMode('reset');
           setIsAuthModalOpen(true);
         } else if (event === 'SIGNED_IN' && user) {
-          await loadData(user, true);
+          // 화면 포커스 복귀나 백그라운드 토큰 갱신 시에는 기존 화면(퀴즈 등)을 절대 리셋하지 않음!
+          // 실제 다른 사용자로 신규 로그인되었을 때만 isInitial: true 적용
+          await loadData(user, isUserSwitched);
 
           // URL 해시(#access_token) 또는 쿼리(?code=) 정돈
           if (typeof window !== 'undefined' && (window.location.hash || window.location.search.includes('code='))) {
             window.history.replaceState({}, document.title, window.location.pathname);
           }
         } else if (event === 'SIGNED_OUT') {
-          await loadData(null, true);
+          await loadData(null, isUserSwitched);
         }
       });
 
@@ -2822,7 +2836,14 @@ export default function Home() {
 
             <button
               type="button"
-              onClick={() => startQuiz()}
+              onClick={() => {
+                if (activeTab === 'quiz') return;
+                if (quizList.length > 0 && !isQuizFinished) {
+                  setActiveTab('quiz');
+                } else {
+                  startQuiz();
+                }
+              }}
               className={`py-2 px-1 text-xs rounded-lg transition font-bold flex items-center justify-center gap-1 whitespace-nowrap cursor-pointer ${
                 activeTab === 'quiz'
                   ? 'bg-white text-indigo-600 shadow-xs'
