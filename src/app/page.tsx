@@ -3944,10 +3944,9 @@ export default function Home() {
                   : 'h-0 max-h-0 overflow-hidden opacity-0 pointer-events-none'
               }`}
             >
-              <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6 space-y-4">
-            <div className="max-w-2xl mx-auto space-y-4">
+              <section className="max-w-2xl mx-auto w-full min-w-0 space-y-3 sm:space-y-4">
                 {/* Book Title Selection / Input (단어장 세로 리스트) */}
-                <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2.5">
+                <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-xs space-y-2.5">
                   <div className="flex items-center justify-between">
                     <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
                       <BookMarked className="w-3.5 h-3.5 text-indigo-600" />
@@ -4093,7 +4092,7 @@ export default function Home() {
                 />
 
                 {/* Page Photo Capture / Direct Source Sentence & Paste Card */}
-                <div className="bg-gradient-to-r from-brand-50 to-brand-100/40 p-3 sm:p-3.5 rounded-xl border border-brand-200">
+                <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-xs space-y-2.5">
                   <div className="flex items-center justify-between gap-2 mb-2">
                     <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5 shrink-0">
                       <BookOpen className="w-4 h-4 text-brand-600" />
@@ -4338,7 +4337,7 @@ export default function Home() {
                   {wordEntries.map((entry, index) => (
                     <div
                       key={entry.id}
-                      className="bg-slate-50/70 p-3.5 sm:p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4 overflow-hidden"
+                      className="bg-white p-3.5 sm:p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4 overflow-hidden"
                     >
                       {/* Entry Card Header */}
                       <div className="flex items-center justify-between pb-2 border-b border-slate-200 gap-2">
@@ -5188,9 +5187,8 @@ export default function Home() {
                     </div>
                   );
                 })()}
+              </section>
             </div>
-          </section>
-        </div>
 
         {/* ========================================= */}
         {/* TAB 2: VOCABULARY LIST */}
