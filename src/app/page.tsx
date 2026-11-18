@@ -383,53 +383,137 @@ export default function Home() {
   const [isBookSelectorOpen, setIsBookSelectorOpen] = useState<boolean>(false);
   const bookSelectorRef = useRef<HTMLDivElement>(null);
 
-  // Touch Swipe Gesture between 3 Main Tabs (단어등록 <-> 단어장 <-> 5지선다)
+  // Interactive Touch Swipe Gesture between 3 Main Tabs (단어등록 <-> 단어장 <-> 5지선다)
+  const TAB_ORDER: ('add' | 'list' | 'quiz')[] = ['add', 'list', 'quiz'];
   const touchStartXRef = useRef<number | null>(null);
   const touchStartYRef = useRef<number | null>(null);
   const touchStartTimeRef = useRef<number>(0);
+  const swipeDirectionRef = useRef<'horizontal' | 'vertical' | null>(null);
+  const currentDeltaXRef = useRef<number>(0);
+  const isSwipingRef = useRef<boolean>(false);
+  const [isSwiping, setIsSwiping] = useState<boolean>(false);
+  const [isTransitioning, setIsTransitioning] = useState<boolean>(false);
+  const carouselTrackRef = useRef<HTMLDivElement>(null);
+
+  // Sync carousel position when activeTab is changed via button clicks
+  useEffect(() => {
+    const idx = TAB_ORDER.indexOf(activeTab);
+    if (carouselTrackRef.current && !isSwipingRef.current) {
+      setIsTransitioning(true);
+      carouselTrackRef.current.style.transition = 'transform 0.32s cubic-bezier(0.25, 1, 0.5, 1)';
+      carouselTrackRef.current.style.transform = `translateX(-${idx * 100}%)`;
+      const timer = setTimeout(() => {
+        setIsTransitioning(false);
+      }, 340);
+      return () => clearTimeout(timer);
+    }
+  }, [activeTab]);
 
   const handleTouchStart = (e: React.TouchEvent) => {
     if (e.touches.length !== 1) return;
+    const target = e.target as HTMLElement | null;
+    if (
+      target?.closest(
+        'input, textarea, select, button, [data-no-swipe="true"], .overflow-x-auto, [role="slider"], a'
+      )
+    ) {
+      touchStartXRef.current = null;
+      touchStartYRef.current = null;
+      return;
+    }
+
     touchStartXRef.current = e.touches[0].clientX;
     touchStartYRef.current = e.touches[0].clientY;
     touchStartTimeRef.current = Date.now();
+    swipeDirectionRef.current = null;
+    currentDeltaXRef.current = 0;
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    if (touchStartXRef.current === null || touchStartYRef.current === null) return;
+    const clientX = e.touches[0].clientX;
+    const clientY = e.touches[0].clientY;
+    const dx = clientX - touchStartXRef.current;
+    const dy = clientY - touchStartYRef.current;
+
+    // Detect direction lock on initial movement
+    if (swipeDirectionRef.current === null) {
+      if (Math.abs(dy) > Math.abs(dx) && Math.abs(dy) > 7) {
+        swipeDirectionRef.current = 'vertical';
+        return;
+      }
+      if (Math.abs(dx) > Math.abs(dy) && Math.abs(dx) > 7) {
+        swipeDirectionRef.current = 'horizontal';
+        isSwipingRef.current = true;
+        setIsSwiping(true);
+      }
+    }
+
+    if (swipeDirectionRef.current === 'horizontal') {
+      const idx = TAB_ORDER.indexOf(activeTab);
+      // Elastic resistance when dragging past left/right boundaries
+      let effectiveDx = dx;
+      if ((idx === 0 && dx > 0) || (idx === 2 && dx < 0)) {
+        effectiveDx = dx * 0.25;
+      }
+      currentDeltaXRef.current = effectiveDx;
+
+      if (carouselTrackRef.current) {
+        carouselTrackRef.current.style.transition = 'none';
+        carouselTrackRef.current.style.transform = `translateX(calc(-${idx * 100}% + ${effectiveDx}px))`;
+      }
+    }
   };
 
   const handleTouchEnd = (e: React.TouchEvent) => {
     if (touchStartXRef.current === null || touchStartYRef.current === null) return;
-    const deltaX = e.changedTouches[0].clientX - touchStartXRef.current;
-    const deltaY = e.changedTouches[0].clientY - touchStartYRef.current;
+    const deltaX = currentDeltaXRef.current;
     const elapsed = Date.now() - touchStartTimeRef.current;
+    const isHorizontal = swipeDirectionRef.current === 'horizontal';
+
     touchStartXRef.current = null;
     touchStartYRef.current = null;
+    swipeDirectionRef.current = null;
+    currentDeltaXRef.current = 0;
 
-    const target = e.target as HTMLElement | null;
-    if (target?.closest('input, textarea, select, button, [data-no-swipe="true"], .overflow-x-auto, [role="slider"]')) {
+    if (!isHorizontal) {
+      isSwipingRef.current = false;
+      setIsSwiping(false);
       return;
     }
 
-    if (Math.abs(deltaY) > Math.abs(deltaX) * 0.8) return;
-    if (Math.abs(deltaX) < 45 || elapsed > 800) return;
+    const idx = TAB_ORDER.indexOf(activeTab);
+    const velocity = Math.abs(deltaX) / (elapsed || 1);
+    const isFlick = Math.abs(deltaX) > 35 && velocity > 0.3;
+    const isSignificantDrag = Math.abs(deltaX) > 60;
 
-    if (deltaX < -45) {
-      // Swiped Left -> Next tab
-      if (activeTab === 'add') {
-        setActiveTab('list');
-      } else if (activeTab === 'list') {
-        if (quizList.length > 0 && !isQuizFinished) {
-          setActiveTab('quiz');
-        } else {
-          startQuiz();
-        }
-      }
-    } else if (deltaX > 45) {
-      // Swiped Right -> Previous tab
-      if (activeTab === 'quiz') {
-        setActiveTab('list');
-      } else if (activeTab === 'list') {
-        setActiveTab('add');
-      }
+    let targetIdx = idx;
+    if (deltaX < 0 && (isSignificantDrag || isFlick) && idx < 2) {
+      // Dragged Left -> Next tab
+      targetIdx = idx + 1;
+    } else if (deltaX > 0 && (isSignificantDrag || isFlick) && idx > 0) {
+      // Dragged Right -> Prev tab
+      targetIdx = idx - 1;
     }
+
+    const targetTab = TAB_ORDER[targetIdx];
+
+    if (carouselTrackRef.current) {
+      carouselTrackRef.current.style.transition = 'transform 0.28s cubic-bezier(0.25, 1, 0.5, 1)';
+      carouselTrackRef.current.style.transform = `translateX(-${targetIdx * 100}%)`;
+    }
+
+    if (targetTab !== activeTab) {
+      if (targetTab === 'quiz' && quizList.length === 0) {
+        startQuiz();
+      }
+      setActiveTab(targetTab);
+    }
+
+    setTimeout(() => {
+      isSwipingRef.current = false;
+      setIsSwiping(false);
+    }, 300);
   };
 
   // 문장 듣기 (연속 낭독) 상태
@@ -3294,8 +3378,10 @@ export default function Home() {
       {/* Main Container (Scroll Area with Touch Swipe between 3 Tabs) */}
       <main
         onTouchStart={handleTouchStart}
+        onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
-        className="max-w-5xl mx-auto w-full px-3.5 sm:px-4 py-3 sm:py-4 flex-1 overflow-x-hidden"
+        onTouchCancel={handleTouchEnd}
+        className="max-w-5xl mx-auto w-full px-3.5 sm:px-4 py-3 sm:py-4 flex-1 overflow-x-hidden touch-pan-y"
       >
         {/* 3-Tab Bar (Now in Scroll Area - Scrolls naturally with content & Swipeable) */}
         <div className="mb-3">
@@ -3369,11 +3455,27 @@ export default function Home() {
           </div>
         </div>
 
-        {/* ========================================= */}
-        {/* TAB 1: ADD WORD & CONTEXT */}
-        {/* ========================================= */}
-        {activeTab === 'add' && (
-          <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6 space-y-4">
+        {/* Interactive Swipe Carousel Container */}
+        <div className="w-full overflow-hidden">
+          <div
+            ref={carouselTrackRef}
+            className="flex w-full items-start will-change-transform"
+            style={{
+              transform: `translateX(-${TAB_ORDER.indexOf(activeTab) * 100}%)`,
+              transition: isSwiping ? 'none' : 'transform 0.3s cubic-bezier(0.25, 1, 0.5, 1)',
+            }}
+          >
+            {/* ========================================= */}
+            {/* TAB 1: ADD WORD & CONTEXT */}
+            {/* ========================================= */}
+            <div
+              className={`w-full min-w-full shrink-0 transition-opacity duration-200 ${
+                activeTab === 'add' || isSwiping || isTransitioning
+                  ? 'opacity-100'
+                  : 'h-0 max-h-0 overflow-hidden opacity-0 pointer-events-none'
+              }`}
+            >
+              <section className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-6 space-y-4">
             <div className="max-w-2xl mx-auto space-y-4">
                 {/* Book Title Selection / Input (가로 스크롤 및 다중 단어장 동시 저장 지원) */}
                 <div className="bg-slate-50 p-3.5 rounded-xl border border-slate-200 space-y-2">
@@ -4432,12 +4534,18 @@ export default function Home() {
                 })()}
             </div>
           </section>
-        )}
+        </div>
 
         {/* ========================================= */}
         {/* TAB 2: VOCABULARY LIST */}
         {/* ========================================= */}
-        {activeTab === 'list' && (
+        <div
+          className={`w-full min-w-full shrink-0 transition-opacity duration-200 ${
+            activeTab === 'list' || isSwiping || isTransitioning
+              ? 'opacity-100'
+              : 'h-0 max-h-0 overflow-hidden opacity-0 pointer-events-none'
+          }`}
+        >
           <section className="space-y-4">
             {/* Top Vocabulary Book Selector & Controls */}
             <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3.5">
@@ -5148,12 +5256,18 @@ export default function Home() {
               </div>
             )}
           </section>
-        )}
+        </div>
 
         {/* ========================================= */}
         {/* TAB 3: 5-CHOICE QUIZ */}
         {/* ========================================= */}
-        {activeTab === 'quiz' && (
+        <div
+          className={`w-full min-w-full shrink-0 transition-opacity duration-200 ${
+            activeTab === 'quiz' || isSwiping || isTransitioning
+              ? 'opacity-100'
+              : 'h-0 max-h-0 overflow-hidden opacity-0 pointer-events-none'
+          }`}
+        >
           <section className="max-w-2xl mx-auto w-full min-w-0 space-y-3.5">
             {/* 단어장 선택 바 (다중 선택 및 가로 스와이프 칩 지원) */}
             <div className="bg-white/95 backdrop-blur-md p-3 sm:p-3.5 rounded-2xl border border-slate-200 shadow-xs w-full max-w-full space-y-2">
@@ -5494,8 +5608,10 @@ export default function Home() {
               </div>
             </div>
           </section>
-        )}
-      </main>
+        </div>
+      </div>
+    </div>
+  </main>
 
       {/* Footer */}
       <footer className="py-6 border-t border-slate-200/80 bg-white text-center text-xs text-slate-500">
