@@ -4431,13 +4431,31 @@ export default function Home() {
                     : '선택된 단어장에 단어가 없습니다.'}
                 </h3>
                 <p className="text-xs text-slate-400 mb-4">원서를 읽다가 모르는 단어를 등록해 보세요!</p>
-                <div className="flex items-center justify-center gap-2">
+                <div className="flex flex-wrap items-center justify-center gap-2">
                   <button
                     onClick={() => setActiveTab('add')}
                     className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-4 py-2 rounded-xl transition cursor-pointer"
                   >
                     첫 단어 등록하러 가기
                   </button>
+                  {vocabulary.length === 0 && (
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        const samples = await resetWithSamples(currentUser?.id);
+                        if (samples && samples.length > 0) {
+                          setVocabulary(samples);
+                          setSelectedBookFilters(['all']);
+                          setInputBookTitle('원서 첫걸음: 어린 왕자');
+                        }
+                        await loadData(currentUser);
+                        triggerToast('초기화 완료 🎉', '기본 3개 단어장(총 30단어)이 복원되었습니다.');
+                      }}
+                      className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold px-4 py-2 rounded-xl border border-indigo-200 transition cursor-pointer shadow-2xs"
+                    >
+                      기본 샘플 단어(30단어) 불러오기
+                    </button>
+                  )}
                   {!isAllBooksSelected && selectedBookFilters.length === 1 && (
                     <button
                       type="button"
@@ -6141,33 +6159,37 @@ export default function Home() {
                     <p className="text-[11px] text-slate-500 mb-2.5">
                       단어장을 기본 상태로 되돌리거나 모든 데이터를 삭제할 수 있습니다.
                     </p>
-                    <div className="flex gap-2">
+                    <div className="flex flex-wrap gap-2">
                       <button
                         type="button"
                         onClick={async () => {
-                          if (!confirm('기본 샘플 단어로 초기화할까요?')) return;
-                          await resetWithSamples();
-                          await loadData();
+                          if (!confirm('기본 샘플 단어(총 30단어, 3개 단어장)로 초기화할까요?')) return;
+                          const samples = await resetWithSamples(currentUser?.id);
+                          if (samples && samples.length > 0) {
+                            setVocabulary(samples);
+                            setSelectedBookFilters(['all']);
+                            setInputBookTitle('원서 첫걸음: 어린 왕자');
+                          }
+                          await loadData(currentUser);
                           setIsSettingsOpen(false);
+                          triggerToast('초기화 완료 🎉', '기본 3개 단어장(총 30단어)이 복원되었습니다.');
                         }}
-                        className="px-3 py-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-xl font-bold text-xs transition cursor-pointer"
+                        className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 rounded-xl font-bold text-xs transition cursor-pointer active:scale-95 shadow-2xs"
                       >
-                        기본 샘플로 초기화
+                        기본 샘플로 초기화 (30단어)
                       </button>
                       <button
                         type="button"
                         onClick={async () => {
-                          if (!currentUser) {
-                            alert('단어를 삭제하려면 먼저 로그인이 필요합니다.');
-                            setIsAuthModalOpen(true);
-                            return;
-                          }
-                          if (!confirm('모든 단어를 비울까요? 되돌릴 수 없습니다.')) return;
+                          if (!confirm('단어장의 모든 단어를 삭제할까요? 되돌릴 수 없습니다.')) return;
                           await clearAllVocab(currentUser?.id);
+                          setVocabulary([]);
+                          setSelectedBookFilters(['all']);
                           await loadData(currentUser);
                           setIsSettingsOpen(false);
+                          triggerToast('전체 삭제 완료 🗑️', '단어장의 모든 단어가 비워졌습니다.');
                         }}
-                        className="px-3 py-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-xl font-bold text-xs transition cursor-pointer"
+                        className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl font-bold text-xs transition cursor-pointer active:scale-95 shadow-2xs"
                       >
                         전체 비우기
                       </button>

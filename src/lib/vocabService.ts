@@ -629,60 +629,72 @@ export async function fetchVocabulary(targetUser?: User | null): Promise<VocabIt
 
   // 2. LocalStorage 로드 (비로그인 게스트 모드 또는 Supabase 오프라인 시)
   if (typeof window !== 'undefined') {
+    const isGuestCleared = !user && localStorage.getItem('context_vocab_guest_cleared') === 'true';
     const local = localStorage.getItem(storageKey);
     if (local) {
       try {
         const parsed = JSON.parse(local);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          // 비로그인 게스트인 경우, 구버전 햄릿 더미 단어 자동 정리 및 신규 기본 단어장 3종 보장
-          if (!user) {
-            const cleaned = parsed.filter(
-              (item: any) => !item.bookTitle?.includes('햄릿') && !item.sourceMemo?.includes('햄릿')
-            );
-            const hasNewBooks = cleaned.some(
-              (item: any) => item.bookTitle === '원서 첫걸음: 어린 왕자'
-            );
-            if (!hasNewBooks || cleaned.length === 0) {
-              localStorage.setItem(storageKey, JSON.stringify(INITIAL_SAMPLES));
-              return INITIAL_SAMPLES;
-            }
-            // 기존 캐시된 샘플 단어들의 sentenceTranslation 누락 시 INITIAL_SAMPLES 기준으로 자동 보강
-            cleaned.forEach((item: any) => {
-              if (!item.sentenceTranslation && item.id?.startsWith('sample_')) {
-                const sample = INITIAL_SAMPLES.find((s) => s.id === item.id);
-                if (sample?.sentenceTranslation) {
-                  item.sentenceTranslation = sample.sentenceTranslation;
-                }
-              }
-            });
-            if (cleaned.length !== parsed.length) {
-              localStorage.setItem(storageKey, JSON.stringify(cleaned));
-            }
-            return cleaned.map((item: any) => ({
-              ...item,
-              bookTitle: item.bookTitle || item.sourceMemo || '기본 단어장',
-              quizCount: item.quizCount || 0,
-              correctCount: item.correctCount || 0,
-              wrongCount: item.wrongCount || 0,
-              consecutiveCorrect: item.consecutiveCorrect || 0,
-            }));
+        if (Array.isArray(parsed)) {
+          if (parsed.length === 0 && isGuestCleared) {
+            return [];
           }
-          return parsed;
+          if (parsed.length > 0) {
+            // 비로그인 게스트인 경우, 구버전 햄릿 더미 단어 자동 정리 및 신규 기본 단어장 3종 보장
+            if (!user) {
+              const cleaned = parsed.filter(
+                (item: any) => !item.bookTitle?.includes('햄릿') && !item.sourceMemo?.includes('햄릿')
+              );
+              const hasNewBooks = cleaned.some(
+                (item: any) => item.bookTitle === '원서 첫걸음: 어린 왕자'
+              );
+              if (!hasNewBooks || cleaned.length === 0) {
+                if (!isGuestCleared) {
+                  localStorage.setItem(storageKey, JSON.stringify(INITIAL_SAMPLES));
+                  return INITIAL_SAMPLES;
+                }
+                return [];
+              }
+              // 기존 캐시된 샘플 단어들의 sentenceTranslation 누락 시 INITIAL_SAMPLES 기준으로 자동 보강
+              cleaned.forEach((item: any) => {
+                if (!item.sentenceTranslation && item.id?.startsWith('sample_')) {
+                  const sample = INITIAL_SAMPLES.find((s) => s.id === item.id);
+                  if (sample?.sentenceTranslation) {
+                    item.sentenceTranslation = sample.sentenceTranslation;
+                  }
+                }
+              });
+              if (cleaned.length !== parsed.length) {
+                localStorage.setItem(storageKey, JSON.stringify(cleaned));
+              }
+              return cleaned.map((item: any) => ({
+                ...item,
+                bookTitle: item.bookTitle || item.sourceMemo || '기본 단어장',
+                quizCount: item.quizCount || 0,
+                correctCount: item.correctCount || 0,
+                wrongCount: item.wrongCount || 0,
+                consecutiveCorrect: item.consecutiveCorrect || 0,
+              }));
+            }
+            return parsed;
+          }
         }
       } catch (e) {
         console.error(e);
       }
     }
 
-    // 게스트 방문 시 항상 기본 단어장 3종(30단어) 제공
-    if (!user) {
+    // 게스트 방문 시 항상 기본 단어장 3종(30단어) 제공 (명시적 비우기 상태가 아닌 경우)
+    if (!user && !isGuestCleared) {
       localStorage.setItem('context_vocab_visited', 'true');
       localStorage.setItem(storageKey, JSON.stringify(INITIAL_SAMPLES));
       return INITIAL_SAMPLES;
     }
   }
 
-  return !user ? INITIAL_SAMPLES : [];
+  return (!user && (typeof window === 'undefined' || localStorage.getItem('context_vocab_guest_cleared') !== 'true'))
+    ? INITIAL_SAMPLES
+    : [];
+
 }
 
 /**
@@ -1302,17 +1314,29 @@ export async function loadSamplesForUser(userId: string): Promise<VocabItem[]> {
 }
 
 /**
- * 초기 샘플로 리셋 (게스트 모드용)
+ * 초기 샘플로 리셋 (게스트 및 로그인 사용자 계정 모두 지원)
  */
-export async function resetWithSamples(): Promise<VocabItem[]> {
+export async function resetWithSamples(userId?: string): Promise<VocabItem[]> {
+  if (userId) {
+    if (checkIsSupabaseConfigured() && supabase) {
+      try {
+        await supabase.from('vocab_words').delete().eq('user_id', userId);
+      } catch (e) {
+        console.warn('Supabase clear before reset error:', e);
+      }
+    }
+    return await loadSamplesForUser(userId);
+  }
+
   if (typeof window !== 'undefined') {
+    localStorage.removeItem('context_vocab_guest_cleared');
     localStorage.setItem(GUEST_STORAGE_KEY, JSON.stringify(INITIAL_SAMPLES));
   }
   return INITIAL_SAMPLES;
 }
 
 /**
- * 단어장 전체 삭제 (로그인한 사용자의 단어만 안전하게 삭제)
+ * 단어장 전체 삭제 (로그인 사용자 및 게스트 지원)
  */
 export async function clearAllVocab(userId?: string): Promise<void> {
   const storageKey = getUserStorageKey(userId);
@@ -1320,6 +1344,8 @@ export async function clearAllVocab(userId?: string): Promise<void> {
     localStorage.setItem(storageKey, JSON.stringify([]));
     if (userId) {
       localStorage.setItem(`context_vocab_seeded_${userId}`, 'true');
+    } else {
+      localStorage.setItem('context_vocab_guest_cleared', 'true');
     }
   }
   if (checkIsSupabaseConfigured() && supabase && userId) {
@@ -1330,3 +1356,4 @@ export async function clearAllVocab(userId?: string): Promise<void> {
     }
   }
 }
+
