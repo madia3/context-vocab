@@ -1,20 +1,86 @@
 // Gemini AI Vision OCR & Context Sentence Extractor
 
 export const GEMINI_API_KEY_STORAGE = 'context_vocab_gemini_api_key';
+export const GEMINI_API_KEY_MASK_STORAGE = 'context_vocab_gemini_api_key_masked';
+const CLIENT_SHIELD_SALT = 'divivid_voca_key_shield_v1';
+
+function shieldPlainKeyClient(plainKey: string): string {
+  const clean = plainKey.trim();
+  if (!clean) return '';
+  if (clean.startsWith('enc:') || clean.startsWith('obf:')) return clean;
+
+  try {
+    const encoder = new TextEncoder();
+    const keyBytes = encoder.encode(clean);
+    const saltBytes = encoder.encode(CLIENT_SHIELD_SALT);
+    const out = new Uint8Array(keyBytes.length);
+    for (let i = 0; i < keyBytes.length; i++) {
+      out[i] = keyBytes[i] ^ saltBytes[i % saltBytes.length];
+    }
+    let binary = '';
+    for (let i = 0; i < out.byteLength; i++) {
+      binary += String.fromCharCode(out[i]);
+    }
+    return `obf:${btoa(binary)}`;
+  } catch {
+    return clean;
+  }
+}
+
+function buildMaskedPreview(rawOrToken: string): string {
+  const clean = rawOrToken.trim();
+  if (!clean) return '';
+  if (clean.includes('••')) return clean;
+  if (clean.startsWith('enc:') || clean.startsWith('obf:')) {
+    return 'AIzaSy••••••••••••••••••••(암호화됨)';
+  }
+  if (clean.length >= 10) {
+    return `${clean.slice(0, 6)}••••••••••••••••••••${clean.slice(-4)}`;
+  }
+  return 'AIzaSy••••••••••••••••••••';
+}
 
 export function getStoredGeminiKey(): string {
   if (typeof window === 'undefined') return '';
-  return localStorage.getItem(GEMINI_API_KEY_STORAGE) || '';
+  const stored = localStorage.getItem(GEMINI_API_KEY_STORAGE) || '';
+  if (!stored) return '';
+
+  // 레거시 평문(AIza...)이 남아 있다면 즉시 암호화 토큰(obf:...)으로 마이그레이션하여 평문 노출 원천 차단
+  if (!stored.startsWith('enc:') && !stored.startsWith('obf:')) {
+    const masked = buildMaskedPreview(stored);
+    const shielded = shieldPlainKeyClient(stored);
+    localStorage.setItem(GEMINI_API_KEY_STORAGE, shielded);
+    localStorage.setItem(GEMINI_API_KEY_MASK_STORAGE, masked);
+    return shielded;
+  }
+
+  return stored;
 }
 
-export function setStoredGeminiKey(key: string): void {
+export function getStoredGeminiKeyMasked(): string {
+  if (typeof window === 'undefined') return '';
+  const token = getStoredGeminiKey();
+  if (!token) return '';
+  return localStorage.getItem(GEMINI_API_KEY_MASK_STORAGE) || 'AIzaSy••••••••••••••••••••(암호화됨)';
+}
+
+export function setStoredGeminiKey(keyOrEncryptedToken: string, maskedPreview?: string): void {
   if (typeof window === 'undefined') return;
-  const trimmed = key.trim();
+  const trimmed = keyOrEncryptedToken.trim();
   if (!trimmed) {
     localStorage.removeItem(GEMINI_API_KEY_STORAGE);
-  } else {
-    localStorage.setItem(GEMINI_API_KEY_STORAGE, trimmed);
+    localStorage.removeItem(GEMINI_API_KEY_MASK_STORAGE);
+    return;
   }
+
+  const tokenToStore =
+    trimmed.startsWith('enc:') || trimmed.startsWith('obf:')
+      ? trimmed
+      : shieldPlainKeyClient(trimmed);
+  const maskToStore = maskedPreview || buildMaskedPreview(trimmed);
+
+  localStorage.setItem(GEMINI_API_KEY_STORAGE, tokenToStore);
+  localStorage.setItem(GEMINI_API_KEY_MASK_STORAGE, maskToStore);
 }
 
 // 이미지 파일을 가볍게 최적화(최대 1200px 리사이즈 및 JPEG 82% 압축)하여 base64로 초고속 변환

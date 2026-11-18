@@ -1,5 +1,98 @@
+import crypto from 'crypto';
+
 // Shared server-side Gemini API model configuration, rate limiter & fast fallback caller
 // Optimized to remember the fastest working model and avoid sequential timeout cascades
+
+export const GEMINI_COOKIE_NAME = 'cv_gemini_key';
+const OBFUSCATION_SALT = 'divivid_voca_key_shield_v1';
+
+function getServerCipherKey(): Buffer {
+  const secret =
+    process.env.GEMINI_KEY_SECRET ||
+    process.env.GEMINI_API_KEY ||
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+    'divivid-context-vocab-aes-256-gcm-secret-key-2026';
+  return crypto.createHash('sha256').update(secret).digest();
+}
+
+/**
+ * Encrypts a personal Gemini API key on the server using AES-256-GCM.
+ */
+export function encryptGeminiKey(plainKey: string): string {
+  const clean = plainKey.trim();
+  if (!clean) return '';
+  if (clean.startsWith('enc:')) return clean;
+
+  const iv = crypto.randomBytes(12);
+  const cipher = crypto.createCipheriv('aes-256-gcm', getServerCipherKey(), iv);
+  const encrypted = Buffer.concat([cipher.update(clean, 'utf8'), cipher.final()]);
+  const authTag = cipher.getAuthTag();
+  return `enc:${iv.toString('base64url')}.${authTag.toString('base64url')}.${encrypted.toString('base64url')}`;
+}
+
+/**
+ * Decrypts an AES-256-GCM (`enc:...`) or client-shielded (`obf:...`) Gemini API key.
+ */
+export function decryptGeminiKey(token?: string | null): string {
+  if (!token) return '';
+  const trimmed = token.trim();
+  if (!trimmed || trimmed.includes('••') || trimmed.includes('**')) return '';
+
+  if (trimmed.startsWith('enc:')) {
+    try {
+      const payload = trimmed.slice(4);
+      const [ivB64, tagB64, dataB64] = payload.split('.');
+      if (!ivB64 || !tagB64 || !dataB64) return '';
+      const iv = Buffer.from(ivB64, 'base64url');
+      const authTag = Buffer.from(tagB64, 'base64url');
+      const encrypted = Buffer.from(dataB64, 'base64url');
+      const decipher = crypto.createDecipheriv('aes-256-gcm', getServerCipherKey(), iv);
+      decipher.setAuthTag(authTag);
+      const decrypted = Buffer.concat([decipher.update(encrypted), decipher.final()]);
+      return decrypted.toString('utf8').trim();
+    } catch {
+      return '';
+    }
+  }
+
+  if (trimmed.startsWith('obf:')) {
+    try {
+      const rawBytes = Buffer.from(trimmed.slice(4), 'base64');
+      const saltBytes = Buffer.from(OBFUSCATION_SALT, 'utf8');
+      const out = Buffer.alloc(rawBytes.length);
+      for (let i = 0; i < rawBytes.length; i++) {
+        out[i] = rawBytes[i] ^ saltBytes[i % saltBytes.length];
+      }
+      return out.toString('utf8').trim();
+    } catch {
+      return '';
+    }
+  }
+
+  return trimmed;
+}
+
+export function maskGeminiKey(plainKey: string): string {
+  const clean = decryptGeminiKey(plainKey);
+  if (!clean || clean.length < 10) return '';
+  return `${clean.slice(0, 6)}••••••••••••••••••••${clean.slice(-4)}`;
+}
+
+function extractCookieValue(cookieHeader: string | null, name: string): string {
+  if (!cookieHeader) return '';
+  const parts = cookieHeader.split(';');
+  for (const part of parts) {
+    const [k, ...v] = part.trim().split('=');
+    if (k === name) {
+      try {
+        return decodeURIComponent(v.join('='));
+      } catch {
+        return v.join('=');
+      }
+    }
+  }
+  return '';
+}
 
 export interface GeminiModelCandidate {
   model: string;
@@ -7,30 +100,19 @@ export interface GeminiModelCandidate {
   timeoutMs: number;
 }
 
-// Fast models on Google Generative Language v1beta API
+// Fast models on Google Generative Language v1beta API (prioritized by official availability & speed)
 export const FAST_GEMINI_CANDIDATES: GeminiModelCandidate[] = [
-  {
-    model: 'gemini-3.5-flash-lite',
-    thinkingConfig: { thinkingLevel: 'LOW' },
-    timeoutMs: 3800,
-  },
-  {
-    model: 'gemini-3.1-flash-lite',
-    thinkingConfig: { thinkingBudget: 0 },
-    timeoutMs: 3500,
-  },
   {
     model: 'gemini-2.5-flash-lite',
     thinkingConfig: { thinkingBudget: 0 },
-    timeoutMs: 3500,
+    timeoutMs: 3800,
   },
   {
     model: 'gemini-2.0-flash',
     timeoutMs: 3500,
   },
   {
-    model: 'gemini-flash-lite-latest',
-    thinkingConfig: { thinkingLevel: 'LOW' },
+    model: 'gemini-2.0-flash-lite',
     timeoutMs: 3500,
   },
 ];
@@ -71,13 +153,20 @@ export function checkRateLimit(req: Request, maxRequestsPerMinute: number = 30):
 }
 
 /**
- * Safely resolves the Gemini API key on the server without relying on NEXT_PUBLIC_ client env exposure.
+ * Safely resolves the Gemini API key on the server (supports AES-256-GCM encrypted token, HttpOnly cookie, or server env).
  */
 export function resolveServerGeminiKey(req: Request, explicitKey?: string): string {
-  const fromHeader = req.headers.get('x-gemini-key')?.trim();
-  const fromExplicit = explicitKey?.trim();
+  const fromExplicit = decryptGeminiKey(explicitKey);
+  if (fromExplicit) return fromExplicit;
+
+  const fromHeader = decryptGeminiKey(req.headers.get('x-gemini-key'));
+  if (fromHeader) return fromHeader;
+
+  const fromCookie = decryptGeminiKey(extractCookieValue(req.headers.get('cookie'), GEMINI_COOKIE_NAME));
+  if (fromCookie) return fromCookie;
+
   const fromServerEnv = process.env.GEMINI_API_KEY?.trim();
-  return fromExplicit || fromHeader || fromServerEnv || '';
+  return fromServerEnv || '';
 }
 
 export async function callGeminiWithFallback(options: {

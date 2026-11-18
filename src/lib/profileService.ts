@@ -65,10 +65,9 @@ export async function updateProfile(
     // 2. If logged in, update Supabase user metadata (sync across all phones/iPads/PCs)
     const client = getSupabaseClient();
     if (client && currentUser) {
-      const updateData: { full_name?: string; custom_avatar?: string | null } = {};
-      if (trimmedName) {
-        updateData.full_name = trimmedName;
-      }
+      const updateData: { full_name?: string | null; custom_avatar?: string | null } = {
+        full_name: trimmedName || null,
+      };
       if (newAvatarDataUrl !== undefined) {
         updateData.custom_avatar = newAvatarDataUrl;
       }

@@ -113,9 +113,8 @@ Output strictly valid JSON in this exact structure without markdown backticks:
         temperature: 0.0,
         responseMimeType: 'application/json',
         candidates: [
-          { model: 'gemini-3.5-flash-lite', thinkingConfig: { thinkingLevel: 'LOW' }, timeoutMs: 5000 },
-          { model: 'gemini-3.1-flash-lite', thinkingConfig: { thinkingBudget: 0 }, timeoutMs: 4200 },
-          { model: 'gemini-flash-lite-latest', thinkingConfig: { thinkingLevel: 'LOW' }, timeoutMs: 4200 },
+          { model: 'gemini-2.5-flash-lite', thinkingConfig: { thinkingBudget: 0 }, timeoutMs: 5000 },
+          { model: 'gemini-2.0-flash', timeoutMs: 4500 },
         ],
       });
 

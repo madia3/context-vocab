@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { checkRateLimit } from '@/lib/geminiServer';
 
 export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
@@ -10,6 +11,14 @@ const MAX_CACHE_ITEMS = 1000;
 
 export async function GET(req: NextRequest) {
   try {
+    const rateLimit = checkRateLimit(req, 60);
+    if (!rateLimit.allowed) {
+      return new NextResponse('Too Many Requests', {
+        status: 429,
+        headers: { 'Retry-After': String(rateLimit.retryAfterSec) },
+      });
+    }
+
     const { searchParams } = new URL(req.url);
     const rawText = searchParams.get('text') || '';
     const lang = searchParams.get('lang') || 'en-US';

@@ -15,12 +15,18 @@ const DB_NAME = 'divivid_voca_source_db';
 const DB_VERSION = 1;
 const STORE_NAME = 'book_sources';
 
+let cachedDbPromise: Promise<IDBDatabase | null> | null = null;
+
 function openSourceDB(): Promise<IDBDatabase | null> {
   if (typeof window === 'undefined' || !window.indexedDB) {
     return Promise.resolve(null);
   }
 
-  return new Promise((resolve) => {
+  if (cachedDbPromise) {
+    return cachedDbPromise;
+  }
+
+  cachedDbPromise = new Promise((resolve) => {
     try {
       const request = indexedDB.open(DB_NAME, DB_VERSION);
       request.onupgradeneeded = (event: any) => {
@@ -29,16 +35,30 @@ function openSourceDB(): Promise<IDBDatabase | null> {
           db.createObjectStore(STORE_NAME, { keyPath: 'bookTitle' });
         }
       };
-      request.onsuccess = () => resolve(request.result);
+      request.onsuccess = () => {
+        const db = request.result;
+        db.onversionchange = () => {
+          db.close();
+          cachedDbPromise = null;
+        };
+        db.onclose = () => {
+          cachedDbPromise = null;
+        };
+        resolve(db);
+      };
       request.onerror = (err) => {
         console.warn('IndexedDB open error:', err);
+        cachedDbPromise = null;
         resolve(null);
       };
     } catch (e) {
       console.warn('IndexedDB not supported or blocked:', e);
+      cachedDbPromise = null;
       resolve(null);
     }
   });
+
+  return cachedDbPromise;
 }
 
 function getSessionKey(bookTitle: string): string {

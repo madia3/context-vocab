@@ -266,7 +266,6 @@ CREATE TABLE IF NOT EXISTS public.vocab_words (
     selected_meaning TEXT NOT NULL,
     all_meanings JSONB DEFAULT '[]'::jsonb,
     context_sentence TEXT,
-    sentence_translation TEXT,
     candidate_sentences JSONB DEFAULT '[]'::jsonb,
     source_memo TEXT,
     book_title TEXT,
@@ -280,7 +279,6 @@ CREATE TABLE IF NOT EXISTS public.vocab_words (
 
 -- 2. 기존 테이블이 있는 경우 누락된 컬럼 추가 (안전 실행)
 ALTER TABLE public.vocab_words ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE;
-ALTER TABLE public.vocab_words ADD COLUMN IF NOT EXISTS sentence_translation TEXT;
 ALTER TABLE public.vocab_words ADD COLUMN IF NOT EXISTS wrong_count INT DEFAULT 0;
 ALTER TABLE public.vocab_words ADD COLUMN IF NOT EXISTS consecutive_correct INT DEFAULT 0;
 ALTER TABLE public.vocab_words ADD COLUMN IF NOT EXISTS last_quiz_date TEXT;
@@ -313,6 +311,7 @@ CREATE POLICY "Users can delete their own words"
     ON public.vocab_words FOR DELETE
     USING (auth.uid() = user_id);
 
--- 5. 검색 성능 향상을 위한 색인(Index) 추가
+-- 5. 검색 및 최신순 정렬 성능 향상을 위한 복합 색인(Index) 추가
 CREATE INDEX IF NOT EXISTS idx_vocab_words_user_id ON public.vocab_words(user_id);
+CREATE INDEX IF NOT EXISTS idx_vocab_words_user_created ON public.vocab_words(user_id, created_at DESC);
 `;

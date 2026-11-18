@@ -1,24 +1,76 @@
 import { NextRequest, NextResponse } from 'next/server';
+import dns from 'dns/promises';
 import { cleanArticleTextHeuristic } from '@/lib/cleanText';
 import { callGeminiWithFallback, checkRateLimit, resolveServerGeminiKey } from '@/lib/geminiServer';
 
 export const runtime = 'nodejs';
 
+function isPrivateIpAddress(ipRaw: string): boolean {
+  const ip = ipRaw.toLowerCase().trim().replace(/^\[|\]$/g, '');
+  if (!ip) return true;
+
+  // IPv4-mapped IPv6 (e.g. ::ffff:127.0.0.1)
+  if (ip.startsWith('::ffff:')) {
+    return isPrivateIpAddress(ip.slice(7));
+  }
+
+  // IPv6 loopback, unspecified, unique-local (fc00::/7), link-local (fe80::/10)
+  if (ip.includes(':')) {
+    return (
+      ip === '::1' ||
+      ip === '::' ||
+      ip.startsWith('fc') ||
+      ip.startsWith('fd') ||
+      ip.startsWith('fe8') ||
+      ip.startsWith('fe9') ||
+      ip.startsWith('fea') ||
+      ip.startsWith('feb')
+    );
+  }
+
+  // IPv4 private / loopback / link-local / CGNAT / broadcast
+  const parts = ip.split('.').map((n) => Number(n));
+  if (parts.length === 4 && parts.every((n) => Number.isInteger(n) && n >= 0 && n <= 255)) {
+    const [a, b] = parts;
+    if (a === 0 || a === 10 || a === 127) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    if (a === 100 && b >= 64 && b <= 127) return true; // Carrier-grade NAT
+    if (a >= 224) return true; // Multicast / Reserved
+  }
+
+  return false;
+}
+
 function isPrivateOrInternalHost(hostname: string): boolean {
-  const host = hostname.toLowerCase();
-  return (
+  const host = hostname.toLowerCase().trim().replace(/^\[|\]$/g, '');
+  if (
+    !host ||
     host === 'localhost' ||
-    host === '127.0.0.1' ||
-    host === '::1' ||
-    host === '[::1]' ||
-    host === '0.0.0.0' ||
     host.endsWith('.local') ||
     host.endsWith('.internal') ||
-    /^10\.\d+\.\d+\.\d+$/.test(host) ||
-    /^192\.168\.\d+\.\d+$/.test(host) ||
-    /^172\.(1[6-9]|2\d|3[0-1])\.\d+\.\d+$/.test(host) ||
-    /^169\.254\.\d+\.\d+$/.test(host)
-  );
+    host.endsWith('.localhost') ||
+    /^\d+$/.test(host) || // Integer IP representation (e.g. 2130706433)
+    /^0x[0-9a-f]+/i.test(host) // Hex IP representation
+  ) {
+    return true;
+  }
+  if (/^\d+\.\d+\.\d+\.\d+$/.test(host) || host.includes(':')) {
+    return isPrivateIpAddress(host);
+  }
+  return false;
+}
+
+async function isUnsafeResolvedHost(hostname: string): Promise<boolean> {
+  if (isPrivateOrInternalHost(hostname)) return true;
+  try {
+    const records = await dns.lookup(hostname, { all: true });
+    if (!records || records.length === 0) return false;
+    return records.some((r) => isPrivateIpAddress(r.address));
+  } catch {
+    return false;
+  }
 }
 
 // 빠른 응답을 위한 메모리 캐시 (10분 TTL)
@@ -213,7 +265,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'http 또는 https 웹페이지만 불러올 수 있습니다.' }, { status: 400 });
     }
 
-    if (isPrivateOrInternalHost(parsedUrl.hostname)) {
+    if (await isUnsafeResolvedHost(parsedUrl.hostname)) {
       return NextResponse.json({ error: '보안 정책상 내부망이나 로컬 주소는 접근할 수 없습니다.' }, { status: 403 });
     }
 
@@ -231,39 +283,61 @@ export async function POST(req: NextRequest) {
       });
     }
 
-    // 웹페이지 HTML 가져오기 (타임아웃 5초 설정으로 불필요한 대기 방지)
-    const response = await fetch(parsedUrl.toString(), {
-      headers: {
-        'User-Agent':
-          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9,ko;q=0.8',
-        'Cache-Control': 'no-cache',
-      },
-      signal: AbortSignal.timeout(5000),
-    });
+    // 리다이렉트(301/302/303/307/308) 수동 추적 및 매 홉마다 SSRF/DNS 선검증 (최대 5회)
+    let currentFetchUrl = parsedUrl;
+    let response: Response | null = null;
+    const MAX_REDIRECTS = 5;
 
-    // 리다이렉트 이후 최종 URL에 대한 SSRF 2차 검증
-    if (response.url) {
-      try {
-        const finalUrl = new URL(response.url);
+    for (let hop = 0; hop <= MAX_REDIRECTS; hop++) {
+      response = await fetch(currentFetchUrl.toString(), {
+        headers: {
+          'User-Agent':
+            'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+          Accept: 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+          'Accept-Language': 'en-US,en;q=0.9,ko;q=0.8',
+          'Cache-Control': 'no-cache',
+        },
+        redirect: 'manual',
+        signal: AbortSignal.timeout(5000),
+      });
+
+      if ([301, 302, 303, 307, 308].includes(response.status)) {
+        const locationHeader = response.headers.get('location');
+        if (!locationHeader) break;
+        if (hop === MAX_REDIRECTS) {
+          return NextResponse.json(
+            { error: '리다이렉트 횟수가 너무 많습니다. 최종 페이지 주소를 직접 입력해 주세요.' },
+            { status: 400 }
+          );
+        }
+
+        let nextUrl: URL;
+        try {
+          nextUrl = new URL(locationHeader, currentFetchUrl);
+        } catch {
+          return NextResponse.json({ error: '잘못된 리다이렉트 주소입니다.' }, { status: 400 });
+        }
+
         if (
-          (finalUrl.protocol !== 'http:' && finalUrl.protocol !== 'https:') ||
-          isPrivateOrInternalHost(finalUrl.hostname)
+          (nextUrl.protocol !== 'http:' && nextUrl.protocol !== 'https:') ||
+          (await isUnsafeResolvedHost(nextUrl.hostname))
         ) {
           return NextResponse.json(
             { error: '보안 정책상 내부망으로 리다이렉트되는 주소는 접근할 수 없습니다.' },
             { status: 403 }
           );
         }
-      } catch {
-        // ignore URL parse error on response.url
+
+        currentFetchUrl = nextUrl;
+        continue;
       }
+
+      break;
     }
 
-    if (!response.ok) {
+    if (!response || !response.ok) {
       return NextResponse.json(
-        { error: `웹페이지를 불러오지 못했습니다. (HTTP 상태코드: ${response.status})` },
+        { error: `웹페이지를 불러오지 못했습니다. (HTTP 상태코드: ${response?.status || 500})` },
         { status: 400 }
       );
     }
@@ -290,8 +364,37 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const rawHtml = await response.text();
-    const html = rawHtml.length > 2_000_000 ? rawHtml.slice(0, 2_000_000) : rawHtml;
+    // 스트림 리더로 최대 2MB까지만 안전하게 읽어 대용량 응답 폭탄(OOM) 차단
+    const MAX_HTML_BYTES = 2_000_000;
+    let html = '';
+    if (response.body) {
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let receivedBytes = 0;
+
+      try {
+        while (true) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          if (value) {
+            receivedBytes += value.byteLength;
+            if (receivedBytes > MAX_HTML_BYTES) {
+              const allowedSlice = value.subarray(0, Math.max(0, value.byteLength - (receivedBytes - MAX_HTML_BYTES)));
+              html += decoder.decode(allowedSlice, { stream: false });
+              await reader.cancel().catch(() => {});
+              break;
+            }
+            html += decoder.decode(value, { stream: true });
+          }
+        }
+        html += decoder.decode();
+      } finally {
+        reader.releaseLock();
+      }
+    } else {
+      const rawHtml = await response.text();
+      html = rawHtml.length > MAX_HTML_BYTES ? rawHtml.slice(0, MAX_HTML_BYTES) : rawHtml;
+    }
 
     // 초고속 규칙/휴리스틱 기반 기사 본문 추출 (약 10ms 소요)
     const { title, cleanText } = cleanHtmlContentFast(html);

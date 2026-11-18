@@ -15,9 +15,12 @@ export async function POST(req: NextRequest) {
 
     const { sentence, word } = await req.json();
 
-    if (!sentence || typeof sentence !== 'string') {
+    if (!sentence || typeof sentence !== 'string' || !sentence.trim()) {
       return NextResponse.json({ error: 'Sentence is required' }, { status: 400 });
     }
+
+    const safeSentence = sentence.trim().slice(0, 1000);
+    const safeWord = typeof word === 'string' ? word.trim().slice(0, 60) : '';
 
     const apiKey = resolveServerGeminiKey(req);
 
@@ -30,16 +33,16 @@ A reader took a photo of a book/article page, but the sentence was cut off acros
 
 Incomplete Sentence Fragment:
 """
-${sentence.trim()}
+${safeSentence}
 """
 
-Target Vocabulary Word: "${word || ''}"
+Target Vocabulary Word: "${safeWord}"
 
 TASK:
 1. Complete the cut-off sentence naturally and grammatically, preserving the existing words as much as possible.
 2. If the beginning was cut off (e.g. starts with lowercase or mid-clause), add a natural beginning clause.
 3. If the end was cut off (e.g. ends abruptly without a period, or ends with a conjunction/preposition), complete the clause with a plausible, natural, elegant ending.
-4. The target word "${word || ''}" must remain naturally inside the sentence.
+4. The target word "${safeWord}" must remain naturally inside the sentence.
 5. Return ONLY a single complete English sentence ending with a proper period (.), question mark (?), or exclamation mark (!). Do NOT return quotes or explanations.`;
 
     const aiRes = await callGeminiWithFallback({

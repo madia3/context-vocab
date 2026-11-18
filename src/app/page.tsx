@@ -2828,50 +2828,40 @@ export default function Home() {
           {/* Right Utility Controls (Account & Settings Unified) */}
           <div className="flex items-center shrink-0">
             <div className="relative">
-              {currentUser ? (
-                <button
-                  type="button"
-                  onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                  className="flex items-center gap-2 p-1.5 sm:px-3 sm:py-1.5 rounded-2xl bg-white hover:bg-slate-50 text-slate-800 transition cursor-pointer border border-slate-200/90 shadow-2xs hover:border-slate-300 active:scale-[0.98]"
-                  title={currentUser.email || '사용자 프로필 및 설정'}
-                >
-                  {effectiveAvatar ? (
-                    <img
-                      src={effectiveAvatar}
-                      alt="Profile"
-                      className="w-8 h-8 rounded-full object-cover shrink-0 ring-2 ring-indigo-100 shadow-2xs"
-                    />
-                  ) : (
-                    <div className="w-8 h-8 rounded-full bg-indigo-600 text-white text-xs font-black flex items-center justify-center shrink-0 ring-2 ring-indigo-100 shadow-2xs">
-                      {(effectiveDisplayName || 'U')[0].toUpperCase()}
-                    </div>
-                  )}
-                  <div className="hidden sm:flex flex-col text-left leading-tight min-w-0 pr-0.5">
-                    <span className="text-xs font-bold text-slate-900 max-w-[100px] truncate">
+              <button
+                type="button"
+                onClick={() => {
+                  setAuthError(null);
+                  setAuthSuccessMsg(null);
+                  if (!currentUser && (authMode === 'forgot' || authMode === 'reset')) {
+                    setAuthMode('login');
+                  }
+                  setIsUserMenuOpen(!isUserMenuOpen);
+                }}
+                className="flex items-center gap-1.5 p-1 text-slate-700 hover:text-slate-950 transition cursor-pointer"
+                title={currentUser ? '계정 및 설정' : '로그인 및 설정'}
+              >
+                {currentUser ? (
+                  <>
+                    {effectiveAvatar ? (
+                      <img
+                        src={effectiveAvatar}
+                        alt="Profile"
+                        className="w-7 h-7 rounded-full object-cover shrink-0 ring-1 ring-slate-200"
+                      />
+                    ) : (
+                      <div className="w-7 h-7 rounded-full bg-indigo-600 text-white text-xs font-bold flex items-center justify-center shrink-0">
+                        {(effectiveDisplayName || 'U')[0].toUpperCase()}
+                      </div>
+                    )}
+                    <span className="hidden sm:inline text-xs font-bold max-w-[85px] truncate">
                       {effectiveDisplayName}
                     </span>
-                    <span className="text-[10px] text-slate-400 font-medium">설정 / 동기화</span>
-                  </div>
-                  <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                </button>
-              ) : (
-                <button
-                  type="button"
-                  onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                  className="flex items-center gap-2 p-1.5 sm:px-3 sm:py-1.5 rounded-2xl bg-white hover:bg-slate-50 text-slate-800 transition cursor-pointer border border-slate-200/90 shadow-2xs hover:border-slate-300 active:scale-[0.98]"
-                  title="계정 및 환경설정"
-                >
-                  <div className="w-8 h-8 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 ring-2 ring-indigo-100/70 shadow-2xs">
-                    <UserIcon className="w-4 h-4 text-indigo-600" />
-                  </div>
-                  <div className="hidden sm:flex flex-col text-left leading-tight min-w-0 pr-0.5">
-                    <span className="text-xs font-bold text-slate-900">계정 / 설정</span>
-                    <span className="text-[10px] text-slate-400 font-medium">게스트 모드</span>
-                  </div>
-                  <span className="sm:hidden text-xs font-bold text-slate-800 pr-0.5">설정</span>
-                  <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-                </button>
-              )}
+                  </>
+                ) : (
+                  <UserIcon className="w-5 h-5 text-slate-700 shrink-0" />
+                )}
+              </button>
 
               {/* Unified Account & Settings Dropdown Menu */}
               {isUserMenuOpen && (
@@ -2880,53 +2870,185 @@ export default function Home() {
                     className="fixed inset-0 z-40"
                     onClick={() => setIsUserMenuOpen(false)}
                   />
-                  <div className="absolute right-0 mt-1.5 w-64 bg-white rounded-2xl shadow-xl border border-slate-200 p-2 z-50 space-y-1 animate-fade-in text-xs">
+                  <div className="absolute right-0 mt-2 w-72 sm:w-80 bg-white rounded-2xl shadow-2xl border border-slate-200 p-3 z-50 space-y-2.5 animate-fade-in text-xs">
+                    {/* TOP SECTION: Immediate Login Form (if guest) OR Account Info (if logged in) */}
                     {currentUser ? (
-                      /* Logged In User Header */
-                      <div className="px-3 py-2 border-b border-slate-100 flex items-center gap-2.5">
-                        {effectiveAvatar ? (
-                          <img
-                            src={effectiveAvatar}
-                            alt="Profile"
-                            className="w-8 h-8 rounded-full object-cover shrink-0 border border-slate-200 shadow-xs"
-                          />
-                        ) : (
-                          <div className="w-8 h-8 rounded-full bg-indigo-600 text-white text-xs font-bold flex items-center justify-center shrink-0">
-                            {(effectiveDisplayName || 'U')[0].toUpperCase()}
+                      <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-100 flex items-center justify-between gap-2">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          {effectiveAvatar ? (
+                            <img
+                              src={effectiveAvatar}
+                              alt="Profile"
+                              className="w-8 h-8 rounded-full object-cover shrink-0 border border-slate-200 shadow-xs"
+                            />
+                          ) : (
+                            <div className="w-8 h-8 rounded-full bg-indigo-600 text-white text-xs font-bold flex items-center justify-center shrink-0">
+                              {(effectiveDisplayName || 'U')[0].toUpperCase()}
+                            </div>
+                          )}
+                          <div className="min-w-0">
+                            <p className="font-bold text-slate-900 truncate">
+                              {effectiveDisplayName}
+                            </p>
+                            <p className="text-[11px] text-slate-500 truncate">{currentUser.email}</p>
                           </div>
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <p className="font-bold text-slate-900 truncate">
-                            {effectiveDisplayName}
-                          </p>
-                          <p className="text-[11px] text-slate-500 truncate">{currentUser.email}</p>
-                        </div>
-                      </div>
-                    ) : (
-                      /* Guest User Header with Login CTA */
-                      <div className="p-3 bg-gradient-to-br from-indigo-50/80 to-slate-50 rounded-xl border border-indigo-100/80 space-y-2 mb-1">
-                        <div>
-                          <div className="flex items-center gap-1.5 font-bold text-slate-800 text-xs">
-                            <span className="w-2 h-2 rounded-full bg-amber-400" />
-                            <span>게스트 모드</span>
-                          </div>
-                          <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
-                            로그인하면 단어장이 클라우드에 영구 백업되고 모든 기기에서 동기화됩니다.
-                          </p>
                         </div>
                         <button
                           type="button"
-                          onClick={() => {
-                            setAuthError(null);
-                            setAuthSuccessMsg(null);
-                            setIsAuthModalOpen(true);
-                            setIsUserMenuOpen(false);
-                          }}
-                          className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer active:scale-98"
+                          onClick={handleSignOut}
+                          className="px-2.5 py-1.5 bg-white border border-slate-200 hover:border-rose-200 hover:bg-rose-50 text-rose-600 font-bold text-[11px] rounded-lg transition cursor-pointer shrink-0"
                         >
-                          <LogIn className="w-3.5 h-3.5" />
-                          <span>로그인 / 무료 회원가입</span>
+                          로그아웃
                         </button>
+                      </div>
+                    ) : (
+                      <div className="space-y-2.5 pb-1">
+                        {/* Mode Switch (Login / Signup) */}
+                        {authMode === 'forgot' ? (
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-slate-900">비밀번호 재설정</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAuthMode('login');
+                                setAuthError(null);
+                                setAuthSuccessMsg(null);
+                              }}
+                              className="text-[11px] text-indigo-600 font-bold hover:underline cursor-pointer"
+                            >
+                              ← 로그인으로
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="grid grid-cols-2 p-0.5 bg-slate-100 rounded-xl">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAuthMode('login');
+                                setAuthError(null);
+                                setAuthSuccessMsg(null);
+                              }}
+                              className={`py-1.5 text-xs font-bold rounded-lg transition cursor-pointer ${
+                                authMode === 'login'
+                                  ? 'bg-white text-indigo-600 shadow-2xs'
+                                  : 'text-slate-500 hover:text-slate-900'
+                              }`}
+                            >
+                              로그인
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setAuthMode('signup');
+                                setAuthError(null);
+                                setAuthSuccessMsg(null);
+                              }}
+                              className={`py-1.5 text-xs font-bold rounded-lg transition cursor-pointer ${
+                                authMode === 'signup'
+                                  ? 'bg-white text-indigo-600 shadow-2xs'
+                                  : 'text-slate-500 hover:text-slate-900'
+                              }`}
+                            >
+                              회원가입
+                            </button>
+                          </div>
+                        )}
+
+                        {authError && (
+                          <div className="p-2 bg-rose-50 border border-rose-200 text-rose-700 rounded-xl text-[11px] flex items-start gap-1.5">
+                            <AlertCircle className="w-3.5 h-3.5 shrink-0 mt-0.5 text-rose-600" />
+                            <span>{authError}</span>
+                          </div>
+                        )}
+                        {authSuccessMsg && (
+                          <div className="p-2 bg-emerald-50 border border-emerald-200 text-emerald-700 rounded-xl text-[11px] flex items-start gap-1.5">
+                            <CheckCircle2 className="w-3.5 h-3.5 shrink-0 mt-0.5 text-emerald-600" />
+                            <span>{authSuccessMsg}</span>
+                          </div>
+                        )}
+
+                        {/* Direct Email / Password Inputs */}
+                        <form onSubmit={handleEmailAuthSubmit} className="space-y-2">
+                          <input
+                            type="email"
+                            required
+                            value={authEmail}
+                            onChange={(e) => setAuthEmail(e.target.value)}
+                            placeholder="이메일 (아이디)"
+                            className="w-full px-3 py-2 text-xs bg-slate-50 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:border-indigo-500 transition"
+                          />
+
+                          {authMode !== 'forgot' && (
+                            <input
+                              type="password"
+                              required
+                              value={authPassword}
+                              onChange={(e) => setAuthPassword(e.target.value)}
+                              placeholder={authMode === 'signup' ? '비밀번호 (6자 이상)' : '비밀번호'}
+                              className="w-full px-3 py-2 text-xs bg-slate-50 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:border-indigo-500 transition"
+                            />
+                          )}
+
+                          {authMode === 'signup' && (
+                            <input
+                              type="password"
+                              required
+                              value={authPasswordConfirm}
+                              onChange={(e) => setAuthPasswordConfirm(e.target.value)}
+                              placeholder="비밀번호 확인"
+                              className="w-full px-3 py-2 text-xs bg-slate-50 rounded-xl border border-slate-200 focus:bg-white focus:outline-none focus:border-indigo-500 transition"
+                            />
+                          )}
+
+                          <div className="flex items-center justify-between gap-2">
+                            <button
+                              type="submit"
+                              disabled={isAuthSubmitting}
+                              className="flex-1 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl transition flex items-center justify-center gap-1.5 cursor-pointer"
+                            >
+                              {isAuthSubmitting ? (
+                                <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                              ) : (
+                                <span>
+                                  {authMode === 'login'
+                                    ? '로그인'
+                                    : authMode === 'signup'
+                                    ? '회원가입'
+                                    : '재설정 메일 발송'}
+                                </span>
+                              )}
+                            </button>
+                            {authMode === 'login' && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setAuthMode('forgot');
+                                  setAuthError(null);
+                                  setAuthSuccessMsg(null);
+                                }}
+                                className="text-[11px] text-slate-400 hover:text-indigo-600 font-medium shrink-0 cursor-pointer"
+                              >
+                                비번 찾기
+                              </button>
+                            )}
+                          </div>
+                        </form>
+
+                        {/* Direct Google Login Button */}
+                        {authMode !== 'forgot' && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setIsUserMenuOpen(false);
+                              handleGoogleLoginClick();
+                            }}
+                            disabled={isLoggingIn}
+                            className="w-full py-2 px-3 bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition cursor-pointer shadow-2xs"
+                          >
+                            <GoogleIcon className="w-3.5 h-3.5 shrink-0" />
+                            <span>Google로 로그인</span>
+                          </button>
+                        )}
                       </div>
                     )}
 

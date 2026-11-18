@@ -1,5 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { callGeminiWithFallback, checkRateLimit, resolveServerGeminiKey } from '@/lib/geminiServer';
+import {
+  callGeminiWithFallback,
+  checkRateLimit,
+  encryptGeminiKey,
+  GEMINI_COOKIE_NAME,
+  maskGeminiKey,
+  resolveServerGeminiKey,
+} from '@/lib/geminiServer';
 
 export const runtime = 'nodejs';
 
@@ -13,7 +20,20 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { apiKey } = await req.json();
+    const body = await req.json().catch(() => ({}));
+    const { apiKey, action } = body;
+
+    if (action === 'clear') {
+      const clearRes = NextResponse.json({ ok: true, cleared: true });
+      clearRes.cookies.set(GEMINI_COOKIE_NAME, '', {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 0,
+      });
+      return clearRes;
+    }
 
     const keyToTest = resolveServerGeminiKey(req, apiKey);
 
@@ -30,10 +50,25 @@ export async function POST(req: NextRequest) {
     });
 
     if (res.ok) {
-      return NextResponse.json({
+      const encryptedToken = encryptGeminiKey(keyToTest);
+      const maskedKey = maskGeminiKey(keyToTest);
+      const response = NextResponse.json({
         ok: true,
+        encryptedToken,
+        maskedKey,
         message: `Google Gemini AI 연동 성공! (${res.modelUsed})`,
       });
+
+      // 서버 AES-256-GCM 암호화 토큰을 HttpOnly 보안 쿠키에도 저장 (XSS/평문 노출 원천 차단)
+      response.cookies.set(GEMINI_COOKIE_NAME, encryptedToken, {
+        httpOnly: true,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax',
+        path: '/',
+        maxAge: 60 * 60 * 24 * 365, // 1 year
+      });
+
+      return response;
     }
 
     return NextResponse.json(

@@ -898,6 +898,178 @@ export async function saveOrMergeVocabularyItem(
   };
 }
 
+function mapVocabItemToDbRow(item: VocabItem, userId: string) {
+  return {
+    id: item.id,
+    user_id: userId,
+    word: item.word,
+    phonetic: item.phonetic || '',
+    part_of_speech: item.partOfSpeech || '',
+    selected_meaning: item.selectedMeaning,
+    all_meanings: item.allMeanings || [item.selectedMeaning].filter(Boolean),
+    context_sentence: item.contextSentence || '',
+    sentence_translation: item.sentenceTranslation || null,
+    candidate_sentences:
+      item.candidateSentences && item.candidateSentences.length > 0
+        ? item.candidateSentences
+        : item.contextSentence
+        ? [item.contextSentence]
+        : [],
+    source_memo: item.sourceMemo || '',
+    book_title: item.bookTitle?.trim() || '기본 단어장',
+    quiz_count: item.quizCount || 0,
+    correct_count: item.correctCount || 0,
+    wrong_count: item.wrongCount || 0,
+    consecutive_correct: item.consecutiveCorrect || 0,
+    last_quiz_date: item.lastQuizDate || null,
+  };
+}
+
+function mergeVocabItemFields(existingItem: VocabItem, incomingItem: VocabItem, targetBook: string): VocabItem {
+  const newContext = incomingItem.contextSentence?.trim() || '';
+  const existingSentences = [...(existingItem.candidateSentences || [])];
+  if (existingItem.contextSentence && !existingSentences.includes(existingItem.contextSentence)) {
+    existingSentences.push(existingItem.contextSentence);
+  }
+  const incomingSentences = [...(incomingItem.candidateSentences || [])];
+  if (newContext && !incomingSentences.includes(newContext)) {
+    incomingSentences.push(newContext);
+  }
+
+  const mergedSentences = Array.from(
+    new Set(
+      [newContext, ...incomingSentences, ...existingSentences].filter(
+        (s) => s && s.trim().length > 0
+      )
+    )
+  );
+
+  const newMemo = incomingItem.sourceMemo?.trim() || '';
+  let mergedMemo = existingItem.sourceMemo || '';
+  if (newMemo && !mergedMemo.includes(newMemo)) {
+    mergedMemo = mergedMemo ? `${mergedMemo} / ${newMemo}` : newMemo;
+  }
+
+  const mergedMeanings = Array.from(
+    new Set([
+      ...(existingItem.allMeanings || [existingItem.selectedMeaning]),
+      ...(incomingItem.allMeanings || [incomingItem.selectedMeaning]),
+      incomingItem.selectedMeaning,
+    ].filter(Boolean))
+  );
+
+  return {
+    ...existingItem,
+    contextSentence: newContext || existingItem.contextSentence,
+    sentenceTranslation: incomingItem.sentenceTranslation || existingItem.sentenceTranslation || '',
+    candidateSentences: mergedSentences,
+    sourceMemo: mergedMemo,
+    allMeanings: mergedMeanings,
+    selectedMeaning: incomingItem.selectedMeaning || existingItem.selectedMeaning,
+    partOfSpeech: incomingItem.partOfSpeech || existingItem.partOfSpeech,
+    bookTitle: targetBook,
+  };
+}
+
+/**
+ * 여러 단어를 단일 트랜잭션/배치로 효율적으로 병합 및 추가합니다.
+ */
+export async function saveOrMergeVocabularyItemsBatch(
+  items: VocabItem[],
+  userId?: string
+): Promise<{ mergedCount: number; addedCount: number; items: VocabItem[] }> {
+  if (!items || items.length === 0) {
+    return { mergedCount: 0, addedCount: 0, items: [] };
+  }
+
+  const storageKey = getUserStorageKey(userId);
+  let currentList: VocabItem[] = [];
+
+  if (typeof window !== 'undefined') {
+    const local = localStorage.getItem(storageKey);
+    if (local) {
+      try {
+        currentList = JSON.parse(local);
+      } catch {}
+    }
+  }
+
+  let mergedCount = 0;
+  let addedCount = 0;
+  const touchedMap = new Map<string, VocabItem>();
+  const newItemsToPrepend: VocabItem[] = [];
+
+  for (const rawItem of items) {
+    const targetWord = rawItem.word.trim().toLowerCase();
+    const targetBook = rawItem.bookTitle?.trim() || '기본 단어장';
+
+    const batchMatchIdx = newItemsToPrepend.findIndex(
+      (v) =>
+        v.word.trim().toLowerCase() === targetWord &&
+        (v.bookTitle?.trim() || '기본 단어장') === targetBook
+    );
+    if (batchMatchIdx !== -1) {
+      const mergedInBatch = mergeVocabItemFields(newItemsToPrepend[batchMatchIdx], rawItem, targetBook);
+      newItemsToPrepend[batchMatchIdx] = mergedInBatch;
+      touchedMap.set(mergedInBatch.id, mergedInBatch);
+      mergedCount++;
+      continue;
+    }
+
+    const existingIdx = currentList.findIndex(
+      (v) =>
+        v.word.trim().toLowerCase() === targetWord &&
+        (v.bookTitle?.trim() || '기본 단어장') === targetBook
+    );
+
+    if (existingIdx !== -1) {
+      const mergedItem = mergeVocabItemFields(currentList[existingIdx], rawItem, targetBook);
+      currentList[existingIdx] = mergedItem;
+      touchedMap.set(mergedItem.id, mergedItem);
+      mergedCount++;
+    } else {
+      const normalizedNew: VocabItem = {
+        ...rawItem,
+        bookTitle: targetBook,
+        quizCount: rawItem.quizCount || 0,
+        correctCount: rawItem.correctCount || 0,
+        wrongCount: rawItem.wrongCount || 0,
+        consecutiveCorrect: rawItem.consecutiveCorrect || 0,
+        user_id: userId,
+      };
+      newItemsToPrepend.push(normalizedNew);
+      touchedMap.set(normalizedNew.id, normalizedNew);
+      addedCount++;
+    }
+  }
+
+  const finalList = [...newItemsToPrepend, ...currentList];
+
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(storageKey, JSON.stringify(finalList));
+  }
+
+  const touchedItems = Array.from(touchedMap.values());
+
+  if (checkIsSupabaseConfigured() && supabase && userId && touchedItems.length > 0) {
+    try {
+      const dbRows = touchedItems.map((item) => mapVocabItemToDbRow(item, userId));
+      const { error } = await supabase.from('vocab_words').upsert(dbRows);
+      if (error) {
+        console.warn('Supabase batch upsert error:', error);
+      }
+    } catch (err) {
+      console.warn('Supabase batch upsert exception:', err);
+    }
+  }
+
+  return {
+    mergedCount,
+    addedCount,
+    items: touchedItems,
+  };
+}
+
 /**
  * 퀴즈 풀이 결과를 갱신합니다.
  */
@@ -1037,6 +1209,87 @@ export async function updateVocabularySentenceTranslation(
       }
     } catch (e) {
       console.warn('Supabase update sentence_translation exception:', e);
+    }
+  }
+
+  return true;
+}
+
+/**
+ * 단어 항목의 세부 정보(선택 뜻, 품사, 단어장, 메모 등)를 일괄 수정합니다.
+ */
+export async function updateVocabularyItemDetails(
+  id: string,
+  updates: {
+    selectedMeaning?: string;
+    partOfSpeech?: string;
+    bookTitle?: string;
+    sourceMemo?: string;
+    sentenceTranslation?: string;
+  },
+  userId?: string
+): Promise<boolean> {
+  const storageKey = getUserStorageKey(userId);
+
+  if (typeof window !== 'undefined') {
+    const local = localStorage.getItem(storageKey);
+    if (local) {
+      try {
+        const current: VocabItem[] = JSON.parse(local);
+        const updated = current.map((item) => {
+          if (item.id === id) {
+            const nextMeaning = updates.selectedMeaning?.trim() || item.selectedMeaning;
+            const nextAllMeanings = Array.from(
+              new Set([nextMeaning, ...(item.allMeanings || [])].filter(Boolean))
+            );
+            return {
+              ...item,
+              selectedMeaning: nextMeaning,
+              allMeanings: nextAllMeanings,
+              partOfSpeech: updates.partOfSpeech?.trim() || item.partOfSpeech,
+              bookTitle: updates.bookTitle?.trim() || item.bookTitle || '기본 단어장',
+              sourceMemo: updates.sourceMemo !== undefined ? updates.sourceMemo.trim() : item.sourceMemo,
+              sentenceTranslation:
+                updates.sentenceTranslation !== undefined
+                  ? updates.sentenceTranslation.trim()
+                  : item.sentenceTranslation,
+            };
+          }
+          return item;
+        });
+        localStorage.setItem(storageKey, JSON.stringify(updated));
+      } catch {}
+    }
+  }
+
+  if (checkIsSupabaseConfigured() && supabase && userId) {
+    try {
+      const patch: Record<string, any> = {};
+      if (updates.selectedMeaning?.trim()) patch.selected_meaning = updates.selectedMeaning.trim();
+      if (updates.partOfSpeech?.trim()) patch.part_of_speech = updates.partOfSpeech.trim();
+      if (updates.bookTitle?.trim()) patch.book_title = updates.bookTitle.trim();
+      if (updates.sourceMemo !== undefined) patch.source_memo = updates.sourceMemo.trim();
+      if (updates.sentenceTranslation !== undefined) patch.sentence_translation = updates.sentenceTranslation.trim();
+
+      if (Object.keys(patch).length > 0) {
+        const { error } = await supabase
+          .from('vocab_words')
+          .update(patch)
+          .eq('id', id)
+          .eq('user_id', userId);
+        if (error && error.message?.includes('sentence_translation')) {
+          delete patch.sentence_translation;
+          if (Object.keys(patch).length > 0) {
+            await supabase
+              .from('vocab_words')
+              .update(patch)
+              .eq('id', id)
+              .eq('user_id', userId);
+          }
+        }
+      }
+    } catch (e) {
+      console.warn('Supabase updateVocabularyItemDetails exception:', e);
     }
   }
 
