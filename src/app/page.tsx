@@ -118,7 +118,7 @@ import {
   Info,
   Scissors,
 } from 'lucide-react';
-import { APP_BUILD_VERSION, APP_BUILD_SUMMARY } from '@/lib/version';
+import { APP_BUILD_VERSION } from '@/lib/version';
 import { isUserAdmin } from '@/lib/admin';
 import {
   getStoredAnnouncement,
@@ -4530,15 +4530,6 @@ export default function Home() {
                           </button>
                         </div>
                       )}
-
-                      {/* 버전 정보 표시 (캐시/쿠키 갱신 확인용) */}
-                      <div className="pt-2 flex items-center justify-between text-[10px] text-slate-400 font-mono border-t border-slate-100">
-                        <span className="flex items-center gap-1.5">
-                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                          <span>버전: <strong className="text-slate-700">{APP_BUILD_VERSION}</strong></span>
-                        </span>
-                        <span className="text-slate-400 truncate max-w-[170px] sm:max-w-none">{APP_BUILD_SUMMARY}</span>
-                      </div>
                     </div>
                   )}
                 </div>
