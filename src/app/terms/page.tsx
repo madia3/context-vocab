@@ -3,8 +3,8 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: '서비스 이용약관 | divivid (ContextVocab)',
-  description: 'divivid (ContextVocab) 서비스 이용약관 안내',
+  title: '서비스 이용약관 | divivid voca',
+  description: 'divivid voca 서비스 이용약관 안내',
 };
 
 export default function TermsOfServicePage() {
@@ -26,7 +26,7 @@ export default function TermsOfServicePage() {
             서비스 이용약관 (Terms of Service)
           </h1>
           <p className="text-xs sm:text-sm text-slate-500 mt-2">
-            본 약관은 divivid (이하 &apos;서비스&apos;, 주소: voca.divivid.com 및 divivid.com)가 제공하는 문맥 영한 단어장 및 퀴즈 서비스의 이용 조건 및 절차에 관한 사항을 규정합니다.
+            본 약관은 divivid voca (이하 &apos;서비스&apos;, 주소: voca.divivid.com 및 divivid.com)가 제공하는 문맥 영한 단어장 및 퀴즈 서비스의 이용 조건 및 절차에 관한 사항을 규정합니다.
           </p>
         </div>
 

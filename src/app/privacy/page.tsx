@@ -3,8 +3,8 @@ import Link from 'next/link';
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: '개인정보처리방침 | divivid (ContextVocab)',
-  description: 'divivid (ContextVocab) 개인정보처리방침 안내',
+  title: '개인정보처리방침 | divivid voca',
+  description: 'divivid voca 개인정보처리방침 안내',
 };
 
 export default function PrivacyPolicyPage() {
@@ -91,7 +91,7 @@ export default function PrivacyPolicyPage() {
         <section className="space-y-3">
           <h2 className="text-base sm:text-lg font-bold text-slate-900">6. 개인정보 보호책임자 및 문의처</h2>
           <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 text-xs sm:text-sm text-slate-700 space-y-1">
-            <p><strong>서비스명:</strong> divivid (ContextVocab)</p>
+            <p><strong>서비스명:</strong> divivid voca</p>
             <p><strong>대표 도메인:</strong> divivid.com / voca.divivid.com</p>
             <p><strong>문의 이메일:</strong> <a href="mailto:ashstone3@gmail.com" className="text-indigo-600 underline font-bold">ashstone3@gmail.com</a></p>
             <p className="text-slate-500 text-xs mt-1">개인정보 열람, 정정, 삭제 요청은 위 문의처로 연락해 주시면 즉각 처리해 드립니다.</p>

@@ -214,7 +214,7 @@ export async function getCurrentUser(): Promise<User | null> {
 /**
  * Supabase SQL Editor에서 원클릭으로 실행할 수 있는 테이블 & RLS 보안 정책 스크립트
  */
-export const SUPABASE_SETUP_SQL = `-- ContextVocab 개인별 단어장 & RLS 보안 테이블 설정 SQL
+export const SUPABASE_SETUP_SQL = `-- divivid voca 개인별 단어장 & RLS 보안 테이블 설정 SQL
 -- Supabase Dashboard > SQL Editor에 복사하여 [RUN] 버튼을 누르세요.
 
 -- 1. vocab_words 테이블 생성
