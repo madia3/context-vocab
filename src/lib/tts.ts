@@ -225,18 +225,15 @@ export function playNaturalAudioTTS(text: string, lang: string = 'en-US', rate?:
       currentAudio = audio;
 
       audio.onended = () => resolve(true);
-      audio.onerror = () => {
-        resolve(false);
-      };
+      audio.onerror = () => resolve(false);
+      audio.onpause = () => resolve(false);
 
       const playPromise = audio.play();
       if (playPromise !== undefined) {
-        playPromise
-          .then(() => resolve(true))
-          .catch((err) => {
-            console.warn('Audio play auto-play blocked or failed, fallback to WebSpeech:', err);
-            resolve(false);
-          });
+        playPromise.catch((err) => {
+          console.warn('Audio play auto-play blocked or failed, fallback to WebSpeech:', err);
+          resolve(false);
+        });
       }
     } catch {
       resolve(false);
@@ -275,30 +272,41 @@ export function playWebSpeechTTS(text: string, voiceCode: string = 'en-US', rate
 // 하위 호환성을 위한 별칭
 export const playGoogleNativeTTS = playNaturalAudioTTS;
 
+// 전체 TTS 음성 재생 중지 함수
+export function stopTTS() {
+  if (currentAudio) {
+    try {
+      currentAudio.pause();
+      currentAudio.currentTime = 0;
+    } catch {}
+    currentAudio = null;
+  }
+  if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+    try {
+      window.speechSynthesis.cancel();
+    } catch {}
+  }
+}
+
 // 3. 통합 최적화 낭독기: 진짜 원어민 스튜디오/뉴럴 오디오 우선 -> 실패 시 브라우저 최고급 음성
-export async function speakNatural(text: string, voiceCode: string = 'en-US', rate?: number) {
-  if (!text || typeof text !== 'string') return;
+export async function speakNatural(text: string, voiceCode: string = 'en-US', rate?: number): Promise<boolean> {
+  if (!text || typeof text !== 'string') return false;
 
   const clean = text.trim();
-  if (!clean) return;
+  if (!clean) return false;
 
   if (typeof rate === 'number') {
     setTtsPlaybackRate(rate);
   }
 
   // 기존 재생 중지
-  if (currentAudio) {
-    currentAudio.pause();
-    currentAudio.currentTime = 0;
-  }
-  if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-    window.speechSynthesis.cancel();
-  }
+  stopTTS();
 
   // 1순위: 스튜디오 원어민 녹음 및 고품질 뉴럴 오디오 재생
   const success = await playNaturalAudioTTS(clean, voiceCode, rate);
-  if (success) return;
+  if (success) return true;
 
   // 2순위: 네트워크 불가 또는 오디오 차단 시 브라우저 프리미엄 음성으로 자연스럽게 재생
-  await playWebSpeechTTS(clean, voiceCode, rate);
+  return await playWebSpeechTTS(clean, voiceCode, rate);
 }
+
