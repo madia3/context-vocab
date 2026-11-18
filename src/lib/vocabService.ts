@@ -501,6 +501,118 @@ export async function deleteVocabularyItem(id: string, userId?: string): Promise
 }
 
 /**
+ * 특정 단어장의 모든 단어를 다른 단어장으로 이동(변경)합니다.
+ */
+export async function moveWordsToAnotherBook(
+  sourceBook: string,
+  targetBook: string,
+  userId?: string
+): Promise<boolean> {
+  const normalizedTarget = targetBook.trim() || '기본 단어장';
+  const storageKey = getUserStorageKey(userId);
+
+  // 로컬 스토리지 업데이트
+  if (typeof window !== 'undefined') {
+    const local = localStorage.getItem(storageKey);
+    if (local) {
+      try {
+        const current: VocabItem[] = JSON.parse(local);
+        const updated = current.map((item) => {
+          const itemBook = item.bookTitle || '기본 단어장';
+          if (itemBook === sourceBook) {
+            return { ...item, bookTitle: normalizedTarget };
+          }
+          return item;
+        });
+        localStorage.setItem(storageKey, JSON.stringify(updated));
+      } catch (e) {
+        console.error('LocalStorage moveWordsToAnotherBook error:', e);
+      }
+    }
+  }
+
+  // Supabase 동기화
+  if (checkIsSupabaseConfigured() && supabase) {
+    try {
+      let query = supabase
+        .from('vocab_words')
+        .update({ book_title: normalizedTarget });
+
+      if (sourceBook === '기본 단어장') {
+        query = query.or('book_title.eq.기본 단어장,book_title.is.null');
+      } else {
+        query = query.eq('book_title', sourceBook);
+      }
+
+      if (userId) {
+        query = query.eq('user_id', userId);
+      }
+
+      const { error } = await query;
+      if (error) {
+        console.warn('Supabase moveWordsToAnotherBook error:', error);
+      }
+    } catch (err) {
+      console.warn('Supabase moveWordsToAnotherBook exception:', err);
+    }
+  }
+
+  return true;
+}
+
+/**
+ * 특정 단어장 및 그 단어장에 속한 모든 단어를 일괄 삭제합니다.
+ */
+export async function deleteWordsByBook(
+  bookTitle: string,
+  userId?: string
+): Promise<boolean> {
+  const storageKey = getUserStorageKey(userId);
+
+  // 로컬 스토리지 업데이트
+  if (typeof window !== 'undefined') {
+    const local = localStorage.getItem(storageKey);
+    if (local) {
+      try {
+        const current: VocabItem[] = JSON.parse(local);
+        const updated = current.filter(
+          (item) => (item.bookTitle || '기본 단어장') !== bookTitle
+        );
+        localStorage.setItem(storageKey, JSON.stringify(updated));
+      } catch (e) {
+        console.error('LocalStorage deleteWordsByBook error:', e);
+      }
+    }
+  }
+
+  // Supabase 동기화
+  if (checkIsSupabaseConfigured() && supabase) {
+    try {
+      let query = supabase.from('vocab_words').delete();
+
+      if (bookTitle === '기본 단어장') {
+        query = query.or('book_title.eq.기본 단어장,book_title.is.null');
+      } else {
+        query = query.eq('book_title', bookTitle);
+      }
+
+      if (userId) {
+        query = query.eq('user_id', userId);
+      }
+
+      const { error } = await query;
+      if (error) {
+        console.warn('Supabase deleteWordsByBook error:', error);
+      }
+    } catch (err) {
+      console.warn('Supabase deleteWordsByBook exception:', err);
+    }
+  }
+
+  return true;
+}
+
+/**
  * 로그인하지 않은 게스트 상태에서 저장해둔 단어들을 현재 로그인한 유저 계정으로 동기화(업로드)합니다.
  */
 export async function syncGuestWordsToUser(userId: string): Promise<number> {

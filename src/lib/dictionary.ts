@@ -1,5 +1,5 @@
 import { DictSearchResult, MeaningOption } from '@/types/vocab';
-import { speakNatural } from './tts';
+import { speakNatural, preloadNaturalAudioTTS } from './tts';
 
 export const BUILTIN_KOREAN_DICT: Record<string, { phonetic: string; meanings: MeaningOption[] }> = {
   tragedy: {
@@ -442,4 +442,14 @@ export function speakWordTTS(word: string, voiceCode: string = "en-US") {
 
 export function speakSentenceTTS(text: string, voiceCode: string = "en-US") {
   speakNatural(text, voiceCode);
+}
+
+export function preloadSentenceTTS(text: string, voiceCode: string = "en-US") {
+  if (!text) return;
+  preloadNaturalAudioTTS(text, voiceCode);
+}
+
+export function preloadWordTTS(word: string, voiceCode: string = "en-US") {
+  if (!word) return;
+  preloadNaturalAudioTTS(word, voiceCode);
 }

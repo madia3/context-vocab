@@ -35,6 +35,9 @@ export function getStoredSupabaseConfig(): { url: string; anonKey: string; isCus
     url.startsWith('https://')
   );
 
+    url = isValid ? url.trim().replace(/\/+$/, '') : '';
+    anonKey = isValid ? anonKey.trim() : '';
+
   return {
     url: isValid ? url : 'https://mkclocmrpxjrowldfryd.supabase.co',
     anonKey: isValid ? anonKey : 'sb_publishable_J9jsy23QWH9yXeVE5pMxFg_GbC7MlFE',
@@ -45,7 +48,7 @@ export function getStoredSupabaseConfig(): { url: string; anonKey: string; isCus
 export function setStoredSupabaseConfig(url: string, anonKey: string) {
   if (typeof window !== 'undefined') {
     if (url && anonKey) {
-      localStorage.setItem(STORAGE_URL_KEY, url.trim());
+      localStorage.setItem(STORAGE_URL_KEY, url.trim().replace(/\/+$/, ''));
       localStorage.setItem(STORAGE_ANON_KEY, anonKey.trim());
     } else {
       localStorage.removeItem(STORAGE_URL_KEY);

@@ -7,6 +7,8 @@ import {
   addVocabularyItem,
   saveOrMergeVocabularyItem,
   deleteVocabularyItem,
+  moveWordsToAnotherBook,
+  deleteWordsByBook,
   updateVocabularyContext,
   updateQuizStat,
   resetWithSamples,
@@ -18,6 +20,8 @@ import {
   lookupDictionary,
   speakWordTTS,
   speakSentenceTTS,
+  preloadSentenceTTS,
+  preloadWordTTS,
   DISTRACTOR_POOL_KOREAN,
 } from '@/lib/dictionary';
 import { getLiveDictCandidates, fetchLiveDictSuggestions, SuggestionItem } from '@/lib/autocomplete';
@@ -83,10 +87,19 @@ import {
   ChevronDown,
   Image as ImageIcon,
   ClipboardPaste,
-  Shuffle,
   Mail,
   Lock,
+  FolderInput,
+  Upload,
+  X,
 } from 'lucide-react';
+import { compressAvatarImage } from '@/lib/imageCompress';
+import {
+  getCustomAvatar,
+  setCustomAvatar,
+  getCustomDisplayName,
+  updateProfile,
+} from '@/lib/profileService';
 
 function GoogleIcon({ className = 'w-4 h-4' }: { className?: string }) {
   return (
@@ -277,8 +290,8 @@ export default function Home() {
   const [isSupabaseReady, setIsSupabaseReady] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
-  const [inputSupabaseUrl, setInputSupabaseUrl] = useState('');
-  const [inputSupabaseAnonKey, setInputSupabaseAnonKey] = useState('');
+  const [inputSupabaseUrl, setInputSupabaseUrl] = useState('https://mkclocmrpxjrowldfryd.supabase.co');
+  const [inputSupabaseAnonKey, setInputSupabaseAnonKey] = useState('sb_publishable_J9jsy23QWH9yXeVE5pMxFg_GbC7MlFE');
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [isCopiedSql, setIsCopiedSql] = useState(false);
   const [isSyncingWords, setIsSyncingWords] = useState(false);
@@ -295,6 +308,7 @@ export default function Home() {
 
   // Settings State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
+  const [settingsTab, setSettingsTab] = useState<'profile' | 'ai' | 'preferences'>('profile');
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [isTestingKey, setIsTestingKey] = useState(false);
   const [keyTestStatus, setKeyTestStatus] = useState<{ ok: boolean; message: string } | null>(null);
@@ -302,8 +316,41 @@ export default function Home() {
   const [geminiApiKey, setGeminiApiKey] = useState('');
   const [geminiKeyInput, setGeminiKeyInput] = useState('');
 
+  // Profile & Avatar State (0MB Supabase Storage Quota Strategy)
+  const [customAvatar, setCustomAvatarState] = useState<string | null>(null);
+  const [customDisplayName, setCustomDisplayNameState] = useState<string>('');
+  const [profileInputName, setProfileInputName] = useState<string>('');
+  const [pendingAvatarDataUrl, setPendingAvatarDataUrl] = useState<string | null>(null);
+  const [avatarCompressionInfo, setAvatarCompressionInfo] = useState<{ sizeKb: number } | null>(null);
+  const [isCompressingAvatar, setIsCompressingAvatar] = useState(false);
+  const [isSavingProfile, setIsSavingProfile] = useState(false);
+  const avatarFileInputRef = useRef<HTMLInputElement>(null);
+
+  // Computed User Identity for UI Display
+  const effectiveAvatar =
+    customAvatar || currentUser?.user_metadata?.avatar_url || null;
+  const effectiveDisplayName =
+    customDisplayName ||
+    currentUser?.user_metadata?.full_name ||
+    (currentUser?.email ? currentUser.email.split('@')[0] : '게스트 사용자');
+
+  // Open settings with a specific tab
+  function openSettingsWithTab(tab: 'profile' | 'ai' | 'preferences') {
+    setSettingsTab(tab);
+    setIsSettingsOpen(true);
+  }
+
   // Floating Toast State
   const [toast, setToast] = useState<{ show: boolean; title: string; subtitle?: string } | null>(null);
+
+  // 단어장 삭제 모달 상태
+  const [isDeleteBookModalOpen, setIsDeleteBookModalOpen] = useState(false);
+  const [bookToDelete, setBookToDelete] = useState<string>('');
+  const [deleteBookAction, setDeleteBookAction] = useState<'move' | 'delete_all'>('move');
+  const [targetMoveBook, setTargetMoveBook] = useState<string>('');
+  const [targetCustomBook, setTargetCustomBook] = useState<string>('');
+  const [isTargetCustom, setIsTargetCustom] = useState(false);
+  const [isDeletingBook, setIsDeletingBook] = useState(false);
 
   function triggerToast(title: string, subtitle?: string) {
     setToast({ show: true, title, subtitle });
@@ -344,6 +391,76 @@ export default function Home() {
     } finally {
       setIsTestingKey(false);
     }
+  }
+
+  // Handle client-side avatar file compression
+  async function handleAvatarFileSelect(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsCompressingAvatar(true);
+    try {
+      const result = await compressAvatarImage(file, 128, 0.75);
+      setPendingAvatarDataUrl(result.dataUrl);
+      setAvatarCompressionInfo({ sizeKb: result.sizeKb });
+      triggerToast('사진 압축 완료 ✨', `초경량 ${result.sizeKb}KB로 압축되었습니다. (Supabase 용량 0MB 소모)`);
+    } catch (err: unknown) {
+      alert(err instanceof Error ? err.message : '이미지 압축에 실패했습니다.');
+    } finally {
+      setIsCompressingAvatar(false);
+      e.target.value = '';
+    }
+  }
+
+  // Handle saving profile changes
+  async function handleSaveProfile() {
+    setIsSavingProfile(true);
+    try {
+      const avatarToSave =
+        pendingAvatarDataUrl !== null
+          ? (pendingAvatarDataUrl || null)
+          : customAvatar;
+
+      const res = await updateProfile(currentUser, profileInputName, avatarToSave);
+      if (res.success) {
+        setCustomDisplayNameState(profileInputName.trim());
+        setCustomAvatarState(avatarToSave);
+        setPendingAvatarDataUrl(null);
+        setAvatarCompressionInfo(null);
+
+        if (currentUser) {
+          setCurrentUser({
+            ...currentUser,
+            user_metadata: {
+              ...currentUser.user_metadata,
+              full_name: profileInputName.trim(),
+            },
+          });
+        }
+
+        triggerToast('프로필 저장 완료! 🎉', '표시이름과 프로필 사진이 성공적으로 저장되었습니다.');
+      } else {
+        alert(res.error || '프로필 저장 중 오류가 발생했습니다.');
+      }
+    } finally {
+      setIsSavingProfile(false);
+    }
+  }
+
+  // Reset avatar to original Google profile photo
+  function handleResetAvatarToGoogle() {
+    if (currentUser?.user_metadata?.avatar_url) {
+      setPendingAvatarDataUrl(currentUser.user_metadata.avatar_url);
+      setAvatarCompressionInfo(null);
+      triggerToast('Google 계정 사진 선택됨', '하단 [변경사항 저장]을 누르면 적용됩니다.');
+    }
+  }
+
+  // Remove avatar (revert to initials default)
+  function handleRemoveAvatar() {
+    setPendingAvatarDataUrl('');
+    setAvatarCompressionInfo(null);
+    triggerToast('기본 아바타 선택됨', '하단 [변경사항 저장]을 누르면 적용됩니다.');
   }
 
   // Load Data
@@ -416,6 +533,23 @@ export default function Home() {
       loadData(null);
     }
   }, []);
+
+  // Sync custom profile (avatar & display name) when currentUser changes
+  useEffect(() => {
+    const savedAvatar = getCustomAvatar(currentUser?.id);
+    const savedName = getCustomDisplayName(currentUser?.id);
+
+    setCustomAvatarState(savedAvatar);
+    setCustomDisplayNameState(savedName);
+
+    const initialName =
+      savedName ||
+      currentUser?.user_metadata?.full_name ||
+      (currentUser?.email ? currentUser.email.split('@')[0] : '');
+    setProfileInputName(initialName);
+    setPendingAvatarDataUrl(null);
+    setAvatarCompressionInfo(null);
+  }, [currentUser]);
 
   // Settings on Mount
   useEffect(() => {
@@ -1357,8 +1491,8 @@ export default function Home() {
 
         if (res.status === 401) {
           setIsWordSelectModalOpen(false);
-          setIsAiModalOpen(true);
-          triggerToast('Gemini API 키 설정 필요 🔑', '우측 상단 AI 연동 창에서 API 키를 먼저 등록해 주세요.');
+          openSettingsWithTab('ai');
+          triggerToast('Gemini API 키 설정 필요 🔑', '개인 설정의 AI 연동 탭에서 API 키를 먼저 등록해 주세요.');
           return;
         }
 
@@ -1643,6 +1777,124 @@ export default function Home() {
     await loadData(currentUser);
   }
 
+  // Open Delete Book Modal
+  function handleOpenDeleteBookModal(title: string) {
+    if (!title || title === 'all') return;
+    setBookToDelete(title);
+    setDeleteBookAction('move');
+    const others = availableBookTitles.filter((t) => t !== title);
+    if (others.length > 0) {
+      setTargetMoveBook(others[0]);
+      setIsTargetCustom(false);
+    } else {
+      setTargetMoveBook('기본 단어장');
+      setIsTargetCustom(false);
+    }
+    setTargetCustomBook('');
+    setIsDeleteBookModalOpen(true);
+  }
+
+  // Confirm Delete Book (Move words or Delete together)
+  async function handleConfirmDeleteBook() {
+    if (!bookToDelete) return;
+    const wordsInBook = vocabulary.filter(
+      (v) => (v.bookTitle || '기본 단어장') === bookToDelete
+    );
+    const count = wordsInBook.length;
+
+    setIsDeletingBook(true);
+    try {
+      if (count === 0) {
+        // 단어가 없는 단어장: 메타데이터 및 사용 기록 정리
+        const nextBookUsage = { ...bookUsageMap };
+        delete nextBookUsage[bookToDelete];
+        setBookUsageMap(nextBookUsage);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('context_vocab_book_recency', JSON.stringify(nextBookUsage));
+        }
+        if (inputBookTitle === bookToDelete) {
+          const remaining = availableBookTitles.filter((t) => t !== bookToDelete);
+          const nextInput = remaining[0] || '기본 단어장';
+          setInputBookTitle(nextInput);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('context_vocab_last_book_title', nextInput);
+          }
+        }
+        if (selectedBookFilter === bookToDelete) {
+          setSelectedBookFilter('all');
+        }
+        triggerToast('단어장 삭제 완료 🗑️', `'${bookToDelete}' 단어장이 삭제되었습니다.`);
+      } else if (deleteBookAction === 'move') {
+        const finalTarget = (isTargetCustom ? targetCustomBook : targetMoveBook).trim();
+        if (!finalTarget) {
+          alert('단어를 옮길 대상 단어장을 선택하거나 이름을 입력해 주세요.');
+          setIsDeletingBook(false);
+          return;
+        }
+        if (finalTarget === bookToDelete) {
+          alert('현재 삭제하려는 단어장과 다른 대상 단어장을 선택해 주세요.');
+          setIsDeletingBook(false);
+          return;
+        }
+
+        await moveWordsToAnotherBook(bookToDelete, finalTarget, currentUser?.id);
+
+        // 사용 기록 정리 및 타겟 단어장 touch
+        const nextBookUsage = { ...bookUsageMap };
+        delete nextBookUsage[bookToDelete];
+        nextBookUsage[finalTarget] = Date.now();
+        setBookUsageMap(nextBookUsage);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('context_vocab_book_recency', JSON.stringify(nextBookUsage));
+          localStorage.setItem('context_vocab_last_book_title', finalTarget);
+        }
+
+        if (inputBookTitle === bookToDelete) {
+          setInputBookTitle(finalTarget);
+        }
+
+        await loadData(currentUser);
+        setSelectedBookFilter(finalTarget);
+        triggerToast(
+          '단어 이동 & 단어장 삭제 완료! 📦',
+          `'${bookToDelete}'의 단어 ${count}개를 '${finalTarget}'(으)로 모두 이동하고 단어장을 삭제했습니다.`
+        );
+      } else {
+        // delete_all: 단어와 단어장 함께 모두 삭제
+        await deleteWordsByBook(bookToDelete, currentUser?.id);
+
+        const nextBookUsage = { ...bookUsageMap };
+        delete nextBookUsage[bookToDelete];
+        setBookUsageMap(nextBookUsage);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('context_vocab_book_recency', JSON.stringify(nextBookUsage));
+        }
+
+        if (inputBookTitle === bookToDelete) {
+          const remaining = availableBookTitles.filter((t) => t !== bookToDelete);
+          const nextInput = remaining[0] || '기본 단어장';
+          setInputBookTitle(nextInput);
+          if (typeof window !== 'undefined') {
+            localStorage.setItem('context_vocab_last_book_title', nextInput);
+          }
+        }
+
+        await loadData(currentUser);
+        setSelectedBookFilter('all');
+        triggerToast(
+          '단어장 및 단어 삭제 완료 🗑️',
+          `'${bookToDelete}' 단어장과 수록 단어 ${count}개가 영구 삭제되었습니다.`
+        );
+      }
+      setIsDeleteBookModalOpen(false);
+    } catch (e) {
+      console.error('단어장 삭제 실패:', e);
+      alert('단어장 삭제 중 오류가 발생했습니다.');
+    } finally {
+      setIsDeletingBook(false);
+    }
+  }
+
   // 퀴즈 출제 우선순위 점수 계산 함수 (망각 곡선 + 오답률 + 최근 등록 보너스 - 연속 정답 감점)
   function calculateQuizPriority(item: VocabItem): number {
     const now = new Date();
@@ -1770,6 +2022,28 @@ export default function Home() {
     const chosenSentence = allSentences[pickedIdx] || current.contextSentence;
     setQuizActiveSentence(chosenSentence);
 
+    // [음성 사전 준비] 문제가 뜨는 순간 원문 문장과 단어를 백그라운드에서 즉시 프리로드 (0ms 즉각 재생)
+    if (chosenSentence) {
+      preloadSentenceTTS(chosenSentence, ttsVoice);
+    }
+    if (current.word) {
+      preloadWordTTS(current.word, ttsVoice);
+    }
+    // 번갈아 보기용 후보 문장들도 함께 백그라운드 프리로드
+    allSentences.forEach((s) => {
+      if (s && s !== chosenSentence) {
+        preloadSentenceTTS(s, ttsVoice);
+      }
+    });
+    // 다음 문제 문장도 미리 백그라운드에서 준비
+    if (index + 1 < list.length) {
+      const nextItem = list[index + 1];
+      const nextSentence = nextItem.candidateSentences?.[0] || nextItem.contextSentence;
+      if (nextSentence) {
+        preloadSentenceTTS(nextSentence, ttsVoice);
+      }
+    }
+
     // Options: 1 correct + 4 distractors (다른 단어장 뜻을 우선 교차 배치하여 헷갈리게 구성)
     const correct = current.selectedMeaning;
     const opts = [correct];
@@ -1831,11 +2105,11 @@ export default function Home() {
     if (isCorrect) {
       setQuizScore((prev) => prev + 1);
       fireConfetti({ particleCount: 50, spread: 60, origin: { x: 0.5, y: 0.6 } });
-
-      // 정답 선택 즉시 지연 없이 원문 문장 원어민 고음질 낭독 시작
-      const textToRead = quizActiveSentence?.trim() || current.contextSentence?.trim() || current.word;
-      speakSentenceTTS(textToRead, ttsVoice);
     }
+
+    // 문장 카드가 화면에 뜨자마자 미리 준비된 원어민 고음질 음성으로 즉각 낭독 시작 (지연 0ms)
+    const textToRead = quizActiveSentence?.trim() || current.contextSentence?.trim() || current.word;
+    speakSentenceTTS(textToRead, ttsVoice);
   }
 
   function handleNextQuestion() {
@@ -2009,9 +2283,9 @@ export default function Home() {
             {geminiApiKey ? (
               <button
                 type="button"
-                onClick={() => setIsAiModalOpen(true)}
+                onClick={() => openSettingsWithTab('ai')}
                 className="text-xs bg-brand-50 hover:bg-brand-100 text-brand-700 border border-brand-200 px-2 sm:px-2.5 py-1.5 rounded-xl flex items-center gap-1 font-bold transition cursor-pointer"
-                title="Google Gemini AI 연결됨"
+                title="Google Gemini AI 연결됨 (설정 열기)"
               >
                 <Bot className="w-3.5 h-3.5 text-brand-600" />
                 <span className="hidden sm:inline">AI 켜짐</span>
@@ -2019,9 +2293,9 @@ export default function Home() {
             ) : (
               <button
                 type="button"
-                onClick={() => setIsAiModalOpen(true)}
+                onClick={() => openSettingsWithTab('ai')}
                 className="text-xs bg-gradient-to-r from-brand-600 to-brand-500 text-white px-2 sm:px-2.5 py-1.5 rounded-xl flex items-center gap-1 font-bold shadow-xs hover:opacity-95 transition cursor-pointer"
-                title="Google Gemini AI 무료 연동"
+                title="Google Gemini AI 무료 연동 (설정 열기)"
               >
                 <Sparkles className="w-3.5 h-3.5 text-[#F3D372]" />
                 <span className="hidden sm:inline">AI 연동</span>
@@ -2037,19 +2311,19 @@ export default function Home() {
                   className="flex items-center gap-1.5 p-1 sm:px-2.5 sm:py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 transition cursor-pointer border border-slate-200 shadow-2xs"
                   title={currentUser.email || '사용자 프로필'}
                 >
-                  {currentUser.user_metadata?.avatar_url ? (
+                  {effectiveAvatar ? (
                     <img
-                      src={currentUser.user_metadata.avatar_url}
+                      src={effectiveAvatar}
                       alt="Profile"
-                      className="w-5 h-5 rounded-full object-cover shrink-0"
+                      className="w-5 h-5 rounded-full object-cover shrink-0 ring-1 ring-slate-300"
                     />
                   ) : (
                     <div className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">
-                      {(currentUser.user_metadata?.full_name || currentUser.email || 'U')[0].toUpperCase()}
+                      {(effectiveDisplayName || 'U')[0].toUpperCase()}
                     </div>
                   )}
                   <span className="hidden sm:inline text-xs font-bold max-w-[85px] truncate">
-                    {currentUser.user_metadata?.full_name || currentUser.email?.split('@')[0]}
+                    {effectiveDisplayName}
                   </span>
                   <ChevronDown className="w-3 h-3 text-slate-500 shrink-0" />
                 </button>
@@ -2062,22 +2336,67 @@ export default function Home() {
                       onClick={() => setIsUserMenuOpen(false)}
                     />
                     <div className="absolute right-0 mt-1.5 w-64 bg-white rounded-2xl shadow-xl border border-slate-200 p-2 z-50 space-y-1 animate-fade-in text-xs">
-                      <div className="px-3 py-2 border-b border-slate-100">
-                        <p className="font-bold text-slate-900 truncate">
-                          {currentUser.user_metadata?.full_name || '로그인 사용자'}
-                        </p>
-                        <p className="text-[11px] text-slate-500 truncate">{currentUser.email}</p>
-                        <div className="mt-1.5 flex items-center gap-1 text-[10px] text-emerald-700 font-bold bg-emerald-50 px-2 py-0.5 rounded-full w-fit">
-                          <Cloud className="w-3 h-3" />
-                          <span>개인 클라우드 동기화 중</span>
+                      <div className="px-3 py-2 border-b border-slate-100 flex items-center gap-2.5">
+                        {effectiveAvatar ? (
+                          <img
+                            src={effectiveAvatar}
+                            alt="Profile"
+                            className="w-8 h-8 rounded-full object-cover shrink-0 border border-slate-200 shadow-xs"
+                          />
+                        ) : (
+                          <div className="w-8 h-8 rounded-full bg-indigo-600 text-white text-xs font-bold flex items-center justify-center shrink-0">
+                            {(effectiveDisplayName || 'U')[0].toUpperCase()}
+                          </div>
+                        )}
+                        <div className="min-w-0 flex-1">
+                          <p className="font-bold text-slate-900 truncate">
+                            {effectiveDisplayName}
+                          </p>
+                          <p className="text-[11px] text-slate-500 truncate">{currentUser.email}</p>
                         </div>
                       </div>
 
                       <button
                         type="button"
+                        onClick={() => {
+                          openSettingsWithTab('profile');
+                          setIsUserMenuOpen(false);
+                        }}
+                        className="w-full text-left px-3 py-2 hover:bg-indigo-50 text-indigo-700 font-bold rounded-xl flex items-center gap-2 transition cursor-pointer"
+                      >
+                        <UserIcon className="w-3.5 h-3.5" />
+                        <span>개인 프로필 & 사진 설정</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          openSettingsWithTab('ai');
+                          setIsUserMenuOpen(false);
+                        }}
+                        className="w-full text-left px-3 py-2 hover:bg-slate-100 text-slate-700 font-semibold rounded-xl flex items-center gap-2 transition cursor-pointer"
+                      >
+                        <Bot className="w-3.5 h-3.5 text-brand-600" />
+                        <span>Google Gemini AI 설정</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          openSettingsWithTab('preferences');
+                          setIsUserMenuOpen(false);
+                        }}
+                        className="w-full text-left px-3 py-2 hover:bg-slate-100 text-slate-700 font-semibold rounded-xl flex items-center gap-2 transition cursor-pointer"
+                      >
+                        <Settings className="w-3.5 h-3.5 text-slate-600" />
+                        <span>앱 & 데이터 환경설정</span>
+                      </button>
+
+                      <button
+                        type="button"
                         onClick={handleSyncWordsToCloud}
                         disabled={isSyncingWords}
-                        className="w-full text-left px-3 py-2 hover:bg-indigo-50 text-indigo-700 font-bold rounded-xl flex items-center gap-2 transition cursor-pointer"
+                        className="w-full text-left px-3 py-2 hover:bg-indigo-50 text-indigo-700 font-bold rounded-xl flex items-center gap-2 transition cursor-pointer border-t border-slate-100"
                       >
                         <Database className="w-3.5 h-3.5" />
                         <span>{isSyncingWords ? '동기화 중...' : '게스트 단어 내 계정으로 가져오기'}</span>
@@ -2123,9 +2442,9 @@ export default function Home() {
 
             <button
               type="button"
-              onClick={() => setIsSettingsOpen(true)}
+              onClick={() => openSettingsWithTab('profile')}
               className="p-1.5 text-slate-500 hover:text-slate-800 rounded-xl hover:bg-slate-100 transition cursor-pointer"
-              title="설정"
+              title="개인 설정"
             >
               <Settings className="w-4 h-4" />
             </button>
@@ -3308,7 +3627,7 @@ export default function Home() {
                   </div>
                 </div>
 
-                {/* 랜덤 순서 표시 배지 & 다시 섞기 버튼 */}
+                {/* 랜덤 순서 표시 배지 & 다시 섞기 버튼 & 단어장 삭제 버튼 */}
                 <div className="flex items-center gap-1.5 shrink-0 ml-auto">
                   <span className="text-[11px] font-bold text-indigo-700 bg-indigo-100/80 px-2.5 py-1 rounded-lg flex items-center gap-1">
                     <Shuffle className="w-3.5 h-3.5 text-indigo-600" />
@@ -3323,6 +3642,17 @@ export default function Home() {
                     <RotateCw className="w-3 h-3" />
                     <span>다시 섞기</span>
                   </button>
+                  {!selectedBookStats.isAll && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenDeleteBookModal(selectedBookStats.title)}
+                      className="text-[11px] font-bold text-rose-600 hover:text-rose-700 bg-white hover:bg-rose-50 border border-rose-200/90 px-2.5 py-1 rounded-lg transition flex items-center gap-1 shadow-2xs cursor-pointer active:scale-95"
+                      title="단어장 삭제"
+                    >
+                      <Trash2 className="w-3 h-3 text-rose-500" />
+                      <span>단어장 삭제</span>
+                    </button>
+                  )}
                 </div>
               </div>
 
@@ -3395,12 +3725,24 @@ export default function Home() {
                     : `'${selectedBookFilter}' 단어장에 단어가 없습니다.`}
                 </h3>
                 <p className="text-xs text-slate-400 mb-4">원서를 읽다가 모르는 단어를 등록해 보세요!</p>
-                <button
-                  onClick={() => setActiveTab('add')}
-                  className="bg-indigo-600 text-white text-xs font-semibold px-4 py-2 rounded-xl"
-                >
-                  첫 단어 등록하러 가기
-                </button>
+                <div className="flex items-center justify-center gap-2">
+                  <button
+                    onClick={() => setActiveTab('add')}
+                    className="bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold px-4 py-2 rounded-xl transition cursor-pointer"
+                  >
+                    첫 단어 등록하러 가기
+                  </button>
+                  {selectedBookFilter !== 'all' && (
+                    <button
+                      type="button"
+                      onClick={() => handleOpenDeleteBookModal(selectedBookFilter)}
+                      className="bg-rose-50 hover:bg-rose-100/80 text-rose-600 text-xs font-semibold px-4 py-2 rounded-xl border border-rose-200/80 transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span>이 단어장 삭제</span>
+                    </button>
+                  )}
+                </div>
               </div>
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -3928,6 +4270,26 @@ export default function Home() {
         )}
       </main>
 
+      {/* Footer */}
+      <footer className="py-6 border-t border-slate-200/80 bg-white text-center text-xs text-slate-500">
+        <div className="max-w-5xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+          <p>© {new Date().getFullYear()} divivid (ContextVocab). All rights reserved.</p>
+          <div className="flex items-center gap-4 text-[11px] font-semibold text-slate-600">
+            <a href="https://divivid.com" target="_blank" rel="noreferrer" className="hover:text-indigo-600 transition">
+              divivid.com
+            </a>
+            <span>•</span>
+            <a href="/privacy" className="hover:text-indigo-600 transition">
+              개인정보처리방침
+            </a>
+            <span>•</span>
+            <a href="/terms" className="hover:text-indigo-600 transition">
+              서비스 이용약관
+            </a>
+          </div>
+        </div>
+      </footer>
+
       {/* Web Page URL & Article Paste Unified Modal */}
       {isUrlModalOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 animate-fade-in">
@@ -4422,327 +4784,481 @@ export default function Home() {
         </div>
       )}
 
-      {/* Dedicated AI Setup Modal */}
-      {isAiModalOpen && (
+      {/* Unified Personal & App Settings Modal */}
+      {isSettingsOpen && (
         <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
-          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-brand-100 space-y-5">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3.5">
+          <div className="bg-white rounded-3xl max-w-lg w-full max-h-[90vh] flex flex-col shadow-2xl border border-slate-200 overflow-hidden">
+            {/* Header */}
+            <div className="p-5 sm:p-6 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
               <div className="flex items-center gap-2.5">
-                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-brand-600 to-brand-500 text-[#F3D372] flex items-center justify-center shadow-md">
-                  <Bot className="w-5 h-5" />
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-tr from-indigo-600 to-indigo-500 text-white flex items-center justify-center shadow-md">
+                  <Settings className="w-5 h-5" />
                 </div>
                 <div>
                   <h3 className="font-black text-base text-slate-900 leading-tight">
-                    Google Gemini AI 원클릭 연동
+                    개인별 설정 & 앱 환경
                   </h3>
-                  <p className="text-[11px] text-brand-600 font-semibold">
-                    책 사진 오타 교정 & 복수/시제 변화형 문맥 자동 탐색
+                  <p className="text-[11px] text-slate-500 font-semibold">
+                    프로필 변경, AI 연동 및 데이터 관리
                   </p>
                 </div>
               </div>
               <button
-                onClick={() => setIsAiModalOpen(false)}
-                className="text-slate-400 hover:text-slate-600 text-lg p-1 rounded-lg"
+                type="button"
+                onClick={() => setIsSettingsOpen(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg p-1.5 rounded-xl hover:bg-slate-100 transition cursor-pointer"
               >
                 ✕
               </button>
             </div>
 
-            {/* Benefits Explanation */}
-            <div className="bg-brand-50/70 rounded-2xl p-4 border border-brand-200/80 space-y-2 text-xs text-slate-800">
-              <h4 className="font-black text-xs text-brand-900 flex items-center gap-1.5">
-                <Sparkles className="w-3.5 h-3.5 text-[#5090B3]" />
-                <span>AI 연동 시 이런 점이 강력해집니다:</span>
-              </h4>
-              <ul className="space-y-1.5 text-[11px] text-slate-700 leading-relaxed pl-1">
-                <li className="flex items-start gap-1.5">
-                  <span className="text-brand-600 font-bold">1.</span>
-                  <span><strong>사진 오타·줄바꿈 100% 자동 교정</strong>: 모바일 카메라로 대충 찍어도 흐릿한 글자, 잘린 하이픈(con- / dition)을 자연스러운 문장으로 복원합니다.</span>
-                </li>
-                <li className="flex items-start gap-1.5">
-                  <span className="text-brand-600 font-bold">2.</span>
-                  <span><strong>문맥 속 변화형 자동 감지</strong>: 단어를 원형(party, run)으로 입력해도 책 속의 복수형(parties), 과거형(ran), 분사형 등을 AI가 문맥에서 스스로 찾아냅니다.</span>
-                </li>
-              </ul>
+            {/* Tab Navigation */}
+            <div className="px-5 pt-3 border-b border-slate-100 flex gap-1">
+              <button
+                type="button"
+                onClick={() => setSettingsTab('profile')}
+                className={`flex-1 py-2.5 px-3 text-xs font-bold border-b-2 flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                  settingsTab === 'profile'
+                    ? 'border-indigo-600 text-indigo-700 bg-indigo-50/40 rounded-t-xl'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <UserIcon className="w-3.5 h-3.5" />
+                <span>프로필 설정</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setSettingsTab('ai')}
+                className={`flex-1 py-2.5 px-3 text-xs font-bold border-b-2 flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                  settingsTab === 'ai'
+                    ? 'border-brand-600 text-brand-700 bg-brand-50/40 rounded-t-xl'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <Bot className="w-3.5 h-3.5 text-brand-600" />
+                <span>AI 연동</span>
+                {geminiApiKey && (
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white" />
+                )}
+              </button>
+              <button
+                type="button"
+                onClick={() => setSettingsTab('preferences')}
+                className={`flex-1 py-2.5 px-3 text-xs font-bold border-b-2 flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                  settingsTab === 'preferences'
+                    ? 'border-indigo-600 text-indigo-700 bg-indigo-50/40 rounded-t-xl'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <Database className="w-3.5 h-3.5" />
+                <span>환경 & 데이터</span>
+              </button>
             </div>
 
-            {/* Step-by-Step API Key Entry */}
-            <div className="space-y-3">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                  <Key className="w-3.5 h-3.5 text-brand-600" />
-                  <span>Gemini API Key 등록 (신용카드 불필요 · 평생 무료)</span>
-                </label>
-                <a
-                  href="https://aistudio.google.com/app/apikey"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-[11px] text-brand-600 hover:text-brand-800 font-bold underline flex items-center gap-1"
-                >
-                  <span>무료 키 발급받기 (30초)</span>
-                  <ExternalLink className="w-3 h-3" />
-                </a>
-              </div>
+            {/* Tab Body */}
+            <div className="p-5 sm:p-6 overflow-y-auto space-y-4 flex-1">
+              {/* TAB 1: 프로필 설정 */}
+              {settingsTab === 'profile' && (
+                <div className="space-y-4 animate-fade-in">
+                  {/* Avatar Upload & Compression Card */}
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 space-y-3">
+                    <div className="flex items-center gap-4">
+                      {/* Avatar Preview with Camera Trigger */}
+                      <div className="relative shrink-0">
+                        <div className="w-18 h-18 rounded-full ring-4 ring-white shadow-md overflow-hidden bg-gradient-to-tr from-indigo-500 to-indigo-700 flex items-center justify-center text-white text-2xl font-bold">
+                          {(pendingAvatarDataUrl !== null ? pendingAvatarDataUrl : effectiveAvatar) ? (
+                            <img
+                              src={(pendingAvatarDataUrl !== null ? pendingAvatarDataUrl : effectiveAvatar)!}
+                              alt="Profile"
+                              className="w-full h-full object-cover"
+                            />
+                          ) : (
+                            <span>{(profileInputName || effectiveDisplayName || 'U')[0].toUpperCase()}</span>
+                          )}
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => avatarFileInputRef.current?.click()}
+                          disabled={isCompressingAvatar}
+                          className="absolute -bottom-1 -right-1 w-7 h-7 bg-indigo-600 hover:bg-indigo-700 text-white rounded-full flex items-center justify-center shadow-md cursor-pointer transition active:scale-95 border-2 border-white"
+                          title="사진 변경하기"
+                        >
+                          {isCompressingAvatar ? (
+                            <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                          ) : (
+                            <Camera className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </div>
 
-              <div className="flex gap-2">
-                <input
-                  type="password"
-                  value={geminiKeyInput}
-                  onChange={(e) => {
-                    setGeminiKeyInput(e.target.value);
-                    setKeyTestStatus(null);
-                  }}
-                  placeholder="AIzaSy... (발급받은 키를 여기에 붙여넣으세요)"
-                  className="flex-1 px-3.5 py-2.5 text-xs font-mono bg-slate-50 text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 font-semibold"
-                />
-                <button
-                  type="button"
-                  onClick={() => handleSaveAndTestAiKey()}
-                  disabled={isTestingKey}
-                  className="bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs px-4 py-2.5 rounded-xl shadow-md transition shrink-0 flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
-                >
-                  {isTestingKey ? (
-                    <>
-                      <RotateCw className="w-3.5 h-3.5 animate-spin" />
-                      <span>검증중...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Check className="w-3.5 h-3.5" />
-                      <span>연동 및 테스트</span>
-                    </>
-                  )}
-                </button>
-              </div>
+                      {/* Avatar Details & Actions */}
+                      <div className="min-w-0 flex-1 space-y-1.5">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-slate-900 text-xs">프로필 사진</span>
+                          {avatarCompressionInfo && (
+                            <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full flex items-center gap-1">
+                              <Check className="w-2.5 h-2.5" />
+                              <span>압축 {avatarCompressionInfo.sizeKb}KB</span>
+                            </span>
+                          )}
+                        </div>
+                        <p className="text-[11px] text-slate-500 leading-tight">
+                          선택한 사진은 기기 내에서 128x128px 초경량 WebP로 자동 압축 저장됩니다.
+                        </p>
+                        <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                          <button
+                            type="button"
+                            onClick={() => avatarFileInputRef.current?.click()}
+                            disabled={isCompressingAvatar}
+                            className="text-[11px] bg-white border border-slate-300 hover:bg-slate-100 text-slate-700 font-bold px-2.5 py-1 rounded-lg transition cursor-pointer flex items-center gap-1 shadow-2xs"
+                          >
+                            <Upload className="w-3 h-3" />
+                            <span>사진 업로드</span>
+                          </button>
+                          {currentUser?.user_metadata?.avatar_url && (
+                            <button
+                              type="button"
+                              onClick={handleResetAvatarToGoogle}
+                              className="text-[11px] bg-slate-100 hover:bg-slate-200 text-slate-600 font-semibold px-2 py-1 rounded-lg transition cursor-pointer"
+                              title="Google 계정 원래 사진으로 복원"
+                            >
+                              Google 사진
+                            </button>
+                          )}
+                          {(pendingAvatarDataUrl !== null ? pendingAvatarDataUrl : effectiveAvatar) && (
+                            <button
+                              type="button"
+                              onClick={handleRemoveAvatar}
+                              className="text-[11px] text-rose-600 hover:bg-rose-50 px-2 py-1 rounded-lg font-semibold transition cursor-pointer"
+                            >
+                              사진 삭제
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
 
-              {/* Status Message */}
-              {keyTestStatus && (
-                <div
-                  className={`p-3 rounded-xl border text-xs font-bold flex items-center gap-2 ${
-                    keyTestStatus.ok
-                      ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
-                      : 'bg-rose-50 border-rose-300 text-rose-800'
-                  }`}
-                >
-                  {keyTestStatus.ok ? (
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  ) : (
-                    <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                  )}
-                  <span>{keyTestStatus.message}</span>
+                    {/* Hidden File Input */}
+                    <input
+                      type="file"
+                      ref={avatarFileInputRef}
+                      onChange={handleAvatarFileSelect}
+                      accept="image/*"
+                      className="hidden"
+                    />
+
+                    {/* Supabase 500MB Quota Zero Usage Notice */}
+                    <div className="bg-indigo-50/70 border border-indigo-100 rounded-xl p-2.5 flex items-start gap-2 text-[11px] text-indigo-900 leading-relaxed">
+                      <Sparkles className="w-3.5 h-3.5 text-indigo-600 shrink-0 mt-0.5" />
+                      <div>
+                        <span className="font-bold">Supabase 500MB 무료 한도 안심 보호</span>
+                        <p className="text-slate-600 text-[10.5px] mt-0.5">
+                          사진이 클라우드 버킷 대신 브라우저 로컬 저장소에 초경량 압축 보관되어, Supabase 무료 티어(500MB) 용량을 <strong>0MB</strong> 소모합니다.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Display Name Input */}
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 space-y-2">
+                    <label className="block text-xs font-bold text-slate-800">
+                      표시 이름 (닉네임)
+                    </label>
+                    <input
+                      type="text"
+                      value={profileInputName}
+                      onChange={(e) => setProfileInputName(e.target.value)}
+                      placeholder="단어장에 표시할 닉네임 입력"
+                      maxLength={30}
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs"
+                    />
+                    <p className="text-[11px] text-slate-500">
+                      상단 프로필 및 개인 단어장에 표시되는 이름입니다.
+                    </p>
+                  </div>
+
+                  {/* Account Status Info */}
+                  <div className="p-3.5 rounded-2xl border border-slate-200 bg-white flex items-center justify-between text-xs">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <div className="w-8 h-8 rounded-xl bg-slate-100 flex items-center justify-center text-slate-700 shrink-0">
+                        {currentUser ? <Cloud className="w-4 h-4 text-emerald-600" /> : <UserIcon className="w-4 h-4 text-slate-500" />}
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-bold text-slate-900 truncate">
+                          {currentUser ? (currentUser.email || 'Google 연동 계정') : '게스트 사용자'}
+                        </p>
+                        <p className="text-[11px] text-slate-500 truncate">
+                          {currentUser ? '클라우드 실시간 동기화 활성화됨' : '현재 로컬 브라우저 저장 모드'}
+                        </p>
+                      </div>
+                    </div>
+                    {!currentUser && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsSettingsOpen(false);
+                          handleGoogleLoginClick();
+                        }}
+                        className="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-bold px-2.5 py-1.5 rounded-xl transition cursor-pointer shrink-0"
+                      >
+                        Google 로그인
+                      </button>
+                    )}
+                  </div>
+
+                  {/* Profile Save Button */}
+                  <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setIsSettingsOpen(false)}
+                      className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
+                    >
+                      취소
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSaveProfile}
+                      disabled={isSavingProfile}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-md transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+                    >
+                      {isSavingProfile ? (
+                        <>
+                          <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>저장 중...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Check className="w-3.5 h-3.5" />
+                          <span>변경사항 저장</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
               )}
 
-              {/* Helper Notice for Chat Key Sharing */}
-              <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-                <span>💡 키를 복사해서 채팅창에 알려주셔도 제가 서버에 바로 심어드릴 수 있습니다!</span>
-                {geminiApiKey && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setStoredGeminiKey('');
-                      setGeminiApiKey('');
-                      setGeminiKeyInput('');
-                      setKeyTestStatus(null);
-                      triggerToast('AI 키 해제됨', '기본 로컬 모드로 전환되었습니다.');
-                    }}
-                    className="text-rose-500 hover:underline font-semibold ml-2 shrink-0 cursor-pointer"
+              {/* TAB 2: Google Gemini AI 연동 */}
+              {settingsTab === 'ai' && (
+                <div className="space-y-4 animate-fade-in">
+                  {/* Status Banner */}
+                  <div className="bg-brand-50/70 rounded-2xl p-4 border border-brand-200/80 space-y-2 text-xs">
+                    <div className="flex items-center justify-between">
+                      <h4 className="font-black text-xs text-brand-900 flex items-center gap-1.5">
+                        <Sparkles className="w-3.5 h-3.5 text-[#5090B3]" />
+                        <span>Google Gemini AI 비전 & 문맥 분석</span>
+                      </h4>
+                      {geminiApiKey ? (
+                        <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1">
+                          <Check className="w-2.5 h-2.5" />
+                          <span>연동 활성화됨</span>
+                        </span>
+                      ) : (
+                        <span className="text-[10px] bg-slate-200 text-slate-700 font-bold px-2 py-0.5 rounded-full">
+                          미등록 (기본 모드)
+                        </span>
+                      )}
+                    </div>
+                    <ul className="space-y-1.5 text-[11px] text-slate-700 leading-relaxed pl-1 pt-1">
+                      <li className="flex items-start gap-1.5">
+                        <span className="text-brand-600 font-bold">1.</span>
+                        <span><strong>사진 오타·줄바꿈 100% 자동 교정</strong>: 모바일 카메라로 대충 찍어도 흐릿한 글자, 잘린 하이픈(con- / dition)을 자연스러운 문맥으로 완벽 복원합니다.</span>
+                      </li>
+                      <li className="flex items-start gap-1.5">
+                        <span className="text-brand-600 font-bold">2.</span>
+                        <span><strong>문맥 속 변화형 자동 감지</strong>: 단어를 원형(party, run)으로 입력해도 책 속의 복수형(parties), 과거형(ran), 분사형 등을 AI가 스스로 찾아냅니다.</span>
+                      </li>
+                    </ul>
+                  </div>
+
+                  {/* API Key Form */}
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <Key className="w-3.5 h-3.5 text-brand-600" />
+                        <span>Gemini API Key 등록 (신용카드 불필요 · 평생 무료)</span>
+                      </label>
+                      <a
+                        href="https://aistudio.google.com/app/apikey"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-[11px] text-brand-600 hover:text-brand-800 font-bold underline flex items-center gap-1"
+                      >
+                        <span>무료 키 발급 (Google)</span>
+                        <ExternalLink className="w-3 h-3" />
+                      </a>
+                    </div>
+
+                    <div className="flex gap-2">
+                      <input
+                        type="password"
+                        value={geminiKeyInput}
+                        onChange={(e) => {
+                          setGeminiKeyInput(e.target.value);
+                          setKeyTestStatus(null);
+                        }}
+                        placeholder="AIzaSy... (발급받은 키를 여기에 붙여넣으세요)"
+                        className="flex-1 px-3 py-2 text-xs font-mono bg-slate-50 text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 font-semibold shadow-2xs"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => handleSaveAndTestAiKey()}
+                        disabled={isTestingKey}
+                        className="bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs px-3.5 py-2 rounded-xl shadow-md transition shrink-0 flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                      >
+                        {isTestingKey ? (
+                          <>
+                            <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                            <span>검증중...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Check className="w-3.5 h-3.5" />
+                            <span>연동 및 테스트</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {/* Status Message */}
+                    {keyTestStatus && (
+                      <div
+                        className={`p-3 rounded-xl border text-xs font-bold flex items-center gap-2 ${
+                          keyTestStatus.ok
+                            ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                            : 'bg-rose-50 border-rose-300 text-rose-800'
+                        }`}
+                      >
+                        {keyTestStatus.ok ? (
+                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                        ) : (
+                          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                        )}
+                        <span>{keyTestStatus.message}</span>
+                      </div>
+                    )}
+
+                    {/* Unlink Button */}
+                    {geminiApiKey && (
+                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
+                        <span>현재 키가 등록되어 작동 중입니다.</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setStoredGeminiKey('');
+                            setGeminiApiKey('');
+                            setGeminiKeyInput('');
+                            setKeyTestStatus(null);
+                            triggerToast('AI 키 해제됨', '기본 로컬 모드로 전환되었습니다.');
+                          }}
+                          className="text-rose-500 hover:underline font-semibold cursor-pointer"
+                        >
+                          연동 해제
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB 3: 앱 환경 및 데이터 */}
+              {settingsTab === 'preferences' && (
+                <div className="space-y-3 text-xs text-slate-600 animate-fade-in">
+                  {/* Supabase Status Info & Connect Button */}
+                  <div
+                    className={`p-3.5 rounded-2xl border ${
+                      isSupabaseReady
+                        ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                        : 'bg-amber-50 border-amber-200 text-amber-900'
+                    }`}
                   >
-                    연동 해제
-                  </button>
-                )}
-              </div>
+                    <div className="flex items-center justify-between font-bold mb-1">
+                      <div className="flex items-center gap-1.5">
+                        <Database className="w-4 h-4" />
+                        <span>
+                          {isSupabaseReady
+                            ? (currentUser ? '개인 클라우드 계정 연결됨 ☁️' : 'Supabase 클라우드 연동됨')
+                            : 'Supabase 미연동 (로컬 스토리지 모드)'}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsSettingsOpen(false);
+                          setIsSupabaseModalOpen(true);
+                        }}
+                        className="text-[11px] underline font-bold hover:opacity-80 cursor-pointer"
+                      >
+                        연동 설정 열기
+                      </button>
+                    </div>
+                    <p className="text-[11px] leading-relaxed">
+                      {isSupabaseReady
+                        ? (currentUser
+                            ? `${currentUser.email} 계정으로 RLS 보안 격리된 개인 단어장이 실시간 동기화됩니다.`
+                            : 'Google 로그인 시 사용자별 개인 단어장이 자동으로 클라우드에 백업됩니다.')
+                        : 'Supabase URL과 Anon Key를 등록하면 Google 로그인 및 개인별 클라우드 격리 저장이 활성화됩니다.'}
+                    </p>
+                  </div>
+
+                  {/* TTS Voice Select */}
+                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80">
+                    <label className="block font-bold text-slate-800 mb-1.5">발음 음성(TTS) 악센트</label>
+                    <select
+                      value={ttsVoice}
+                      onChange={(e) => {
+                        setTtsVoice(e.target.value);
+                        localStorage.setItem('context_vocab_tts_voice', e.target.value);
+                      }}
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 shadow-2xs"
+                    >
+                      <option value="en-US">영어 (미국식 - US English)</option>
+                      <option value="en-GB">영어 (영국식 - GB English)</option>
+                    </select>
+                  </div>
+
+                  {/* Data Reset Options */}
+                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80">
+                    <div className="font-bold text-slate-800 mb-1">단어 데이터 관리</div>
+                    <p className="text-[11px] text-slate-500 mb-2.5">
+                      단어장을 기본 상태로 되돌리거나 모든 데이터를 삭제할 수 있습니다.
+                    </p>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!confirm('기본 샘플 단어로 초기화할까요?')) return;
+                          await resetWithSamples();
+                          await loadData();
+                          setIsSettingsOpen(false);
+                        }}
+                        className="px-3 py-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-xl font-bold text-xs transition cursor-pointer"
+                      >
+                        기본 샘플로 초기화
+                      </button>
+                      <button
+                        type="button"
+                        onClick={async () => {
+                          if (!confirm('모든 단어를 비울까요? 되돌릴 수 없습니다.')) return;
+                          await clearAllVocab();
+                          await loadData();
+                          setIsSettingsOpen(false);
+                        }}
+                        className="px-3 py-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-xl font-bold text-xs transition cursor-pointer"
+                      >
+                        전체 비우기
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
 
-            <div className="pt-1 flex justify-end">
+            {/* Footer */}
+            <div className="p-4 border-t border-slate-100 flex justify-end bg-slate-50/50">
               <button
                 type="button"
-                onClick={() => setIsAiModalOpen(false)}
-                className="w-full sm:w-auto px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl shadow transition cursor-pointer"
-              >
-                닫기
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-      {isSettingsOpen && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl max-w-md w-full p-6 shadow-2xl border border-slate-200 space-y-4">
-            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-              <h3 className="font-bold text-base text-slate-900 flex items-center gap-2">
-                <Settings className="w-4 h-4 text-slate-700" />
-                <span>앱 설정 & Supabase 연동 안내</span>
-              </h3>
-              <button
                 onClick={() => setIsSettingsOpen(false)}
-                className="text-slate-400 hover:text-slate-600 text-lg"
-              >
-                ✕
-              </button>
-            </div>
-
-            <div className="space-y-3 text-xs text-slate-600">
-              {/* Supabase Status Info & Connect Button */}
-              <div
-                className={`p-3.5 rounded-xl border ${
-                  isSupabaseReady
-                    ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
-                    : 'bg-amber-50 border-amber-200 text-amber-900'
-                }`}
-              >
-                <div className="flex items-center justify-between font-bold mb-1">
-                  <div className="flex items-center gap-1.5">
-                    <Database className="w-4 h-4" />
-                    <span>
-                      {isSupabaseReady
-                        ? (currentUser ? '개인 클라우드 계정 연결됨 ☁️' : 'Supabase 클라우드 연동됨')
-                        : 'Supabase 미연동 (로컬 스토리지 모드)'}
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setIsSettingsOpen(false);
-                      setIsSupabaseModalOpen(true);
-                    }}
-                    className="text-[11px] underline font-bold hover:opacity-80 cursor-pointer"
-                  >
-                    설정 열기
-                  </button>
-                </div>
-                <p className="text-[11px] leading-relaxed">
-                  {isSupabaseReady
-                    ? (currentUser
-                        ? `${currentUser.email} 계정으로 RLS 보안 격리된 개인 단어장이 실시간 동기화됩니다.`
-                        : 'Google 로그인 시 사용자별 개인 단어장이 자동으로 클라우드에 백업됩니다.')
-                    : 'Supabase URL과 Anon Key를 등록하면 Google 로그인 및 개인별 클라우드 격리 저장이 활성화됩니다.'}
-                </p>
-              </div>
-
-              {/* Google Gemini AI Vision & Sentence Matcher Settings */}
-              <div className="bg-brand-50/70 p-3.5 rounded-xl border border-brand-200/80 space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="font-bold text-slate-900 flex items-center gap-1.5 text-xs">
-                    <Bot className="w-4 h-4 text-brand-600" />
-                    <span>Google Gemini AI 비전 & 문맥 분석</span>
-                  </span>
-                  {geminiApiKey ? (
-                    <span className="text-[10px] bg-brand-200 text-brand-800 font-bold px-2 py-0.5 rounded-full">
-                      연동 활성화됨
-                    </span>
-                  ) : (
-                    <span className="text-[10px] bg-slate-200 text-slate-700 font-bold px-2 py-0.5 rounded-full">
-                      미등록 (기본 모드)
-                    </span>
-                  )}
-                </div>
-                <p className="text-[11px] text-slate-600 leading-relaxed">
-                  Gemini API를 연동하면 책 사진의 오타·잘린 줄바꿈을 완벽히 복원하고, 단어의 복수형(parties)/과거형(walked) 등 형태소 변화형까지 AI가 문맥에서 스스로 찾아냅니다.
-                </p>
-                <div className="flex gap-1.5 pt-1">
-                  <input
-                    type="password"
-                    value={geminiKeyInput}
-                    onChange={(e) => setGeminiKeyInput(e.target.value)}
-                    placeholder="AIzaSy... (Gemini API 키 입력)"
-                    className="flex-1 px-2.5 py-1.5 bg-white border border-brand-200 rounded-lg text-xs font-mono focus:outline-none focus:ring-1 focus:ring-brand-500"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setStoredGeminiKey(geminiKeyInput);
-                      setGeminiApiKey(geminiKeyInput.trim());
-                      triggerToast(
-                        geminiKeyInput.trim() ? 'AI 키 저장 완료! 🤖' : 'AI 키가 삭제되었습니다.',
-                        geminiKeyInput.trim()
-                          ? '책 사진 촬영 시 Gemini Vision과 AI 문장 추출이 적용됩니다.'
-                          : '기본 로컬 엔진으로 작동합니다.'
-                      );
-                    }}
-                    className="bg-brand-500 hover:bg-brand-600 text-white font-bold px-3 py-1.5 rounded-lg text-xs transition shrink-0 cursor-pointer"
-                  >
-                    저장
-                  </button>
-                  {geminiApiKey && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        setStoredGeminiKey('');
-                        setGeminiApiKey('');
-                        setGeminiKeyInput('');
-                        triggerToast('AI 키 삭제됨', '기본 로컬 모드로 전환되었습니다.');
-                      }}
-                      className="bg-white border border-brand-300 text-brand-700 hover:bg-brand-100 font-bold px-2.5 py-1.5 rounded-lg text-xs transition shrink-0 cursor-pointer"
-                    >
-                      해제
-                    </button>
-                  )}
-                </div>
-                <div className="flex items-center justify-between pt-0.5 text-[10px] text-brand-700">
-                  <span>💡 개인용 무료 키 발급 (신용카드 불필요)</span>
-                  <a
-                    href="https://aistudio.google.com/app/apikey"
-                    target="_blank"
-                    rel="noreferrer"
-                    className="font-bold underline flex items-center gap-0.5 hover:text-brand-900"
-                  >
-                    <span>Google AI Studio 열기</span>
-                    <ExternalLink className="w-2.5 h-2.5" />
-                  </a>
-                </div>
-              </div>
-
-              {/* TTS Voice Select */}
-              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
-                <label className="block font-bold text-slate-800 mb-1">발음 음성(TTS) 악센트</label>
-                <select
-                  value={ttsVoice}
-                  onChange={(e) => {
-                    setTtsVoice(e.target.value);
-                    localStorage.setItem('context_vocab_tts_voice', e.target.value);
-                  }}
-                  className="w-full px-2 py-1.5 bg-white border border-slate-300 rounded-lg text-xs"
-                >
-                  <option value="en-US">영어 (미국식 - US)</option>
-                  <option value="en-GB">영어 (영국식 - GB)</option>
-                </select>
-              </div>
-
-              {/* Data Reset Options */}
-              <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
-                <div className="font-bold text-slate-800 mb-1">단어 데이터 관리</div>
-                <div className="flex gap-2 mt-2">
-                  <button
-                    onClick={async () => {
-                      if (!confirm('기본 샘플 단어로 초기화할까요?')) return;
-                      await resetWithSamples();
-                      await loadData();
-                      setIsSettingsOpen(false);
-                    }}
-                    className="px-3 py-1.5 bg-indigo-50 text-indigo-700 hover:bg-indigo-100 rounded-lg font-semibold text-xs"
-                  >
-                    기본 샘플로 초기화
-                  </button>
-                  <button
-                    onClick={async () => {
-                      if (!confirm('모든 단어를 비울까요?')) return;
-                      await clearAllVocab();
-                      await loadData();
-                      setIsSettingsOpen(false);
-                    }}
-                    className="px-3 py-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 rounded-lg font-semibold text-xs"
-                  >
-                    전체 비우기
-                  </button>
-                </div>
-              </div>
-            </div>
-
-            <div className="flex justify-end pt-2">
-              <button
-                onClick={() => setIsSettingsOpen(false)}
-                className="bg-indigo-600 text-white font-bold px-4 py-2 rounded-xl text-xs"
+                className="bg-slate-800 hover:bg-slate-900 text-white font-bold px-5 py-2 rounded-xl text-xs transition cursor-pointer"
               >
                 닫기
               </button>
@@ -5098,6 +5614,250 @@ export default function Home() {
         </div>
       )}
 
+
+      {/* 단어장 삭제 모달 */}
+      {isDeleteBookModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-sm flex items-center justify-center p-4 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 sm:p-7 shadow-2xl border border-slate-100 space-y-5">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3.5">
+              <div className="flex items-center gap-2.5">
+                <div className="w-10 h-10 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center border border-rose-200 shadow-xs">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="font-black text-base text-slate-900 leading-tight">
+                    단어장 삭제
+                  </h3>
+                  <p className="text-[11px] text-slate-500 font-semibold mt-0.5 truncate max-w-[280px] sm:max-w-xs">
+                    &apos;{bookToDelete}&apos; 단어장을 정리합니다.
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsDeleteBookModalOpen(false)}
+                className="text-slate-400 hover:text-slate-600 text-lg p-1 rounded-lg cursor-pointer"
+              >
+                ✕
+              </button>
+            </div>
+
+            {/* Word count check */}
+            {(() => {
+              const wordsCount = vocabulary.filter(
+                (v) => (v.bookTitle || '기본 단어장') === bookToDelete
+              ).length;
+
+              if (wordsCount === 0) {
+                return (
+                  <div className="space-y-4">
+                    <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200 text-center space-y-1">
+                      <p className="text-xs font-bold text-slate-700">
+                        &apos;{bookToDelete}&apos; 단어장에 등록된 단어가 없습니다.
+                      </p>
+                      <p className="text-[11px] text-slate-500">
+                        단어장을 목록에서 삭제하시겠습니까?
+                      </p>
+                    </div>
+                    <div className="flex items-center justify-end gap-2 pt-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsDeleteBookModalOpen(false)}
+                        className="px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
+                      >
+                        취소
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isDeletingBook}
+                        onClick={handleConfirmDeleteBook}
+                        className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow transition flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>{isDeletingBook ? '삭제 중...' : '단어장 삭제'}</span>
+                      </button>
+                    </div>
+                  </div>
+                );
+              }
+
+              const targetCandidates = availableBookTitles.filter(
+                (t) => t !== bookToDelete
+              );
+
+              return (
+                <div className="space-y-4">
+                  <div className="p-3 bg-amber-50/80 rounded-2xl border border-amber-200/80 flex items-start gap-2.5">
+                    <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                    <div className="text-xs text-amber-900 leading-relaxed">
+                      현재 <strong className="font-black text-amber-950">&apos;{bookToDelete}&apos;</strong> 단어장에{' '}
+                      <strong className="font-black text-amber-950 underline">{wordsCount}단어</strong>가 저장되어 있습니다.
+                      <div className="text-[11px] text-amber-700 mt-0.5">
+                        단어들을 다른 단어장으로 안전하게 옮길지, 아니면 단어장과 함께 모두 삭제할지 선택해 주세요.
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Options */}
+                  <div className="space-y-2.5">
+                    {/* Option 1: Move Words (Safe) */}
+                    <div
+                      onClick={() => setDeleteBookAction('move')}
+                      className={`block p-4 rounded-2xl border-2 transition cursor-pointer ${
+                        deleteBookAction === 'move'
+                          ? 'border-indigo-600 bg-indigo-50/40 shadow-xs'
+                          : 'border-slate-200 bg-white hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div
+                          className={`mt-0.5 w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
+                            deleteBookAction === 'move'
+                              ? 'border-indigo-600 bg-indigo-600'
+                              : 'border-slate-300'
+                          }`}
+                        >
+                          {deleteBookAction === 'move' && (
+                            <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-slate-900">
+                              다른 단어장으로 단어 옮기기
+                            </span>
+                            <span className="text-[10px] font-bold bg-indigo-100 text-indigo-700 px-1.5 py-0.5 rounded">
+                              권장 · 안전 보존
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 mt-1 leading-normal">
+                            기존 단어({wordsCount}개)의 뜻과 예문, 퀴즈 기록을 유지한 채 다른 단어장으로 모두 옮긴 후 현재 단어장만 삭제합니다.
+                          </p>
+
+                          {deleteBookAction === 'move' && (
+                            <div className="mt-3 pt-3 border-t border-indigo-100/80 space-y-2" onClick={(e) => e.stopPropagation()}>
+                              <label className="block text-[11px] font-bold text-slate-700">
+                                이동할 대상 단어장 선택
+                              </label>
+                              <div className="relative">
+                                <select
+                                  value={isTargetCustom ? '__custom__' : targetMoveBook}
+                                  onChange={(e) => {
+                                    if (e.target.value === '__custom__') {
+                                      setIsTargetCustom(true);
+                                    } else {
+                                      setIsTargetCustom(false);
+                                      setTargetMoveBook(e.target.value);
+                                    }
+                                  }}
+                                  className="w-full px-3 py-2 text-xs bg-white text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold cursor-pointer"
+                                >
+                                  {targetCandidates.map((title) => {
+                                    const c = vocabulary.filter(
+                                      (v) => (v.bookTitle || '기본 단어장') === title
+                                    ).length;
+                                    return (
+                                      <option key={title} value={title}>
+                                        📖 {title} ({c}단어 보관 중)
+                                      </option>
+                                    );
+                                  })}
+                                  <option value="__custom__">➕ + 새 단어장 만들어 이동...</option>
+                                </select>
+                              </div>
+
+                              {isTargetCustom && (
+                                <input
+                                  type="text"
+                                  value={targetCustomBook}
+                                  onChange={(e) => setTargetCustomBook(e.target.value)}
+                                  placeholder="새 단어장 이름 입력 (예: 기본 단어장)"
+                                  className="w-full px-3 py-2 text-xs bg-white text-slate-900 border-2 border-indigo-500 rounded-xl focus:outline-none font-bold"
+                                  autoFocus
+                                />
+                              )}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Option 2: Delete Words Together */}
+                    <div
+                      onClick={() => setDeleteBookAction('delete_all')}
+                      className={`block p-4 rounded-2xl border-2 transition cursor-pointer ${
+                        deleteBookAction === 'delete_all'
+                          ? 'border-rose-500 bg-rose-50/40 shadow-xs'
+                          : 'border-slate-200 bg-white hover:border-slate-300'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        <div
+                          className={`mt-0.5 w-4 h-4 rounded-full border flex items-center justify-center shrink-0 ${
+                            deleteBookAction === 'delete_all'
+                              ? 'border-rose-600 bg-rose-600'
+                              : 'border-slate-300'
+                          }`}
+                        >
+                          {deleteBookAction === 'delete_all' && (
+                            <div className="w-1.5 h-1.5 rounded-full bg-white" />
+                          )}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-bold text-rose-700">
+                              단어도 함께 모두 삭제
+                            </span>
+                            <span className="text-[10px] font-bold bg-rose-100 text-rose-700 px-1.5 py-0.5 rounded">
+                              주의 · 복구 불가
+                            </span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 mt-1 leading-normal">
+                            단어장과 함께 수록된 {wordsCount}개의 단어도 영구히 삭제됩니다.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Actions Footer */}
+                  <div className="flex items-center justify-end gap-2 pt-2 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setIsDeleteBookModalOpen(false)}
+                      className="px-4 py-2.5 rounded-xl border border-slate-200 text-xs font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
+                    >
+                      취소
+                    </button>
+                    {deleteBookAction === 'move' ? (
+                      <button
+                        type="button"
+                        disabled={isDeletingBook}
+                        onClick={handleConfirmDeleteBook}
+                        className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow transition flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                      >
+                        <FolderInput className="w-3.5 h-3.5" />
+                        <span>{isDeletingBook ? '이동 중...' : `단어 ${wordsCount}개 이동 및 삭제`}</span>
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        disabled={isDeletingBook}
+                        onClick={handleConfirmDeleteBook}
+                        className="px-5 py-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold shadow transition flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>{isDeletingBook ? '삭제 중...' : `단어 ${wordsCount}개 포함 모두 삭제`}</span>
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })()}
+          </div>
+        </div>
+      )}
 
       {/* Floating Animated Toast Notification */}
       {toast && (
