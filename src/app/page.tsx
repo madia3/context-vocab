@@ -1272,6 +1272,8 @@ export default function Home() {
                       ? `✨ 본문 분석 완료! '${w}'가 쓰인 문장(${uniqueSentences.length}개)과 최적 뜻이 자동 연결되었습니다.`
                       : `✨ 본문 분석 완료! 원문 속 실제 문장이 자동으로 연결되었습니다.`,
                 });
+                // 💡 원문 문장 연결 시 문장 한글 해석 자동 생성
+                handleTranslateContextSentence(entry.id, matchRes.sentence, true);
               }
             });
           }
@@ -1329,6 +1331,8 @@ export default function Home() {
             context: data.completedSentence,
             ocrDetectedNotice: '✨ AI가 잘린 문장을 자연스럽게 완성/보정했습니다.',
           });
+          // 💡 보정된 문장 한글 해석 자동 생성
+          handleTranslateContextSentence(entryId, data.completedSentence, true);
           triggerToast('문장 완성 완료! ✨', '페이지 경계로 잘려 있던 문맥을 자연스럽게 보정했습니다.');
         }
       }
@@ -1792,6 +1796,7 @@ export default function Home() {
               ? `${sourcePrefix}${formChangeMsg}${matchRes.aiExplanation}`
               : `${sourcePrefix}${formChangeMsg}원문 문맥에 가장 적절한 뜻('${selectedDef}')이 자동 선택되었습니다!`;
 
+            const matchedFinalSentence = matchRes.sentence || uniqueSentences[0] || '';
             updateWordEntry(entryId, {
               word: finalLemma,
               dictResult: activeDict,
@@ -1799,9 +1804,14 @@ export default function Home() {
               selectedPos: selectedPos,
               foundCandidateSentences: uniqueSentences,
               candidateSentences: uniqueSentences,
-              context: matchRes.sentence || uniqueSentences[0] || '',
+              context: matchedFinalSentence,
               ocrDetectedNotice: noticeText,
             });
+
+            // 💡 문장 한글 해석 기본 자동 생성
+            if (matchedFinalSentence) {
+              handleTranslateContextSentence(entryId, matchedFinalSentence, true);
+            }
           } else {
             // 본문에 해당 단어가 없는 경우
             const isFormChanged = wordToSearch.toLowerCase() !== lemmaCandidate;
@@ -1813,6 +1823,11 @@ export default function Home() {
               context: defaultExample,
               ocrDetectedNotice: noticeMsg,
             });
+
+            // 💡 기본 예문 한글 해석 자동 생성
+            if (defaultExample) {
+              handleTranslateContextSentence(entryId, defaultExample, true);
+            }
           }
         } catch (mErr) {
           console.warn('Sentence match error:', mErr);
@@ -2084,6 +2099,33 @@ export default function Home() {
     );
   }
 
+  // 문장 한글 번역 확보 헬퍼 (저장 시 기본 누락 방지)
+  async function resolveSentenceTranslation(sentence: string, existing?: string): Promise<string | undefined> {
+    const trimmed = existing?.trim();
+    if (trimmed) return trimmed;
+    const cleanSent = sentence.trim();
+    if (!cleanSent || cleanSent.length < 5) return undefined;
+    try {
+      const res = await fetch('/api/translate', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...(geminiApiKey ? { 'x-gemini-key': geminiApiKey } : {}),
+        },
+        body: JSON.stringify({ text: cleanSent }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.translation?.trim()) {
+          return data.translation.trim();
+        }
+      }
+    } catch (e) {
+      console.warn('Auto translate on save fallback error:', e);
+    }
+    return undefined;
+  }
+
   // Save All Words to Vocabulary
   async function handleSaveAllWords() {
     if (!currentUser) {
@@ -2106,12 +2148,25 @@ export default function Home() {
         ? selectedTargetBooks
         : [inputBookTitle.trim() || '기본 단어장'];
 
+    // 💡 문장 한글 해석이 비어있는 경우 저장 직전 자동 번역 확보
+    const entriesWithTranslations = await Promise.all(
+      validEntries.map(async (entry) => {
+        const finalWord = entry.dictResult?.word || entry.word.trim();
+        const matchedContext =
+          entry.context.trim() || `This sentence illustrates the word ${finalWord}.`;
+        const translation = await resolveSentenceTranslation(matchedContext, entry.sentenceTranslation);
+        return {
+          entry,
+          finalWord,
+          matchedContext,
+          sentenceTranslation: translation,
+        };
+      })
+    );
+
     await Promise.all(
       targetBooks.flatMap((bookToSave) =>
-        validEntries.map((entry, idx) => {
-          const finalWord = entry.dictResult?.word || entry.word.trim();
-          const matchedContext =
-            entry.context.trim() || `This sentence illustrates the word ${finalWord}.`;
+        entriesWithTranslations.map(({ entry, finalWord, matchedContext, sentenceTranslation }, idx) => {
           const finalCandidates =
             entry.candidateSentences.length > 0
               ? Array.from(new Set([matchedContext, ...entry.candidateSentences]))
@@ -2125,7 +2180,7 @@ export default function Home() {
             selectedMeaning: entry.selectedMeaning,
             allMeanings: entry.dictResult ? entry.dictResult.meanings.map((m) => m.def) : [entry.selectedMeaning],
             contextSentence: matchedContext,
-            sentenceTranslation: entry.sentenceTranslation?.trim() || undefined,
+            sentenceTranslation: sentenceTranslation || undefined,
             candidateSentences: finalCandidates,
             sourceMemo: entry.sourceMemo.trim() || (loadedWebTitle ? loadedWebTitle : '원서 메모'),
             bookTitle: bookToSave,
@@ -2212,6 +2267,9 @@ export default function Home() {
         ? Array.from(new Set([matchedContext, ...entry.candidateSentences]))
         : [matchedContext];
 
+    // 💡 문장 한글 해석 자동 확보
+    const sentenceTranslation = await resolveSentenceTranslation(matchedContext, entry.sentenceTranslation);
+
     let anyMerged = false;
     let totalSentencesCount = 1;
 
@@ -2224,7 +2282,7 @@ export default function Home() {
         selectedMeaning: selectedDef,
         allMeanings: entry.dictResult ? entry.dictResult.meanings.map((m) => m.def) : [selectedDef],
         contextSentence: matchedContext,
-        sentenceTranslation: entry.sentenceTranslation?.trim() || undefined,
+        sentenceTranslation: sentenceTranslation || undefined,
         candidateSentences: finalCandidates,
         sourceMemo: entry.sourceMemo.trim() || (loadedWebTitle ? loadedWebTitle : '원서 메모'),
         bookTitle: bookToSave,
@@ -2284,10 +2342,10 @@ export default function Home() {
     await loadData(currentUser);
   }
 
-  // 문장 한글 자동 번역 (단어 등록 탭)
-  async function handleTranslateContextSentence(entryId: string, sentence: string) {
+  // 문장 한글 자동 번역 (단어 등록 탭 - 기본 자동 실행)
+  async function handleTranslateContextSentence(entryId: string, sentence: string, isSilent = false) {
     const textToTranslate = sentence.trim();
-    if (!textToTranslate) return;
+    if (!textToTranslate || textToTranslate.length < 3) return;
 
     setTranslatingSentenceId(entryId);
     try {
@@ -2301,11 +2359,11 @@ export default function Home() {
         if (data.translation) {
           updateWordEntry(entryId, { sentenceTranslation: data.translation });
         }
-      } else {
+      } else if (!isSilent) {
         alert('문장 번역을 가져오지 못했습니다. 잠시 후 다시 시도해 주세요.');
       }
     } catch (e) {
-      console.warn('Translate error:', e);
+      if (!isSilent) console.warn('Translate error:', e);
     } finally {
       setTranslatingSentenceId(null);
     }
@@ -3774,6 +3832,7 @@ export default function Home() {
                                           ? `✨ 본문 내에서 이 단어가 ${sentences.length}번 쓰였습니다!`
                                           : '✨ 본문에서 원문 문장을 자동으로 찾았습니다!',
                                     });
+                                    handleTranslateContextSentence(entry.id, matches[0].sentence, true);
                                   }
                                 }
                               });
@@ -4004,6 +4063,7 @@ export default function Home() {
                                         ? `✨ 본문 내에서 이 단어가 ${sentences.length}번 쓰였습니다!`
                                         : '📸 본문에서 원문 문장을 자동으로 찾았습니다!',
                                   });
+                                  handleTranslateContextSentence(entry.id, matches[0].sentence, true);
                                 }
                               }
                             }}
@@ -4432,6 +4492,7 @@ export default function Home() {
                                                   context: sent,
                                                   candidateSentences: Array.from(new Set([...(entry.candidateSentences || []), sent])),
                                                 });
+                                                handleTranslateContextSentence(entry.id, sent, true);
                                               }}
                                               className={`font-serif leading-relaxed line-clamp-2 cursor-pointer flex-1 ${
                                                 isPrimary ? 'font-bold text-slate-900' : 'text-slate-700 hover:text-slate-900'
@@ -4455,6 +4516,7 @@ export default function Home() {
                                                     context: sent,
                                                     candidateSentences: Array.from(new Set([...(entry.candidateSentences || []), sent])),
                                                   });
+                                                  handleTranslateContextSentence(entry.id, sent, true);
                                                 }}
                                                 className="text-[10px] bg-white border border-slate-300 text-slate-700 hover:bg-slate-800 hover:text-white px-2 py-0.5 rounded font-bold transition cursor-pointer"
                                               >
@@ -4517,16 +4579,25 @@ export default function Home() {
                                   ocrDetectedNotice: null,
                                 });
                               }}
+                              onBlur={(e) => {
+                                const text = e.target.value.trim();
+                                if (text && (!entry.sentenceTranslation || entry.sentenceTranslation.trim() === '')) {
+                                  handleTranslateContextSentence(entry.id, text, true);
+                                }
+                              }}
                               placeholder="예: It was an unspeakable tragedy that shook the entire nation. (사진이나 웹 URL을 넣으면 자동 입력됩니다)"
                               className="w-full px-3 py-2 text-xs bg-white text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 leading-relaxed"
                             />
                           </div>
 
-                          {/* 문장 한글 해석 (선택) */}
+                          {/* 문장 한글 해석 (기본 자동 번역) */}
                           <div>
                             <div className="flex items-center justify-between mb-1">
-                              <label className="block text-xs font-bold text-slate-700">
-                                문장 한글 해석 <span className="text-slate-400 font-normal">(선택)</span>
+                              <label className="block text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                                <span>문장 한글 해석</span>
+                                <span className="text-[10px] font-medium text-indigo-600 bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded-md">
+                                  기본 자동 번역 ✨
+                                </span>
                               </label>
                               {entry.context?.trim() && (
                                 <button
@@ -4534,20 +4605,33 @@ export default function Home() {
                                   onClick={() => handleTranslateContextSentence(entry.id, entry.context)}
                                   disabled={translatingSentenceId === entry.id}
                                   className="text-[10px] text-indigo-600 hover:text-indigo-800 font-bold flex items-center gap-1 cursor-pointer disabled:opacity-50"
-                                  title="원문 문장을 자연스러운 한국어로 자동 번역합니다"
+                                  title="원문 문장을 자연스러운 한국어로 다시 번역합니다"
                                 >
                                   <Sparkles className="w-2.5 h-2.5" />
-                                  <span>{translatingSentenceId === entry.id ? '번역 중...' : 'AI 자동 번역'}</span>
+                                  <span>{translatingSentenceId === entry.id ? '번역 중...' : '다시 번역'}</span>
                                 </button>
                               )}
                             </div>
-                            <input
-                              type="text"
-                              value={entry.sentenceTranslation || ''}
-                              onChange={(e) => updateWordEntry(entry.id, { sentenceTranslation: e.target.value })}
-                              placeholder="예: 온 나라를 뒤흔든 형언할 수 없는 비극이었다. (단어장/퀴즈에서 클릭 시 표시)"
-                              className="w-full px-3 py-1.5 text-xs bg-white text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                            />
+                            <div className="relative">
+                              <input
+                                type="text"
+                                value={entry.sentenceTranslation || ''}
+                                onChange={(e) => updateWordEntry(entry.id, { sentenceTranslation: e.target.value })}
+                                placeholder={
+                                  translatingSentenceId === entry.id
+                                    ? 'AI가 문장 한글 해석을 생성하고 있습니다...'
+                                    : '예: 온 나라를 뒤흔든 형언할 수 없는 비극이었다. (자동 생성됨, 직접 수정 가능)'
+                                }
+                                className={`w-full px-3 py-1.5 text-xs bg-white text-slate-900 border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition ${
+                                  translatingSentenceId === entry.id ? 'border-indigo-400 bg-indigo-50/20' : 'border-slate-300'
+                                }`}
+                              />
+                              {translatingSentenceId === entry.id && (
+                                <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1 text-[10px] text-indigo-600 font-medium pointer-events-none">
+                                  <RotateCw className="w-3 h-3 animate-spin" />
+                                </div>
+                              )}
+                            </div>
                           </div>
 
                           {/* 상세 메모 */}
