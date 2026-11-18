@@ -96,6 +96,7 @@ import {
   Upload,
   X,
   LogIn,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { compressAvatarImage } from '@/lib/imageCompress';
 import {
@@ -199,6 +200,17 @@ export default function Home() {
   const [activeTab, setActiveTab] = useState<'add' | 'list' | 'quiz'>('quiz');
   const [vocabulary, setVocabulary] = useState<VocabItem[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
+  // 5지선다 퀴즈 기본 문제 수 설정 (기본값 20문제, 0은 전체)
+  const [quizQuestionCount, setQuizQuestionCount] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('context_vocab_quiz_question_count');
+      if (saved) {
+        const p = parseInt(saved, 10);
+        if (!isNaN(p)) return p;
+      }
+    }
+    return 20;
+  });
 
   // Multi-Word Form State: 한 번에 여러 단어를 추가/등록할 수 있는 단어 등록칸 목록
   const [wordEntries, setWordEntries] = useState<WordEntryItem[]>([createWordEntryItem()]);
@@ -2170,12 +2182,16 @@ export default function Home() {
       selectedList = [...pool].sort((a, b) => calculateQuizPriority(b) - calculateQuizPriority(a));
     }
 
-    setQuizList(selectedList);
+    // 5지선다 퀴즈 문제 수 제한 적용 (기본값 20문제, 0은 단어장 전체)
+    const limit = quizQuestionCount > 0 ? quizQuestionCount : selectedList.length;
+    const finalQuizList = selectedList.slice(0, limit);
+
+    setQuizList(finalQuizList);
     setCurrentQuizIndex(0);
     setQuizScore(0);
     setIsQuizFinished(false);
     setActiveTab('quiz');
-    setupQuestion(0, selectedList, customPool);
+    setupQuestion(0, finalQuizList, customPool);
   }
 
   function setupQuestion(index: number, list: VocabItem[], customPool?: VocabItem[]) {
@@ -2478,16 +2494,15 @@ export default function Home() {
             </div>
           </div>
 
-          {/* Right Utility Controls (Login & Settings) */}
-          <div className="flex items-center gap-1.5 shrink-0">
-            {/* Google Authentication (Login or User Profile) */}
-            {currentUser ? (
-              <div className="relative">
+          {/* Right Utility Controls (Account & Settings Unified) */}
+          <div className="flex items-center shrink-0">
+            <div className="relative">
+              {currentUser ? (
                 <button
                   type="button"
                   onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
                   className="flex items-center gap-1.5 p-1 sm:px-2.5 sm:py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 transition cursor-pointer border border-slate-200 shadow-2xs"
-                  title={currentUser.email || '사용자 프로필'}
+                  title={currentUser.email || '사용자 프로필 및 설정'}
                 >
                   {effectiveAvatar ? (
                     <img
@@ -2505,15 +2520,31 @@ export default function Home() {
                   </span>
                   <ChevronDown className="w-3 h-3 text-slate-500 shrink-0" />
                 </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
+                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs transition cursor-pointer border border-slate-200 shadow-2xs"
+                  title="계정 및 환경설정"
+                >
+                  <div className="w-4 h-4 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center">
+                    <UserIcon className="w-2.5 h-2.5" />
+                  </div>
+                  <span>계정 / 설정</span>
+                  <ChevronDown className="w-3 h-3 text-slate-500 shrink-0" />
+                </button>
+              )}
 
-                {/* User Dropdown Menu */}
-                {isUserMenuOpen && (
-                  <>
-                    <div
-                      className="fixed inset-0 z-40"
-                      onClick={() => setIsUserMenuOpen(false)}
-                    />
-                    <div className="absolute right-0 mt-1.5 w-64 bg-white rounded-2xl shadow-xl border border-slate-200 p-2 z-50 space-y-1 animate-fade-in text-xs">
+              {/* Unified Account & Settings Dropdown Menu */}
+              {isUserMenuOpen && (
+                <>
+                  <div
+                    className="fixed inset-0 z-40"
+                    onClick={() => setIsUserMenuOpen(false)}
+                  />
+                  <div className="absolute right-0 mt-1.5 w-64 bg-white rounded-2xl shadow-xl border border-slate-200 p-2 z-50 space-y-1 animate-fade-in text-xs">
+                    {currentUser ? (
+                      /* Logged In User Header */
                       <div className="px-3 py-2 border-b border-slate-100 flex items-center gap-2.5">
                         {effectiveAvatar ? (
                           <img
@@ -2533,62 +2564,96 @@ export default function Home() {
                           <p className="text-[11px] text-slate-500 truncate">{currentUser.email}</p>
                         </div>
                       </div>
+                    ) : (
+                      /* Guest User Header with Login CTA */
+                      <div className="p-3 bg-gradient-to-br from-indigo-50/80 to-slate-50 rounded-xl border border-indigo-100/80 space-y-2 mb-1">
+                        <div>
+                          <div className="flex items-center gap-1.5 font-bold text-slate-800 text-xs">
+                            <span className="w-2 h-2 rounded-full bg-amber-400" />
+                            <span>게스트 모드</span>
+                          </div>
+                          <p className="text-[11px] text-slate-500 mt-0.5 leading-snug">
+                            로그인하면 단어장이 클라우드에 영구 백업되고 모든 기기에서 동기화됩니다.
+                          </p>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setAuthError(null);
+                            setAuthSuccessMsg(null);
+                            setIsAuthModalOpen(true);
+                            setIsUserMenuOpen(false);
+                          }}
+                          className="w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl flex items-center justify-center gap-1.5 shadow-xs transition cursor-pointer active:scale-98"
+                        >
+                          <LogIn className="w-3.5 h-3.5" />
+                          <span>로그인 / 무료 회원가입</span>
+                        </button>
+                      </div>
+                    )}
 
-                      <button
-                        type="button"
-                        onClick={() => {
-                          openSettingsWithTab('profile');
-                          setIsUserMenuOpen(false);
-                        }}
-                        className="w-full text-left px-3 py-2 hover:bg-indigo-50 text-indigo-700 font-bold rounded-xl flex items-center gap-2 transition cursor-pointer"
-                      >
-                        <UserIcon className="w-3.5 h-3.5" />
-                        <span>개인 프로필 & 사진 설정</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          openSettingsWithTab('ai');
-                          setIsUserMenuOpen(false);
-                        }}
-                        className="w-full text-left px-3 py-2 hover:bg-slate-100 text-slate-700 font-semibold rounded-xl flex items-center gap-2 transition cursor-pointer"
-                      >
-                        <Bot className="w-3.5 h-3.5 text-brand-600" />
-                        <span>Google Gemini AI 설정</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          openSettingsWithTab('preferences');
-                          setIsUserMenuOpen(false);
-                        }}
-                        className="w-full text-left px-3 py-2 hover:bg-slate-100 text-slate-700 font-semibold rounded-xl flex items-center gap-2 transition cursor-pointer"
-                      >
+                    {/* Reorganized Clean Menu Items */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        openSettingsWithTab('preferences');
+                        setIsUserMenuOpen(false);
+                      }}
+                      className="w-full text-left px-3 py-2 hover:bg-slate-100 text-slate-800 font-bold rounded-xl flex items-center justify-between transition cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2">
                         <Settings className="w-3.5 h-3.5 text-slate-600" />
-                        <span>앱 & 데이터 환경설정</span>
-                      </button>
+                        <span>앱 & 퀴즈 설정</span>
+                      </div>
+                      <span className="text-[10px] bg-indigo-50 text-indigo-700 px-1.5 py-0.5 rounded-md font-bold">
+                        {quizQuestionCount === 0 ? '전체' : `${quizQuestionCount}문제`}
+                      </span>
+                    </button>
 
+                    <button
+                      type="button"
+                      onClick={() => {
+                        openSettingsWithTab('profile');
+                        setIsUserMenuOpen(false);
+                      }}
+                      className="w-full text-left px-3 py-2 hover:bg-slate-100 text-slate-700 font-semibold rounded-xl flex items-center gap-2 transition cursor-pointer"
+                    >
+                      <UserIcon className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>{currentUser ? '프로필 & 사진 변경' : '프로필 설정'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        openSettingsWithTab('ai');
+                        setIsUserMenuOpen(false);
+                      }}
+                      className="w-full text-left px-3 py-2 hover:bg-slate-100 text-slate-700 font-semibold rounded-xl flex items-center justify-between transition cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2">
+                        <Bot className="w-3.5 h-3.5 text-brand-600" />
+                        <span>Gemini AI 연동</span>
+                      </div>
+                      {geminiApiKey && (
+                        <span className="text-[10px] bg-emerald-100 text-emerald-700 font-bold px-1.5 py-0.5 rounded-full">
+                          연동됨
+                        </span>
+                      )}
+                    </button>
+
+                    {currentUser && (
                       <button
                         type="button"
                         onClick={handleSyncWordsToCloud}
                         disabled={isSyncingWords}
-                        className="w-full text-left px-3 py-2 hover:bg-indigo-50 text-indigo-700 font-bold rounded-xl flex items-center gap-2 transition cursor-pointer border-t border-slate-100"
+                        className="w-full text-left px-3 py-2 hover:bg-indigo-50 text-indigo-700 font-semibold rounded-xl flex items-center gap-2 transition cursor-pointer border-t border-slate-100"
                       >
                         <Database className="w-3.5 h-3.5" />
                         <span>{isSyncingWords ? '동기화 중...' : '게스트 단어 내 계정으로 가져오기'}</span>
                       </button>
+                    )}
 
-                      <button
-                        type="button"
-                        onClick={handleImportSamples}
-                        className="w-full text-left px-3 py-2 hover:bg-slate-100 text-slate-700 font-semibold rounded-xl flex items-center gap-2 transition cursor-pointer"
-                      >
-                        <BookOpen className="w-3.5 h-3.5" />
-                        <span>샘플 단어 5개 추가</span>
-                      </button>
-
+                    {currentUser && (
                       <button
                         type="button"
                         onClick={handleSignOut}
@@ -2597,35 +2662,11 @@ export default function Home() {
                         <LogOut className="w-3.5 h-3.5" />
                         <span>로그아웃</span>
                       </button>
-                    </div>
-                  </>
-                )}
-              </div>
-            ) : (
-              <button
-                type="button"
-                onClick={() => {
-                  setAuthError(null);
-                  setAuthSuccessMsg(null);
-                  setIsAuthModalOpen(true);
-                }}
-                className="text-xs bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white px-2.5 sm:px-3 py-1.5 rounded-xl flex items-center gap-1.5 font-bold shadow-2xs transition cursor-pointer active:scale-95 shrink-0"
-                title="로그인 또는 회원가입하여 개인 단어장을 클라우드에 영구 보관하세요"
-              >
-                <UserIcon className="w-3.5 h-3.5 shrink-0" />
-                <span className="hidden sm:inline">로그인 / 회원가입</span>
-                <span className="sm:hidden text-[11px]">로그인</span>
-              </button>
-            )}
-
-            <button
-              type="button"
-              onClick={() => openSettingsWithTab('profile')}
-              className="p-1.5 text-slate-500 hover:text-slate-800 rounded-xl hover:bg-slate-100 transition cursor-pointer"
-              title="개인 설정"
-            >
-              <Settings className="w-4 h-4" />
-            </button>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
 
@@ -4963,6 +5004,18 @@ export default function Home() {
             <div className="px-5 pt-3 border-b border-slate-100 flex gap-1">
               <button
                 type="button"
+                onClick={() => setSettingsTab('preferences')}
+                className={`flex-1 py-2.5 px-3 text-xs font-bold border-b-2 flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                  settingsTab === 'preferences'
+                    ? 'border-indigo-600 text-indigo-700 bg-indigo-50/40 rounded-t-xl'
+                    : 'border-transparent text-slate-500 hover:text-slate-800'
+                }`}
+              >
+                <SlidersHorizontal className="w-3.5 h-3.5" />
+                <span>퀴즈 & 환경</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => setSettingsTab('profile')}
                 className={`flex-1 py-2.5 px-3 text-xs font-bold border-b-2 flex items-center justify-center gap-1.5 transition cursor-pointer ${
                   settingsTab === 'profile'
@@ -4971,7 +5024,7 @@ export default function Home() {
                 }`}
               >
                 <UserIcon className="w-3.5 h-3.5" />
-                <span>프로필 설정</span>
+                <span>프로필</span>
               </button>
               <button
                 type="button"
@@ -4988,25 +5041,32 @@ export default function Home() {
                   <span className="w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white" />
                 )}
               </button>
-              <button
-                type="button"
-                onClick={() => setSettingsTab('preferences')}
-                className={`flex-1 py-2.5 px-3 text-xs font-bold border-b-2 flex items-center justify-center gap-1.5 transition cursor-pointer ${
-                  settingsTab === 'preferences'
-                    ? 'border-indigo-600 text-indigo-700 bg-indigo-50/40 rounded-t-xl'
-                    : 'border-transparent text-slate-500 hover:text-slate-800'
-                }`}
-              >
-                <Database className="w-3.5 h-3.5" />
-                <span>환경 & 데이터</span>
-              </button>
             </div>
 
             {/* Tab Body */}
             <div className="p-5 sm:p-6 overflow-y-auto space-y-4 flex-1">
-              {/* TAB 1: 프로필 설정 */}
+              {/* TAB: 프로필 설정 */}
               {settingsTab === 'profile' && (
                 <div className="space-y-4 animate-fade-in">
+                  {!currentUser && (
+                    <div className="p-3 bg-gradient-to-r from-indigo-50 to-slate-50 rounded-2xl border border-indigo-100 flex items-center justify-between gap-2.5">
+                      <div className="text-[11px] text-indigo-950 font-medium leading-snug">
+                        <span className="font-bold text-indigo-700 block">💡 게스트 모드 안내</span>
+                        로그인하시면 프로필 사진과 표시 이름이 클라우드에 영구 백업되어 모든 기기에 동기화됩니다.
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsSettingsOpen(false);
+                          setIsAuthModalOpen(true);
+                        }}
+                        className="text-xs bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1.5 rounded-xl shrink-0 cursor-pointer shadow-xs"
+                      >
+                        로그인
+                      </button>
+                    </div>
+                  )}
+
                   {/* Avatar Upload & Compression Card */}
                   <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/80 space-y-3">
                     <div className="flex items-center gap-4">
@@ -5307,9 +5367,44 @@ export default function Home() {
                 </div>
               )}
 
-              {/* TAB 3: 앱 환경 및 데이터 */}
+              {/* TAB: 퀴즈 & 환경 설정 */}
               {settingsTab === 'preferences' && (
-                <div className="space-y-3 text-xs text-slate-600 animate-fade-in">
+                <div className="space-y-3.5 text-xs text-slate-600 animate-fade-in">
+                  {/* 1. 5지선다 퀴즈 문제 수 설정 */}
+                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <label className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                        <Award className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>5지선다 퀴즈 기본 문제 수</span>
+                      </label>
+                      <span className="text-[11px] font-black text-indigo-700 bg-indigo-100/70 px-2 py-0.5 rounded-full border border-indigo-200">
+                        {quizQuestionCount === 0 ? '단어장 전체' : `${quizQuestionCount}문제`}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 leading-relaxed">
+                      1회 퀴즈 시 출제할 기본 문제 수를 설정합니다. (단어장에 등록된 단어가 더 적으면 단어장 전체가 출제됩니다)
+                    </p>
+                    <select
+                      value={quizQuestionCount}
+                      onChange={(e) => {
+                        const val = parseInt(e.target.value, 10);
+                        setQuizQuestionCount(val);
+                        if (typeof window !== 'undefined') {
+                          localStorage.setItem('context_vocab_quiz_question_count', val.toString());
+                        }
+                        triggerToast('퀴즈 설정 저장됨', `기본 문제 수가 ${val === 0 ? '단어장 전체' : val + '문제'}로 설정되었습니다.`);
+                      }}
+                      className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-bold text-slate-900 shadow-2xs focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer"
+                    >
+                      <option value={10}>10문제 (가벼운 복습)</option>
+                      <option value={15}>15문제</option>
+                      <option value={20}>20문제 (기본값 · 추천)</option>
+                      <option value={25}>25문제</option>
+                      <option value={30}>30문제 (집중 복습)</option>
+                      <option value={0}>전체 (단어장 수록 단어 모두 출제)</option>
+                    </select>
+                  </div>
+
                   {/* Supabase Status Info & Connect Button */}
                   <div
                     className={`p-3.5 rounded-2xl border ${
