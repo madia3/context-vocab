@@ -2280,22 +2280,22 @@ export default function Home() {
       {/* Header (Mobile First Clean 2-Tier Structure) */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
         <div className="max-w-5xl mx-auto px-4 py-2.5 flex items-center justify-between gap-3">
-          {/* Logo - Styled identically to leegwajang.com signature logo */}
+          {/* Logo */}
           <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-slate-900 text-white flex items-center justify-center font-black text-base shadow-sm ring-1 ring-slate-800 select-none">
-              이
+            <div className="w-8 h-8 rounded-xl bg-white shadow-xs ring-1 ring-slate-200/80 overflow-hidden flex items-center justify-center p-0.5 select-none shrink-0">
+              <img src="/icon.png" alt="divivid logo" className="w-full h-full object-contain" />
             </div>
             <div>
               <div className="flex items-center gap-1.5">
                 <h1 className="font-extrabold text-base text-slate-900 tracking-tight leading-none">
                   ContextVocab
                 </h1>
-                <span className="hidden sm:inline-block text-[10px] bg-brand-50 text-brand-700 border border-brand-200 px-1.5 py-0.5 rounded font-bold">
-                  이과장 영한 단어장
+                <span className="hidden sm:inline-block text-[10px] bg-slate-100 text-slate-700 border border-slate-200 px-1.5 py-0.5 rounded font-bold">
+                  divivid voca
                 </span>
               </div>
               <p className="text-[10px] text-slate-400 font-medium hidden sm:block mt-0.5">
-                원서·레포트 영한 단어장 & 5지선다 퀴즈
+                원서·기사 문맥 영한 단어장 & 5지선다 퀴즈
               </p>
             </div>
           </div>
