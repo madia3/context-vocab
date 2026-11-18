@@ -1,5 +1,6 @@
 import { DictSearchResult, MeaningOption } from '@/types/vocab';
-import { speakNatural, preloadNaturalAudioTTS } from './tts';
+import { speakNatural, preloadNaturalAudioTTS, setTtsPlaybackRate, getTtsPlaybackRate } from './tts';
+export { setTtsPlaybackRate, getTtsPlaybackRate };
 
 export const BUILTIN_KOREAN_DICT: Record<string, { phonetic: string; meanings: MeaningOption[] }> = {
   tragedy: {
@@ -436,12 +437,12 @@ export async function lookupDictionary(rawWord: string): Promise<DictSearchResul
   return fallbackResult;
 }
 
-export function speakWordTTS(word: string, voiceCode: string = "en-US") {
-  speakNatural(word, voiceCode);
+export function speakWordTTS(word: string, voiceCode: string = "en-US", rate?: number) {
+  speakNatural(word, voiceCode, rate);
 }
 
-export function speakSentenceTTS(text: string, voiceCode: string = "en-US") {
-  speakNatural(text, voiceCode);
+export function speakSentenceTTS(text: string, voiceCode: string = "en-US", rate?: number) {
+  speakNatural(text, voiceCode, rate);
 }
 
 export function preloadSentenceTTS(text: string, voiceCode: string = "en-US") {

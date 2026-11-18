@@ -2,6 +2,28 @@
 
 let currentAudio: HTMLAudioElement | null = null;
 let cachedVoices: SpeechSynthesisVoice[] = [];
+let currentTtsRate: number = 1.0;
+
+export function setTtsPlaybackRate(rate: number) {
+  const clamped = Math.max(0.5, Math.min(2.0, Number(rate) || 1.0));
+  currentTtsRate = Math.round(clamped * 100) / 100;
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('context_vocab_tts_rate', String(currentTtsRate));
+  }
+}
+
+export function getTtsPlaybackRate(): number {
+  if (typeof window !== 'undefined') {
+    const saved = localStorage.getItem('context_vocab_tts_rate');
+    if (saved) {
+      const parsed = parseFloat(saved);
+      if (!isNaN(parsed) && parsed >= 0.5 && parsed <= 2.0) {
+        currentTtsRate = parsed;
+      }
+    }
+  }
+  return currentTtsRate;
+}
 
 // 브라우저 음성 목록 사전 로드 (비동기 로딩 대응)
 if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
@@ -153,7 +175,7 @@ export async function preloadNaturalAudioTTS(text: string, lang: string = 'en-US
 }
 
 // 1. 고음질 원어민 오디오 스트림 (/api/tts: 실제 스튜디오 인간 녹음 및 뉴럴 발음)
-export function playNaturalAudioTTS(text: string, lang: string = 'en-US'): Promise<boolean> {
+export function playNaturalAudioTTS(text: string, lang: string = 'en-US', rate?: number): Promise<boolean> {
   return new Promise(async (resolve) => {
     if (typeof window === 'undefined') {
       resolve(false);
@@ -197,7 +219,9 @@ export function playNaturalAudioTTS(text: string, lang: string = 'en-US'): Promi
         targetSourceUrl = `/api/tts?text=${encodeURIComponent(cleanText)}&lang=${encodeURIComponent(lang)}`;
       }
 
+      const playbackSpeed = typeof rate === 'number' ? rate : getTtsPlaybackRate();
       const audio = new Audio(targetSourceUrl);
+      audio.playbackRate = playbackSpeed;
       currentAudio = audio;
 
       audio.onended = () => resolve(true);
@@ -221,7 +245,7 @@ export function playNaturalAudioTTS(text: string, lang: string = 'en-US'): Promi
 }
 
 // 2. 브라우저 프리미엄 Web Speech (오프라인 및 즉각 재생용)
-export function playWebSpeechTTS(text: string, voiceCode: string = 'en-US', rate: number = 0.96): Promise<boolean> {
+export function playWebSpeechTTS(text: string, voiceCode: string = 'en-US', rate?: number): Promise<boolean> {
   return new Promise((resolve) => {
     if (typeof window === 'undefined' || !('speechSynthesis' in window)) {
       resolve(false);
@@ -230,8 +254,9 @@ export function playWebSpeechTTS(text: string, voiceCode: string = 'en-US', rate
 
     window.speechSynthesis.cancel();
 
+    const currentRate = typeof rate === 'number' ? rate : getTtsPlaybackRate();
     const utterance = new SpeechSynthesisUtterance(text);
-    utterance.rate = rate; // 원어민의 자연스럽고 편안한 대화 속도
+    utterance.rate = currentRate;
     utterance.pitch = 1.0;
     utterance.lang = voiceCode;
 
@@ -251,11 +276,15 @@ export function playWebSpeechTTS(text: string, voiceCode: string = 'en-US', rate
 export const playGoogleNativeTTS = playNaturalAudioTTS;
 
 // 3. 통합 최적화 낭독기: 진짜 원어민 스튜디오/뉴럴 오디오 우선 -> 실패 시 브라우저 최고급 음성
-export async function speakNatural(text: string, voiceCode: string = 'en-US') {
+export async function speakNatural(text: string, voiceCode: string = 'en-US', rate?: number) {
   if (!text || typeof text !== 'string') return;
 
   const clean = text.trim();
   if (!clean) return;
+
+  if (typeof rate === 'number') {
+    setTtsPlaybackRate(rate);
+  }
 
   // 기존 재생 중지
   if (currentAudio) {
@@ -267,9 +296,9 @@ export async function speakNatural(text: string, voiceCode: string = 'en-US') {
   }
 
   // 1순위: 스튜디오 원어민 녹음 및 고품질 뉴럴 오디오 재생
-  const success = await playNaturalAudioTTS(clean, voiceCode);
+  const success = await playNaturalAudioTTS(clean, voiceCode, rate);
   if (success) return;
 
   // 2순위: 네트워크 불가 또는 오디오 차단 시 브라우저 프리미엄 음성으로 자연스럽게 재생
-  await playWebSpeechTTS(clean, voiceCode);
+  await playWebSpeechTTS(clean, voiceCode, rate);
 }
