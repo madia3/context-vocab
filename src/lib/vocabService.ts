@@ -595,25 +595,30 @@ export async function fetchVocabulary(targetUser?: User | null): Promise<VocabIt
       try {
         const parsed = JSON.parse(local);
         if (Array.isArray(parsed) && parsed.length > 0) {
-          // 비로그인 게스트인 경우, 신규 기본 단어장 3종이 포함되어 있는지 확인 및 자동 갱신
+          // 비로그인 게스트인 경우, 구버전 햄릿 더미 단어 자동 정리 및 신규 기본 단어장 3종 보장
           if (!user) {
-            const hasNewBooks = parsed.some(
+            const cleaned = parsed.filter(
+              (item: any) => !item.bookTitle?.includes('햄릿') && !item.sourceMemo?.includes('햄릿')
+            );
+            const hasNewBooks = cleaned.some(
               (item: any) => item.bookTitle === '원서 첫걸음: 어린 왕자'
             );
-            if (!hasNewBooks) {
+            if (!hasNewBooks || cleaned.length === 0) {
               localStorage.setItem(storageKey, JSON.stringify(INITIAL_SAMPLES));
               return INITIAL_SAMPLES;
             }
+            if (cleaned.length !== parsed.length) {
+              localStorage.setItem(storageKey, JSON.stringify(cleaned));
+            }
+            return cleaned.map((item: any) => ({
+              ...item,
+              bookTitle: item.bookTitle || item.sourceMemo || '기본 단어장',
+              quizCount: item.quizCount || 0,
+              correctCount: item.correctCount || 0,
+              wrongCount: item.wrongCount || 0,
+              consecutiveCorrect: item.consecutiveCorrect || 0,
+            }));
           }
-
-          return parsed.map((item: any) => ({
-            ...item,
-            bookTitle: item.bookTitle || item.sourceMemo || '기본 단어장',
-            quizCount: item.quizCount || 0,
-            correctCount: item.correctCount || 0,
-            wrongCount: item.wrongCount || 0,
-            consecutiveCorrect: item.consecutiveCorrect || 0,
-          }));
         }
       } catch (e) {
         console.error(e);

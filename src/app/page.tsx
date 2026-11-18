@@ -195,7 +195,7 @@ export default function Home() {
 
   // Multi-Word Form State: 한 번에 여러 단어를 추가/등록할 수 있는 단어 등록칸 목록
   const [wordEntries, setWordEntries] = useState<WordEntryItem[]>([createWordEntryItem()]);
-  const [inputBookTitle, setInputBookTitle] = useState('햄릿 (Hamlet)');
+  const [inputBookTitle, setInputBookTitle] = useState('원서 첫걸음: 어린 왕자');
   const [isCustomBook, setIsCustomBook] = useState(false);
   const [customBookInput, setCustomBookInput] = useState('');
   // 단어장별 최근 사용 시각(타임스탬프) 기록
@@ -485,8 +485,11 @@ export default function Home() {
           setBookUsageMap(JSON.parse(storedRecency));
         }
         const lastBook = localStorage.getItem('context_vocab_last_book_title');
-        if (lastBook) {
+        if (lastBook && !lastBook.includes('햄릿')) {
           setInputBookTitle(lastBook);
+        } else if (lastBook?.includes('햄릿')) {
+          localStorage.removeItem('context_vocab_last_book_title');
+          setInputBookTitle('원서 첫걸음: 어린 왕자');
         }
       } catch (e) {
         console.error(e);
@@ -2281,12 +2284,14 @@ export default function Home() {
 
   // Available unique book titles sorted by recency (가장 최근에 사용/등록된 단어장이 맨 위에 가깝게)
   const availableBookTitles = useMemo(() => {
+    const vocabTitles = Array.from(
+      new Set(vocabulary.map((v) => v.bookTitle || '기본 단어장').filter(Boolean))
+    );
     const rawTitles = Array.from(
       new Set(
-        [
-          inputBookTitle,
-          ...vocabulary.map((v) => v.bookTitle || '기본 단어장'),
-        ].filter(Boolean)
+        vocabTitles.length > 0
+          ? [inputBookTitle, ...vocabTitles].filter((t) => t && !t.includes('햄릿'))
+          : [inputBookTitle || '원서 첫걸음: 어린 왕자']
       )
     );
 
