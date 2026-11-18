@@ -2288,10 +2288,10 @@ export default function Home() {
             <div>
               <div className="flex items-center gap-1.5">
                 <h1 className="font-extrabold text-base text-slate-900 tracking-tight leading-none">
-                  divivid voca
+                  원서. 문장. 단어
                 </h1>
                 <span className="hidden sm:inline-block text-[10px] bg-slate-100 text-slate-700 border border-slate-200 px-1.5 py-0.5 rounded font-bold">
-                  디비비드 보카
+                  divivid
                 </span>
               </div>
               <p className="text-[10px] text-slate-400 font-medium hidden sm:block mt-0.5">
@@ -4294,7 +4294,7 @@ export default function Home() {
       {/* Footer */}
       <footer className="py-6 border-t border-slate-200/80 bg-white text-center text-xs text-slate-500">
         <div className="max-w-5xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <p>© {new Date().getFullYear()} divivid voca. All rights reserved.</p>
+          <p>© {new Date().getFullYear()} 원서. 문장. 단어 (divivid). All rights reserved.</p>
           <div className="flex items-center gap-4 text-[11px] font-semibold text-slate-600">
             <a href="https://divivid.com" target="_blank" rel="noreferrer" className="hover:text-indigo-600 transition">
               divivid.com

@@ -2,7 +2,7 @@ import type { Metadata, Viewport } from 'next';
 import './globals.css';
 
 export const metadata: Metadata = {
-  title: 'divivid voca | 문맥 영한단어장 & 5지선다 퀴즈',
+  title: '원서. 문장. 단어 | divivid',
   description: '영어 원서·기사 문맥과 함께 저장하고 5지선다 객관식 퀴즈로 완벽 복습하는 영한 단어장 (divivid.com)',
   icons: {
     icon: [
