@@ -3,13 +3,13 @@
 @tailwind utilities;
 
 .highlight-word {
-  background-color: #fef08a !important;
-  color: #854d0e !important;
+  background-color: #fce8b8 !important;
+  color: #874e1d !important;
   font-weight: 800;
   padding: 2px 6px;
   border-radius: 4px;
   display: inline-block;
-  border-bottom: 2px solid #ca8a04;
+  border-bottom: 2px solid #c57a3a;
 }
 
 .quiz-option-btn:hover:not(:disabled) {
