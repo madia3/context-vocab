@@ -118,6 +118,7 @@ import {
   Info,
   Scissors,
 } from 'lucide-react';
+import { APP_BUILD_VERSION, APP_BUILD_SUMMARY } from '@/lib/version';
 import { isUserAdmin } from '@/lib/admin';
 import {
   getStoredAnnouncement,
@@ -4512,6 +4513,15 @@ export default function Home() {
                           </button>
                         </div>
                       )}
+
+                      {/* 버전 정보 표시 (캐시/쿠키 갱신 확인용) */}
+                      <div className="pt-2 flex items-center justify-between text-[10px] text-slate-400 font-mono border-t border-slate-100">
+                        <span className="flex items-center gap-1.5">
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                          <span>버전: <strong className="text-slate-700">{APP_BUILD_VERSION}</strong></span>
+                        </span>
+                        <span className="text-slate-400 truncate max-w-[170px] sm:max-w-none">{APP_BUILD_SUMMARY}</span>
+                      </div>
                     </div>
                   )}
                 </div>
@@ -6354,7 +6364,12 @@ export default function Home() {
       {/* Footer */}
       <footer className="py-6 border-t border-slate-200/80 bg-white text-center text-xs text-slate-500">
         <div className="max-w-5xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
-          <p>© {new Date().getFullYear()} 원서. 문장. 단어 (divivid). All rights reserved.</p>
+          <div className="flex flex-col sm:flex-row items-center gap-1.5 sm:gap-3 text-slate-500">
+            <p>© {new Date().getFullYear()} 원서. 문장. 단어 (divivid). All rights reserved.</p>
+            <span className="text-[11px] font-mono text-indigo-700 font-bold bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
+              {APP_BUILD_VERSION}
+            </span>
+          </div>
           <div className="flex items-center gap-4 text-[11px] font-semibold text-slate-600">
             <a href="https://divivid.com" target="_blank" rel="noreferrer" className="hover:text-indigo-600 transition">
               divivid.com
