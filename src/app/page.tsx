@@ -95,6 +95,7 @@ import {
   FolderInput,
   Upload,
   X,
+  LogIn,
 } from 'lucide-react';
 import { compressAvatarImage } from '@/lib/imageCompress';
 import {
@@ -189,9 +190,10 @@ function createWordEntryItem(init?: Partial<WordEntryItem>): WordEntryItem {
 }
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<'add' | 'list' | 'quiz'>('add');
+  const [activeTab, setActiveTab] = useState<'add' | 'list' | 'quiz'>('list');
   const [vocabulary, setVocabulary] = useState<VocabItem[]>([]);
   const [isLoaded, setIsLoaded] = useState(false);
+  const [isWelcomeBannerDismissed, setIsWelcomeBannerDismissed] = useState(false);
 
   // Multi-Word Form State: 한 번에 여러 단어를 추가/등록할 수 있는 단어 등록칸 목록
   const [wordEntries, setWordEntries] = useState<WordEntryItem[]>([createWordEntryItem()]);
@@ -490,6 +492,10 @@ export default function Home() {
         } else if (lastBook?.includes('햄릿')) {
           localStorage.removeItem('context_vocab_last_book_title');
           setInputBookTitle('원서 첫걸음: 어린 왕자');
+        }
+        const hideWelcome = localStorage.getItem('context_vocab_hide_welcome');
+        if (hideWelcome === 'true') {
+          setIsWelcomeBannerDismissed(true);
         }
       } catch (e) {
         console.error(e);
@@ -3584,6 +3590,79 @@ export default function Home() {
         {/* ========================================= */}
         {activeTab === 'list' && (
           <section className="space-y-4">
+            {/* 비로그인 첫 방문자 웰컴 카드 (추천 1안: 문맥 단어장 안내 + 30초 퀴즈 맛보기) */}
+            {!currentUser && !isWelcomeBannerDismissed && (
+              <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 text-white rounded-3xl p-5 sm:p-6 shadow-md border border-slate-700/80 animate-fade-in">
+                {/* Decorative background subtle glow */}
+                <div className="absolute -top-12 -right-12 w-48 h-48 bg-slate-700/30 rounded-full blur-2xl pointer-events-none" />
+
+                {/* Dismiss button */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsWelcomeBannerDismissed(true);
+                    if (typeof window !== 'undefined') {
+                      localStorage.setItem('context_vocab_hide_welcome', 'true');
+                    }
+                  }}
+                  className="absolute top-4 right-4 text-slate-400 hover:text-white p-1.5 rounded-xl hover:bg-slate-800 transition cursor-pointer"
+                  title="안내 카드 닫기"
+                >
+                  <span className="sr-only">닫기</span>
+                  <X className="w-4 h-4" />
+                </button>
+
+                <div className="relative z-10 space-y-3.5 pr-6 sm:pr-8">
+                  {/* Badge & Title */}
+                  <div className="space-y-1.5">
+                    <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-slate-800 text-slate-200 border border-slate-700 text-[11px] font-bold">
+                      <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                      <span>원서 · 문장 · 단어에 오신 것을 환영합니다!</span>
+                    </div>
+                    <h2 className="text-base sm:text-lg font-black tracking-tight text-white leading-snug">
+                      원서 속 문맥으로 읽고, 5지선다 퀴즈로 체화하는 단어장
+                    </h2>
+                    <p className="text-xs sm:text-sm text-slate-300 leading-relaxed max-w-2xl">
+                      단어는 단순 암기보다 <strong className="text-white font-semibold">책 속 실제 문맥</strong>에서 읽을 때 가장 오래 기억됩니다.
+                      엄선된 3가지 명작 원서 단어를 둘러보고, 30초 퀴즈로 바로 체험해 보세요!
+                    </p>
+                  </div>
+
+                  {/* Action CTA Buttons */}
+                  <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedBookFilter('원서 첫걸음: 어린 왕자');
+                        startQuiz('원서 첫걸음: 어린 왕자');
+                      }}
+                      className="py-2.5 px-4 bg-white hover:bg-slate-100 text-slate-900 font-black text-xs sm:text-sm rounded-xl shadow-xs transition flex items-center gap-2 cursor-pointer active:scale-98"
+                    >
+                      <Award className="w-4 h-4 text-amber-500 shrink-0" />
+                      <span>🎯 [어린 왕자] 30초 퀴즈 맛보기 (10단어) ➔</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsAuthModalOpen(true);
+                        setAuthMode('signup');
+                      }}
+                      className="py-2.5 px-3.5 bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white font-bold text-xs rounded-xl border border-slate-700 transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <LogIn className="w-3.5 h-3.5" />
+                      <span>나만의 원서 단어 등록 (무료 가입)</span>
+                    </button>
+                  </div>
+
+                  {/* Micro reassurance info */}
+                  <div className="pt-0.5 flex items-center gap-1.5 text-[11px] text-slate-400">
+                    <span>💡 비로그인 상태에서도 3가지 추천 단어장(어린 왕자 · WSJ · 월든)과 퀴즈를 자유롭게 이용하실 수 있습니다.</span>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Top Vocabulary Book Selector & Controls */}
             <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3.5">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
