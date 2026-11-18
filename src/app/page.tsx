@@ -2183,10 +2183,18 @@ export default function Home() {
     const current = quizList[currentQuizIndex];
     const isCorrect = chosen === current.selectedMeaning;
 
+    // 1. 즉각적인 UI 반응 및 0ms 폭죽 발사 (네트워크 I/O 지연 완전 제거)
+    if (isCorrect) {
+      fireConfetti({ particleCount: 65, spread: 70, origin: { x: 0.5, y: 0.55 } });
+      setQuizScore((prev) => prev + 1);
+    }
     setQuizAnswerState({ answered: true, chosen, isCorrect });
 
-    // 퀴즈 통계 자동 업데이트 (푼 횟수 + 맞춘 횟수 + 오답 횟수 + 연속 정답 + 마지막 퀴즈일자)
-    await updateQuizStat(current.id, isCorrect, currentUser?.id);
+    // 2. 문장 카드가 화면에 뜨자마자 미리 준비된 원어민 고음질 음성 즉각 낭독 시작 (지연 0ms)
+    const textToRead = quizActiveSentence?.trim() || current.contextSentence?.trim() || current.word;
+    speakSentenceTTS(textToRead, ttsVoice);
+
+    // 3. 로컬 상태 즉각 동기화
     const todayStr = new Date().toISOString().slice(0, 10);
     setVocabulary((prev) =>
       prev.map((v) =>
@@ -2203,14 +2211,10 @@ export default function Home() {
       )
     );
 
-    if (isCorrect) {
-      setQuizScore((prev) => prev + 1);
-      fireConfetti({ particleCount: 50, spread: 60, origin: { x: 0.5, y: 0.6 } });
-    }
-
-    // 문장 카드가 화면에 뜨자마자 미리 준비된 원어민 고음질 음성으로 즉각 낭독 시작 (지연 0ms)
-    const textToRead = quizActiveSentence?.trim() || current.contextSentence?.trim() || current.word;
-    speakSentenceTTS(textToRead, ttsVoice);
+    // 4. Supabase DB 저장은 백그라운드에서 비동기로 실행 (UI를 차단하지 않음)
+    updateQuizStat(current.id, isCorrect, currentUser?.id).catch((e) => {
+      console.warn('Background updateQuizStat exception:', e);
+    });
   }
 
   function handleNextQuestion() {
