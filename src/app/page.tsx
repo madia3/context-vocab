@@ -103,7 +103,15 @@ import {
   Languages,
   Square,
   CheckSquare,
+  Gauge,
+  Zap,
 } from 'lucide-react';
+import {
+  getAiUsageStats,
+  recordAiUsage,
+  AI_USAGE_EVENT,
+  type AiUsageStats,
+} from '@/lib/geminiUsage';
 import { compressAvatarImage } from '@/lib/imageCompress';
 import {
   getCustomAvatar,
@@ -489,6 +497,19 @@ export default function Home() {
   const [ttsRate, setTtsRate] = useState<number>(1.25);
   const [geminiApiKey, setGeminiApiKey] = useState('');
   const [geminiKeyInput, setGeminiKeyInput] = useState('');
+  const [aiUsageStats, setAiUsageStats] = useState<AiUsageStats>(() => getAiUsageStats());
+
+  useEffect(() => {
+    function handleUsageChange() {
+      setAiUsageStats(getAiUsageStats());
+    }
+    window.addEventListener(AI_USAGE_EVENT, handleUsageChange);
+    window.addEventListener('focus', handleUsageChange);
+    return () => {
+      window.removeEventListener(AI_USAGE_EVENT, handleUsageChange);
+      window.removeEventListener('focus', handleUsageChange);
+    };
+  }, []);
 
   // Profile & Avatar State (0MB Supabase Storage Quota Strategy)
   const [customAvatar, setCustomAvatarState] = useState<string | null>(null);
@@ -562,7 +583,9 @@ export default function Home() {
       if (data.ok) {
         setStoredGeminiKey(key);
         setGeminiApiKey(key);
-        setKeyTestStatus({ ok: true, message: 'Google Gemini AI 연동 성공! 🤖 모든 AI 비전 및 문맥 분석 기능이 활성화되었습니다.' });
+        recordAiUsage(1);
+        setAiUsageStats(getAiUsageStats());
+        setKeyTestStatus({ ok: true, message: data.message || 'Google Gemini AI 연동 성공! 🤖 모든 AI 비전 및 문맥 분석 기능이 활성화되었습니다.' });
         triggerToast('AI 연동 완료! 🤖', '책 사진 고정밀 인식 및 복수/시제 변화형 문맥 추출이 활성화되었습니다.');
       } else {
         setKeyTestStatus({ ok: false, message: data.error || 'API 키 검증 실패. 올바른 키인지 확인해 주세요.' });
@@ -1244,15 +1267,21 @@ export default function Home() {
           }
         }
 
-        setOcrProgress(70);
         // AI가 2장의 사진을 직접 보고 전후 관계를 스스로 판단해 잘린 문장을 완벽하게 이어붙임
-        const { text: extractedText, markedWords } = await extractTextWithAI(
+        const { text: extractedText, markedWords, method } = await extractTextWithAI(
           file,
           geminiApiKey,
           imgData,
           updatedImages
         );
         setOcrProgress(100);
+
+        if (method === 'tesseract' && !geminiApiKey) {
+          triggerToast(
+            '기본 OCR 모드로 작동 ⚠️',
+            '서버 및 개인 API 키가 없어 기본 인식기(Tesseract)로 동작했습니다. 오타 없는 고정밀 인식을 위해 설정에서 Gemini API 키를 등록해 주세요.'
+          );
+        }
 
         // 현재 단어장별 스토리지에 최신 2장 사진과 추출 텍스트 영구 보관
         saveBookSourceData(inputBookTitle, updatedImages, extractedText);
@@ -6351,6 +6380,72 @@ export default function Home() {
                           <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
                         )}
                         <span>{keyTestStatus.message}</span>
+                      </div>
+                    )}
+
+                    {/* Free Tier Quota Gauge Bar */}
+                    {geminiApiKey && (
+                      <div className="p-3.5 bg-gradient-to-br from-slate-50 via-emerald-50/30 to-teal-50/20 rounded-2xl border border-emerald-200/90 shadow-2xs space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <div className="w-5 h-5 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-600">
+                              <Gauge className="w-3.5 h-3.5" />
+                            </div>
+                            <span className="text-xs font-bold text-slate-800">무료 AI 사용량 현황</span>
+                          </div>
+                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                            Google Free Tier
+                          </span>
+                        </div>
+
+                        {/* Progress Gauge */}
+                        <div className="space-y-1.5">
+                          <div className="flex items-center justify-between text-[11px] font-semibold text-slate-600">
+                            <span>
+                              오늘 잔여:{' '}
+                              <strong className="text-emerald-700 font-bold">
+                                {aiUsageStats.remainingCount.toLocaleString()}회
+                              </strong>{' '}
+                              / {aiUsageStats.dailyLimit.toLocaleString()}회
+                            </span>
+                            <span className="text-emerald-700 font-bold">
+                              {aiUsageStats.remainingPercent}% 남음
+                            </span>
+                          </div>
+
+                          <div className="w-full h-2.5 bg-slate-200/90 rounded-full overflow-hidden p-0.5">
+                            <div
+                              className={`h-full rounded-full transition-all duration-500 ${
+                                aiUsageStats.remainingPercent > 25
+                                  ? 'bg-gradient-to-r from-emerald-500 to-teal-500'
+                                  : aiUsageStats.remainingPercent > 10
+                                  ? 'bg-gradient-to-r from-amber-500 to-orange-500'
+                                  : 'bg-gradient-to-r from-rose-500 to-red-500'
+                              }`}
+                              style={{ width: `${Math.max(4, aiUsageStats.remainingPercent)}%` }}
+                            />
+                          </div>
+                        </div>
+
+                        {/* Quota details & Link to Google AI Studio */}
+                        <div className="pt-2 flex flex-wrap items-center justify-between gap-1.5 text-[10px] text-slate-500 border-t border-slate-200/70">
+                          <div className="flex items-center gap-2">
+                            <span className="flex items-center gap-1 font-medium text-slate-600">
+                              <Zap className="w-3 h-3 text-amber-500" />
+                              <span>분당 한도: <strong>15회 (15 RPM)</strong></span>
+                            </span>
+                            <span className="text-slate-400">• 매일 00:00 리셋</span>
+                          </div>
+                          <a
+                            href="https://aistudio.google.com/"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-brand-600 hover:text-brand-800 font-bold underline flex items-center gap-0.5"
+                          >
+                            <span>Google AI Studio 대시보드</span>
+                            <ExternalLink className="w-2.5 h-2.5" />
+                          </a>
+                        </div>
                       </div>
                     )}
 

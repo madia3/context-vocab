@@ -103,17 +103,21 @@ export interface GeminiModelCandidate {
 // Fast models on Google Generative Language v1beta API (prioritized by official availability & speed)
 export const FAST_GEMINI_CANDIDATES: GeminiModelCandidate[] = [
   {
-    model: 'gemini-2.5-flash-lite',
-    thinkingConfig: { thinkingBudget: 0 },
-    timeoutMs: 3800,
+    model: 'gemini-2.0-flash',
+    timeoutMs: 10000,
   },
   {
-    model: 'gemini-2.0-flash',
-    timeoutMs: 3500,
+    model: 'gemini-1.5-flash',
+    timeoutMs: 10000,
   },
   {
     model: 'gemini-2.0-flash-lite',
-    timeoutMs: 3500,
+    timeoutMs: 8000,
+  },
+  {
+    model: 'gemini-2.5-flash',
+    thinkingConfig: { thinkingBudget: 0 },
+    timeoutMs: 10000,
   },
 ];
 
@@ -239,10 +243,9 @@ export async function callGeminiWithFallback(options: {
       } else {
         lastError = await res.text();
 
-        // Early abort if API Key is invalid or forbidden (do not waste time trying other models)
+        // Early abort ONLY if API Key is definitively invalid (do not waste time trying other models)
         if (
           res.status === 401 ||
-          res.status === 403 ||
           (res.status === 400 && lastError.includes('API_KEY_INVALID'))
         ) {
           break;

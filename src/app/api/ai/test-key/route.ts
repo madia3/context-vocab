@@ -71,10 +71,32 @@ export async function POST(req: NextRequest) {
       return response;
     }
 
+    let errorMessage = '유효하지 않은 API 키이거나 모델 호출에 실패했습니다.';
+    if (res.lastError) {
+      if (res.lastError.includes('API_KEY_INVALID')) {
+        errorMessage = '유효하지 않은 API 키입니다. Google AI Studio에서 발급받은 키(AIzaSy...)를 정확히 복사했는지 확인해 주세요.';
+      } else if (res.lastError.includes('RESOURCE_EXHAUSTED')) {
+        errorMessage = 'Gemini API 무료 요청 한도(RPM/RPD)가 초과되었습니다. 잠시 후 다시 시도해 주세요.';
+      } else if (res.lastError.includes('Timeout') || res.lastError.includes('abort') || res.lastError.includes('aborted')) {
+        errorMessage = 'Google API 응답 시간 초과 (네트워크 지연). 잠시 후 다시 시도해 주세요.';
+      } else {
+        try {
+          const parsed = JSON.parse(res.lastError);
+          if (parsed?.error?.message) {
+            errorMessage = `Google API 오류: ${parsed.error.message}`;
+          }
+        } catch {
+          if (res.lastError.length < 150) {
+            errorMessage = `Google API 오류: ${res.lastError}`;
+          }
+        }
+      }
+    }
+
     return NextResponse.json(
       {
         ok: false,
-        error: '유효하지 않은 API 키이거나 모델 호출에 실패했습니다.',
+        error: errorMessage,
         details: res.lastError,
       },
       { status: 400 }

@@ -77,15 +77,15 @@ Return strictly valid JSON:
 
     let rawJsonText = '';
 
-    // 1. 이미지가 있으면 초고속 Vision 모델 우선 시도 (thinkingLevel: LOW / thinkingBudget: 0)
+    // 1. 이미지가 있으면 초고속 Vision 모델 우선 시도
     if (hasImage && cleanBase64) {
       const visionRes = await callGeminiWithFallback({
         apiKey,
         parts: [
           { text: buildPrompt(true) },
           {
-            inline_data: {
-              mime_type: mimeType || 'image/jpeg',
+            inlineData: {
+              mimeType: mimeType || 'image/jpeg',
               data: cleanBase64,
             },
           },
@@ -93,8 +93,9 @@ Return strictly valid JSON:
         temperature: 0.0,
         responseMimeType: 'application/json',
         candidates: [
-          { model: 'gemini-2.5-flash-lite', thinkingConfig: { thinkingBudget: 0 }, timeoutMs: 4500 },
-          { model: 'gemini-2.0-flash', timeoutMs: 4000 },
+          { model: 'gemini-2.0-flash', timeoutMs: 10000 },
+          { model: 'gemini-1.5-flash', timeoutMs: 10000 },
+          { model: 'gemini-2.5-flash', thinkingConfig: { thinkingBudget: 0 }, timeoutMs: 10000 },
         ],
       });
 

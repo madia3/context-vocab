@@ -100,8 +100,8 @@ Output strictly valid JSON in this exact structure without markdown backticks:
       const contentParts: any[] = [{ text: visionPrompt }];
       imageList.forEach((img) => {
         contentParts.push({
-          inline_data: {
-            mime_type: img.mimeType || 'image/jpeg',
+          inlineData: {
+            mimeType: img.mimeType || 'image/jpeg',
             data: img.base64,
           },
         });
@@ -113,8 +113,9 @@ Output strictly valid JSON in this exact structure without markdown backticks:
         temperature: 0.0,
         responseMimeType: 'application/json',
         candidates: [
-          { model: 'gemini-2.5-flash-lite', thinkingConfig: { thinkingBudget: 0 }, timeoutMs: 5000 },
-          { model: 'gemini-2.0-flash', timeoutMs: 4500 },
+          { model: 'gemini-2.0-flash', timeoutMs: 12000 },
+          { model: 'gemini-1.5-flash', timeoutMs: 12000 },
+          { model: 'gemini-2.5-flash', thinkingConfig: { thinkingBudget: 0 }, timeoutMs: 12000 },
         ],
       });
 

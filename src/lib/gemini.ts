@@ -1,5 +1,7 @@
 // Gemini AI Vision OCR & Context Sentence Extractor
 
+import { recordAiUsage } from './geminiUsage';
+
 export const GEMINI_API_KEY_STORAGE = 'context_vocab_gemini_api_key';
 export const GEMINI_API_KEY_MASK_STORAGE = 'context_vocab_gemini_api_key_masked';
 const CLIENT_SHIELD_SALT = 'divivid_voca_key_shield_v1';
@@ -169,6 +171,7 @@ export async function repairOcrTextWithAI(
     if (res.ok) {
       const data = await res.json();
       if (data.cleanedText && data.cleanedText.trim().length > 10 && data.method === 'gemini') {
+        recordAiUsage(1);
         return data.cleanedText.trim();
       }
     }
@@ -217,6 +220,7 @@ export async function extractTextWithAI(
     if (res.ok) {
       const data = await res.json();
       if (data.text && data.text.trim()) {
+        recordAiUsage(1);
         const detected = data.markedWords || data.underlinedWords;
         const markedWords: string[] = Array.isArray(detected) ? detected : [];
         return { text: data.text.trim(), method: 'gemini', markedWords };
@@ -289,6 +293,7 @@ export async function findSentenceWithAI(
     if (res.ok) {
       const data = await res.json();
       if (data.found && data.sentence) {
+        recordAiUsage(1);
         const rawList =
           Array.isArray(data.allMatches) && data.allMatches.length > 0
             ? data.allMatches
