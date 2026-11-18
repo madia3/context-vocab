@@ -331,6 +331,55 @@ export function getServerUsageReport(): ServerUsageReport {
   };
 }
 
+export function clearRateLimitCache(): { countCleared: number } {
+  const count = ipRequestMap.size;
+  ipRequestMap.clear();
+  return { countCleared: count };
+}
+
+export function resetServerUsageStats(): ServerUsageReport {
+  const usage = loadServerUsage();
+  usage.serverEnvCallsToday = 0;
+  usage.customKeyCallsToday = 0;
+  usage.byEndpoint = {
+    matchSentence: 0,
+    visionOcr: 0,
+    translate: 0,
+    dictionary: 0,
+    other: 0,
+  };
+  saveServerUsage();
+  return getServerUsageReport();
+}
+
+export function clearServerUsageLogs(): ServerUsageReport {
+  const usage = loadServerUsage();
+  usage.recentLogs = [];
+  saveServerUsage();
+  return getServerUsageReport();
+}
+
+export function getServerSystemInfo() {
+  const mem = process.memoryUsage();
+  return {
+    nodeVersion: process.version,
+    platform: process.platform,
+    arch: process.arch,
+    uptimeSec: Math.round(process.uptime()),
+    vercelEnv: process.env.VERCEL_ENV || process.env.NODE_ENV || 'development',
+    vercelRegion: process.env.VERCEL_REGION || 'local',
+    hasGeminiKey: Boolean(process.env.GEMINI_API_KEY && process.env.GEMINI_API_KEY.trim().length >= 10),
+    hasSupabaseUrl: Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL),
+    hasSupabaseKey: Boolean(process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY),
+    memory: {
+      rssMb: Math.round(mem.rss / 1024 / 1024),
+      heapUsedMb: Math.round(mem.heapUsed / 1024 / 1024),
+      heapTotalMb: Math.round(mem.heapTotal / 1024 / 1024),
+    },
+    rateLimitBlockedCount: ipRequestMap.size,
+  };
+}
+
 // Per-IP Sliding Window Rate Limiter (protects API credits & server resources)
 const ipRequestMap = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute

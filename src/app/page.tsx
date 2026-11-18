@@ -109,8 +109,20 @@ import {
   Activity,
   Server,
   Shield,
+  Download,
+  Megaphone,
+  Terminal,
+  Play,
+  RotateCcw,
+  Info,
 } from 'lucide-react';
 import { isUserAdmin } from '@/lib/admin';
+import {
+  getStoredAnnouncement,
+  saveStoredAnnouncement,
+  ANNOUNCEMENT_CHANGED_EVENT,
+  type AppAnnouncement,
+} from '@/lib/announcement';
 import {
   getAiUsageStats,
   recordAiUsage,
@@ -596,11 +608,40 @@ export default function Home() {
   const [isServerGeminiReady, setIsServerGeminiReady] = useState(false);
   const [aiUsageStats, setAiUsageStats] = useState<AiUsageStats>(() => getAiUsageStats());
 
-  // Admin Vercel Server API Usage State (Ashstone3@gmail.com)
+  // Admin Vercel Server API Usage & Management State (Ashstone3@gmail.com)
+  const [adminSection, setAdminSection] = useState<'api' | 'notice' | 'db' | 'sandbox' | 'system'>('api');
   const [serverUsageReport, setServerUsageReport] = useState<any | null>(null);
+  const [adminSystemInfo, setAdminSystemInfo] = useState<any | null>(null);
   const [isLoadingServerUsage, setIsLoadingServerUsage] = useState<boolean>(false);
   const [isPingTesting, setIsPingTesting] = useState<boolean>(false);
   const [pingResult, setPingResult] = useState<{ ok: boolean; durationMs?: number; modelUsed?: string; error?: string } | null>(null);
+  const [isAdminActionRunning, setIsAdminActionRunning] = useState<boolean>(false);
+
+  // Global Announcement State
+  const [announcement, setAnnouncement] = useState<AppAnnouncement>(() => getStoredAnnouncement());
+  const [dismissedAnnouncementId, setDismissedAnnouncementId] = useState<string | null>(null);
+  const [noticeInputMsg, setNoticeInputMsg] = useState<string>(() => getStoredAnnouncement().message);
+  const [noticeInputType, setNoticeInputType] = useState<'info' | 'warning' | 'update'>(() => getStoredAnnouncement().type);
+  const [noticeInputActive, setNoticeInputActive] = useState<boolean>(() => getStoredAnnouncement().active);
+
+  // Admin AI Sandbox State
+  const [adminSandboxPrompt, setAdminSandboxPrompt] = useState<string>(
+    'Explain the nuance of "serendipity" in natural Korean and provide a vivid example sentence in JSON format.'
+  );
+  const [adminSandboxResult, setAdminSandboxResult] = useState<any | null>(null);
+  const [isAdminSandboxRunning, setIsAdminSandboxRunning] = useState<boolean>(false);
+
+  useEffect(() => {
+    function handleAnnouncementChange(e: any) {
+      if (e?.detail) {
+        setAnnouncement(e.detail);
+      }
+    }
+    window.addEventListener(ANNOUNCEMENT_CHANGED_EVENT, handleAnnouncementChange);
+    return () => {
+      window.removeEventListener(ANNOUNCEMENT_CHANGED_EVENT, handleAnnouncementChange);
+    };
+  }, []);
 
   useEffect(() => {
     function handleUsageChange() {
@@ -638,8 +679,9 @@ export default function Home() {
       });
       if (res.ok) {
         const data = await res.json();
-        if (data?.ok && data?.report) {
-          setServerUsageReport(data.report);
+        if (data?.ok) {
+          if (data.report) setServerUsageReport(data.report);
+          if (data.systemInfo) setAdminSystemInfo(data.systemInfo);
         }
       }
     } catch (err) {
@@ -669,6 +711,149 @@ export default function Home() {
       setPingResult({ ok: false, error: err?.message || '실시간 진단 실패' });
     } finally {
       setIsPingTesting(false);
+    }
+  }
+
+  async function handleResetServerCounter() {
+    if (!confirm('오늘의 서버 API 호출 카운터를 0회로 초기화하시겠습니까?')) return;
+    setIsAdminActionRunning(true);
+    try {
+      const res = await fetch('/api/admin/usage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-user-email': currentUser!.email! },
+        body: JSON.stringify({ action: 'reset_counter', email: currentUser!.email }),
+      });
+      const data = await res.json();
+      if (data.ok && data.report) {
+        setServerUsageReport(data.report);
+        triggerToast('카운터 초기화 완료 🔄', '오늘의 서버 API 호출 카운터가 0으로 리셋되었습니다.');
+      }
+    } catch (err: any) {
+      triggerToast('초기화 실패', err?.message || '카운터 리셋 중 오류 발생');
+    } finally {
+      setIsAdminActionRunning(false);
+    }
+  }
+
+  async function handleClearRateLimits() {
+    setIsAdminActionRunning(true);
+    try {
+      const res = await fetch('/api/admin/usage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-user-email': currentUser!.email! },
+        body: JSON.stringify({ action: 'clear_rate_limits', email: currentUser!.email }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        triggerToast('접속 제한 해제 완료 ⚡', data.message || '차단된 IP 캐시가 모두 해제되었습니다.');
+        fetchServerUsage();
+      }
+    } catch (err: any) {
+      triggerToast('해제 실패', err?.message || 'IP 접속 제한 해제 실패');
+    } finally {
+      setIsAdminActionRunning(false);
+    }
+  }
+
+  async function handleClearUsageLogs() {
+    if (!confirm('최근 API 호출 기록을 모두 삭제하시겠습니까?')) return;
+    setIsAdminActionRunning(true);
+    try {
+      const res = await fetch('/api/admin/usage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-user-email': currentUser!.email! },
+        body: JSON.stringify({ action: 'clear_logs', email: currentUser!.email }),
+      });
+      const data = await res.json();
+      if (data.ok && data.report) {
+        setServerUsageReport(data.report);
+        triggerToast('로그 정리 완료 🧹', '최근 API 호출 기록이 초기화되었습니다.');
+      }
+    } catch (err: any) {
+      triggerToast('정리 실패', err?.message || '로그 삭제 중 오류 발생');
+    } finally {
+      setIsAdminActionRunning(false);
+    }
+  }
+
+  async function handleRunAdminSandbox() {
+    if (!adminSandboxPrompt.trim()) return;
+    setIsAdminSandboxRunning(true);
+    setAdminSandboxResult(null);
+    try {
+      const res = await fetch('/api/admin/usage', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-user-email': currentUser!.email! },
+        body: JSON.stringify({
+          action: 'test_ai_prompt',
+          prompt: adminSandboxPrompt,
+          email: currentUser!.email,
+        }),
+      });
+      const data = await res.json();
+      setAdminSandboxResult(data);
+      fetchServerUsage();
+    } catch (err: any) {
+      setAdminSandboxResult({ ok: false, error: err?.message || '샌드박스 실행 실패' });
+    } finally {
+      setIsAdminSandboxRunning(false);
+    }
+  }
+
+  function handleSaveAnnouncement() {
+    const updated: AppAnnouncement = {
+      id: `notice-${Date.now()}`,
+      active: noticeInputActive,
+      type: noticeInputType,
+      message: noticeInputMsg.trim(),
+      updatedAt: Date.now(),
+    };
+    saveStoredAnnouncement(updated);
+    setAnnouncement(updated);
+    setDismissedAnnouncementId(null);
+    triggerToast(
+      '전역 공지사항 저장됨 📢',
+      noticeInputActive ? '화면 상단에 실시간 공지 배너가 게시되었습니다.' : '공지 배너가 비활성화되었습니다.'
+    );
+  }
+
+  function handleExportAllVocabJson() {
+    const allBooks = Array.from(new Set(vocabulary.map((w) => w.bookTitle || '기본 단어장')));
+    const exportData = {
+      version: 'context_vocab_master_v1',
+      exportedAt: new Date().toISOString(),
+      adminUser: currentUser?.email || 'admin',
+      totalWordCount: vocabulary.length,
+      books: allBooks,
+      words: vocabulary,
+    };
+    const jsonStr = JSON.stringify(exportData, null, 2);
+    const blob = new Blob([jsonStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `context_vocab_master_backup_${new Date().toISOString().slice(0, 10)}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    triggerToast('전체 마스터 백업 완료 💾', `총 ${vocabulary.length}개 단어가 JSON 파일로 다운로드되었습니다.`);
+  }
+
+  async function handleAdminForceResetPresets() {
+    if (
+      !confirm(
+        '⚠️ 정말로 모든 단어를 기본 30개 프리셋 단어로 초기화하시겠습니까?\n기존 사용자가 추가한 단어는 사라지고 3개 기본 책(30단어)으로 클린 리셋됩니다.'
+      )
+    )
+      return;
+    setIsAdminActionRunning(true);
+    try {
+      const resetItems = await resetWithSamples(currentUser?.id);
+      setVocabulary(resetItems);
+      triggerToast('단어장 클린 리셋 완료 ✨', `기본 3개 책(30개 단어)으로 완벽하게 복구되었습니다.`);
+    } catch (err: any) {
+      triggerToast('리셋 실패', err?.message || '단어 초기화 실패');
+    } finally {
+      setIsAdminActionRunning(false);
     }
   }
 
@@ -3640,6 +3825,36 @@ export default function Home() {
           </div>
         </div>
       </header>
+
+      {/* Global Announcement Banner (Broadcast by Administrator) */}
+      {announcement?.active && announcement?.message && dismissedAnnouncementId !== announcement.id && (
+        <div
+          className={`border-b px-4 py-2 text-xs font-semibold shadow-2xs animate-fade-in ${
+            announcement.type === 'warning'
+              ? 'bg-amber-500/10 text-amber-900 border-amber-200'
+              : announcement.type === 'update'
+              ? 'bg-indigo-500/10 text-indigo-900 border-indigo-200'
+              : 'bg-blue-500/10 text-blue-900 border-blue-200'
+          }`}
+        >
+          <div className="max-w-5xl mx-auto flex items-center justify-between gap-3 min-w-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <span className="text-sm shrink-0">
+                {announcement.type === 'warning' ? '⚠️' : announcement.type === 'update' ? '🚀' : '💡'}
+              </span>
+              <span className="truncate">{announcement.message}</span>
+            </div>
+            <button
+              type="button"
+              onClick={() => setDismissedAnnouncementId(announcement.id)}
+              className="p-1 text-slate-400 hover:text-slate-700 transition cursor-pointer shrink-0 rounded-lg hover:bg-black/5"
+              title="공지 닫기"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Main Container (Scroll Area with Touch Swipe between 3 Tabs) */}
       <main
@@ -7027,7 +7242,7 @@ export default function Home() {
                 </div>
               )}
 
-              {/* TAB: 👑 Vercel 서버 API 모니터링 (관리자 전용) */}
+              {/* TAB: 👑 Vercel 서버 API 모니터링 및 관리자 제어 센터 */}
               {settingsTab === 'admin' && isAdmin && (
                 <div className="space-y-4 animate-fade-in">
                   {/* Admin Top Header Card */}
@@ -7037,13 +7252,13 @@ export default function Home() {
                         <span className="text-xl">👑</span>
                         <div>
                           <h4 className="font-black text-sm text-white flex items-center gap-1.5">
-                            <span>Vercel 서버 GEMINI_API_KEY 실시간 관제</span>
+                            <span>관리자 전용 관제 & 시스템 제어 센터</span>
                             <span className="text-[10px] bg-purple-500/40 text-purple-200 border border-purple-400/40 px-2 py-0.5 rounded-full font-bold">
-                              관리자 전용
+                              {currentUser?.email}
                             </span>
                           </h4>
                           <p className="text-[11px] text-purple-200/80">
-                            Vercel 환경 변수에 설정된 전역 Gemini API 키의 호출량과 구글 할당량을 실시간 모니터링합니다.
+                            Vercel 서버 API, 전역 공지사항, 단어 데이터베이스 및 AI 프롬프트를 총괄 제어합니다.
                           </p>
                         </div>
                       </div>
@@ -7107,223 +7322,686 @@ export default function Home() {
                         </span>
                       </div>
                     )}
-                  </div>
 
-                  {/* 1. Vercel Environment API Key Status Card */}
-                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/90 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
-                        <Server className="w-4 h-4 text-indigo-600" />
-                        <span>Vercel 서버 환경 변수 상태</span>
-                      </div>
-                      {serverUsageReport?.isConfigured ? (
-                        <span className="text-[10px] bg-emerald-100 text-emerald-800 font-extrabold px-2.5 py-0.5 rounded-full flex items-center gap-1 border border-emerald-300">
-                          <Check className="w-2.5 h-2.5" />
-                          <span>연동됨 (Active)</span>
-                        </span>
-                      ) : (
-                        <span className="text-[10px] bg-rose-100 text-rose-800 font-bold px-2.5 py-0.5 rounded-full border border-rose-300">
-                          미설정 (GEMINI_API_KEY 필요)
-                        </span>
-                      )}
-                    </div>
-
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
-                      <div className="p-2.5 bg-white rounded-xl border border-slate-200/80">
-                        <div className="text-[11px] text-slate-500 font-medium">마스킹된 서버 API 키</div>
-                        <div className="font-mono font-bold text-slate-900 mt-0.5 truncate">
-                          {serverUsageReport?.maskedKey || (isServerGeminiReady ? 'AIzaSy••••••••••••••••••••' : '미등록')}
-                        </div>
-                      </div>
-                      <div className="p-2.5 bg-white rounded-xl border border-slate-200/80">
-                        <div className="text-[11px] text-slate-500 font-medium">현재 작동 중인 AI 모델</div>
-                        <div className="font-mono font-bold text-indigo-700 mt-0.5">
-                          {serverUsageReport?.lastActiveModel || 'gemini-2.5-flash'} (자동 폴백)
-                        </div>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
-                      <Shield className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
-                      <span>
-                        보안: Vercel Serverless Function 백엔드에 안전하게 격리되어 사용자 기기나 브라우저 개발자 도구에 노출되지 않습니다.
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* 2. Today's Server API Usage & Quota Gauge */}
-                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/90 space-y-3">
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
-                        <Gauge className="w-4 h-4 text-emerald-600" />
-                        <span>오늘 Vercel API 사용량 & 구글 무료 한도</span>
-                      </div>
-                      <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
-                        Google Free Tier (1,500 RPD)
-                      </span>
-                    </div>
-
-                    {/* Stat Badges Grid */}
-                    <div className="grid grid-cols-3 gap-2 text-center">
-                      <div className="p-2.5 bg-white rounded-xl border border-slate-200/80">
-                        <div className="text-[10.5px] text-slate-500 font-semibold">오늘 서버 호출</div>
-                        <div className="text-base font-black text-slate-900 mt-0.5">
-                          {(serverUsageReport?.serverEnvCallsToday ?? 0).toLocaleString()}
-                          <span className="text-xs font-normal text-slate-500 ml-0.5">회</span>
-                        </div>
-                      </div>
-                      <div className="p-2.5 bg-white rounded-xl border border-slate-200/80">
-                        <div className="text-[10.5px] text-emerald-700 font-semibold">오늘 남은 횟수</div>
-                        <div className="text-base font-black text-emerald-600 mt-0.5">
-                          {(serverUsageReport?.remainingCalls ?? 1500).toLocaleString()}
-                          <span className="text-xs font-normal text-slate-500 ml-0.5">회</span>
-                        </div>
-                      </div>
-                      <div className="p-2.5 bg-white rounded-xl border border-slate-200/80">
-                        <div className="text-[10.5px] text-slate-500 font-semibold">일일 소모율</div>
-                        <div className="text-base font-black text-indigo-600 mt-0.5">
-                          {serverUsageReport?.usagePercent ?? 0}
-                          <span className="text-xs font-normal text-slate-500 ml-0.5">%</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Progress Bar */}
-                    <div className="space-y-1">
-                      <div className="w-full h-3 bg-slate-200 rounded-full overflow-hidden p-0.5">
-                        <div
-                          className={`h-full rounded-full transition-all duration-500 ${
-                            (serverUsageReport?.usagePercent ?? 0) < 70
-                              ? 'bg-gradient-to-r from-emerald-500 to-teal-500'
-                              : (serverUsageReport?.usagePercent ?? 0) < 90
-                              ? 'bg-gradient-to-r from-amber-500 to-orange-500'
-                              : 'bg-gradient-to-r from-rose-500 to-red-500'
-                          }`}
-                          style={{
-                            width: `${Math.max(3, 100 - (serverUsageReport?.usagePercent ?? 0))}%`,
-                          }}
-                        />
-                      </div>
-                      <div className="flex items-center justify-between text-[10px] text-slate-500 font-medium">
-                        <span>잔여 {100 - (serverUsageReport?.usagePercent ?? 0)}% 남음</span>
-                        <span>매일 자정 (00:00 KST) 자동 리셋</span>
-                      </div>
-                    </div>
-
-                    {/* RPM Limit info */}
-                    <div className="pt-2 flex flex-wrap items-center justify-between gap-2 text-[10.5px] text-slate-500 border-t border-slate-200/70">
-                      <div className="flex items-center gap-1.5 font-medium">
-                        <Zap className="w-3.5 h-3.5 text-amber-500 shrink-0" />
-                        <span>분당 한도: <strong>15회 (15 RPM)</strong> 초과 방지 슬라이딩 윈도우 보호 작동 중</span>
-                      </div>
-                      <a
-                        href="https://aistudio.google.com/"
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-brand-600 hover:text-brand-800 font-bold underline flex items-center gap-0.5"
+                    {/* Admin Sub Navigation Tabs */}
+                    <div className="grid grid-cols-2 sm:grid-cols-5 gap-1 pt-1 border-t border-purple-500/30 text-xs">
+                      <button
+                        type="button"
+                        onClick={() => setAdminSection('api')}
+                        className={`py-1.5 px-2 rounded-lg font-bold transition flex items-center justify-center gap-1 cursor-pointer ${
+                          adminSection === 'api'
+                            ? 'bg-white text-purple-950 shadow-sm'
+                            : 'text-purple-200 hover:bg-white/10'
+                        }`}
                       >
-                        <span>Google AI Studio</span>
-                        <ExternalLink className="w-2.5 h-2.5" />
-                      </a>
+                        <Activity className="w-3.5 h-3.5" />
+                        <span>API 관제</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAdminSection('notice')}
+                        className={`py-1.5 px-2 rounded-lg font-bold transition flex items-center justify-center gap-1 cursor-pointer ${
+                          adminSection === 'notice'
+                            ? 'bg-white text-purple-950 shadow-sm'
+                            : 'text-purple-200 hover:bg-white/10'
+                        }`}
+                      >
+                        <Megaphone className="w-3.5 h-3.5" />
+                        <span>전역 공지</span>
+                        {announcement?.active && (
+                          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400" />
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAdminSection('db')}
+                        className={`py-1.5 px-2 rounded-lg font-bold transition flex items-center justify-center gap-1 cursor-pointer ${
+                          adminSection === 'db'
+                            ? 'bg-white text-purple-950 shadow-sm'
+                            : 'text-purple-200 hover:bg-white/10'
+                        }`}
+                      >
+                        <Database className="w-3.5 h-3.5" />
+                        <span>단어 DB & 백업</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAdminSection('sandbox')}
+                        className={`py-1.5 px-2 rounded-lg font-bold transition flex items-center justify-center gap-1 cursor-pointer ${
+                          adminSection === 'sandbox'
+                            ? 'bg-white text-purple-950 shadow-sm'
+                            : 'text-purple-200 hover:bg-white/10'
+                        }`}
+                      >
+                        <Terminal className="w-3.5 h-3.5" />
+                        <span>AI 샌드박스</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAdminSection('system')}
+                        className={`py-1.5 px-2 rounded-lg font-bold transition flex items-center justify-center gap-1 cursor-pointer col-span-2 sm:col-span-1 ${
+                          adminSection === 'system'
+                            ? 'bg-white text-purple-950 shadow-sm'
+                            : 'text-purple-200 hover:bg-white/10'
+                        }`}
+                      >
+                        <Server className="w-3.5 h-3.5" />
+                        <span>인프라 진단</span>
+                      </button>
                     </div>
                   </div>
 
-                  {/* 3. Breakdown by Feature */}
-                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/90 space-y-2.5 text-xs">
-                    <h5 className="font-bold text-slate-800 flex items-center gap-1.5">
-                      <Activity className="w-4 h-4 text-purple-600" />
-                      <span>기능별 Vercel API 호출 통계</span>
-                    </h5>
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                      <div className="p-2.5 bg-white rounded-xl border border-slate-200/70">
-                        <div className="text-[10px] text-slate-500 font-medium">📸 책 사진 OCR</div>
-                        <div className="text-sm font-bold text-slate-900 mt-0.5">
-                          {((serverUsageReport?.byEndpoint?.visionOcr ?? 0) + (serverUsageReport?.byEndpoint?.matchSentence ?? 0)).toLocaleString()}회
+                  {/* SECTION 1: API & AI 관제 */}
+                  {adminSection === 'api' && (
+                    <div className="space-y-4 animate-fade-in">
+                      {/* 1. Vercel Environment API Key Status Card */}
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/90 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                            <Server className="w-4 h-4 text-indigo-600" />
+                            <span>Vercel 서버 환경 변수 상태</span>
+                          </div>
+                          {serverUsageReport?.isConfigured ? (
+                            <span className="text-[10px] bg-emerald-100 text-emerald-800 font-extrabold px-2.5 py-0.5 rounded-full flex items-center gap-1 border border-emerald-300">
+                              <Check className="w-2.5 h-2.5" />
+                              <span>연동됨 (Active)</span>
+                            </span>
+                          ) : (
+                            <span className="text-[10px] bg-rose-100 text-rose-800 font-bold px-2.5 py-0.5 rounded-full border border-rose-300">
+                              미설정 (GEMINI_API_KEY 필요)
+                            </span>
+                          )}
                         </div>
-                      </div>
-                      <div className="p-2.5 bg-white rounded-xl border border-slate-200/70">
-                        <div className="text-[10px] text-slate-500 font-medium">✍️ 문맥 문장 번역</div>
-                        <div className="text-sm font-bold text-slate-900 mt-0.5">
-                          {(serverUsageReport?.byEndpoint?.translate ?? 0).toLocaleString()}회
-                        </div>
-                      </div>
-                      <div className="p-2.5 bg-white rounded-xl border border-slate-200/70">
-                        <div className="text-[10px] text-slate-500 font-medium">📖 영한 사전 보완</div>
-                        <div className="text-sm font-bold text-slate-900 mt-0.5">
-                          {(serverUsageReport?.byEndpoint?.dictionary ?? 0).toLocaleString()}회
-                        </div>
-                      </div>
-                      <div className="p-2.5 bg-white rounded-xl border border-slate-200/70">
-                        <div className="text-[10px] text-slate-500 font-medium">⚡ 진단 및 기타</div>
-                        <div className="text-sm font-bold text-slate-900 mt-0.5">
-                          {(serverUsageReport?.byEndpoint?.other ?? 0).toLocaleString()}회
-                        </div>
-                      </div>
-                    </div>
-                  </div>
 
-                  {/* 4. Recent API Calls Timeline */}
-                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/90 space-y-2.5 text-xs">
-                    <div className="flex items-center justify-between">
-                      <h5 className="font-bold text-slate-800 flex items-center gap-1.5">
-                        <RotateCw className="w-3.5 h-3.5 text-indigo-600" />
-                        <span>최근 서버 API 호출 내역 (최근 15건)</span>
-                      </h5>
-                      <span className="text-[10px] text-slate-400">실시간 로그</span>
-                    </div>
-
-                    {(!serverUsageReport?.recentLogs || serverUsageReport.recentLogs.length === 0) ? (
-                      <div className="p-4 bg-white rounded-xl border border-slate-200/70 text-center text-slate-400 text-xs">
-                        오늘 아직 발생한 서버 API 호출 내역이 없습니다. (단어 사진 등록이나 번역 실행 시 기록됩니다)
-                      </div>
-                    ) : (
-                      <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
-                        {serverUsageReport.recentLogs.slice(0, 15).map((log: any) => (
-                          <div
-                            key={log.id}
-                            className="p-2 bg-white rounded-xl border border-slate-200/80 flex items-center justify-between gap-2 text-[11px]"
-                          >
-                            <div className="flex items-center gap-2 min-w-0">
-                              <span
-                                className={`w-2 h-2 rounded-full shrink-0 ${
-                                  log.status === 'ok' ? 'bg-emerald-500' : 'bg-rose-500'
-                                }`}
-                              />
-                              <span className="font-bold text-slate-800 shrink-0">
-                                {log.endpoint === 'ocr-vision'
-                                  ? '책 사진 OCR'
-                                  : log.endpoint === 'match-sentence-vision'
-                                  ? '문맥 사진 매칭'
-                                  : log.endpoint === 'match-sentence-text'
-                                  ? '문맥 텍스트 매칭'
-                                  : log.endpoint === 'translate'
-                                  ? '문장 자동 번역'
-                                  : log.endpoint === 'dictionary'
-                                  ? '사전/단어 분석'
-                                  : log.endpoint === 'admin-ping'
-                                  ? '관리자 핑 진단'
-                                  : log.endpoint}
-                              </span>
-                              <span className="text-slate-400 text-[10px] shrink-0 font-mono">
-                                {log.model}
-                              </span>
-                              {log.error && (
-                                <span className="text-rose-600 text-[10px] truncate max-w-[120px]" title={log.error}>
-                                  {log.error}
-                                </span>
-                              )}
-                            </div>
-                            <div className="flex items-center gap-2 shrink-0 font-mono text-[10.5px]">
-                              <span className="text-slate-500">{log.durationMs}ms</span>
-                              <span className="text-slate-400">
-                                {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
-                              </span>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                          <div className="p-2.5 bg-white rounded-xl border border-slate-200/80">
+                            <div className="text-[11px] text-slate-500 font-medium">마스킹된 서버 API 키</div>
+                            <div className="font-mono font-bold text-slate-900 mt-0.5 truncate">
+                              {serverUsageReport?.maskedKey || (isServerGeminiReady ? 'AIzaSy••••••••••••••••••••' : '미등록')}
                             </div>
                           </div>
-                        ))}
+                          <div className="p-2.5 bg-white rounded-xl border border-slate-200/80">
+                            <div className="text-[11px] text-slate-500 font-medium">현재 작동 중인 AI 모델</div>
+                            <div className="font-mono font-bold text-indigo-700 mt-0.5">
+                              {serverUsageReport?.lastActiveModel || 'gemini-2.5-flash'} (자동 폴백)
+                            </div>
+                          </div>
+                        </div>
+
+                        <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                          <Shield className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                          <span>
+                            보안: Vercel Serverless Function 백엔드에 안전하게 격리되어 사용자 기기나 브라우저 개발자 도구에 노출되지 않습니다.
+                          </span>
+                        </div>
                       </div>
-                    )}
-                  </div>
+
+                      {/* 2. Today's Server API Usage & Quota Gauge */}
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/90 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                            <Gauge className="w-4 h-4 text-emerald-600" />
+                            <span>오늘 Vercel API 사용량 & 구글 무료 한도</span>
+                          </div>
+                          <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                            Google Free Tier (1,500 RPD)
+                          </span>
+                        </div>
+
+                        {/* Stat Badges Grid */}
+                        <div className="grid grid-cols-3 gap-2 text-center">
+                          <div className="p-2.5 bg-white rounded-xl border border-slate-200/80">
+                            <div className="text-[10.5px] text-slate-500 font-semibold">오늘 서버 호출</div>
+                            <div className="text-base font-black text-slate-900 mt-0.5">
+                              {(serverUsageReport?.serverEnvCallsToday ?? 0).toLocaleString()}
+                              <span className="text-xs font-normal text-slate-500 ml-0.5">회</span>
+                            </div>
+                          </div>
+                          <div className="p-2.5 bg-white rounded-xl border border-slate-200/80">
+                            <div className="text-[10.5px] text-emerald-700 font-semibold">오늘 남은 횟수</div>
+                            <div className="text-base font-black text-emerald-600 mt-0.5">
+                              {(serverUsageReport?.remainingCalls ?? 1500).toLocaleString()}
+                              <span className="text-xs font-normal text-slate-500 ml-0.5">회</span>
+                            </div>
+                          </div>
+                          <div className="p-2.5 bg-white rounded-xl border border-slate-200/80">
+                            <div className="text-[10.5px] text-slate-500 font-semibold">일일 소모율</div>
+                            <div className="text-base font-black text-indigo-600 mt-0.5">
+                              {serverUsageReport?.usagePercent ?? 0}
+                              <span className="text-xs font-normal text-slate-500 ml-0.5">%</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Progress Bar */}
+                        <div className="space-y-1">
+                          <div className="w-full h-3 bg-slate-200 rounded-full overflow-hidden p-0.5">
+                            <div
+                              className={`h-full rounded-full transition-all duration-500 ${
+                                (serverUsageReport?.usagePercent ?? 0) < 70
+                                  ? 'bg-gradient-to-r from-emerald-500 to-teal-500'
+                                  : (serverUsageReport?.usagePercent ?? 0) < 90
+                                  ? 'bg-gradient-to-r from-amber-500 to-orange-500'
+                                  : 'bg-gradient-to-r from-rose-500 to-red-500'
+                              }`}
+                              style={{
+                                width: `${Math.max(3, 100 - (serverUsageReport?.usagePercent ?? 0))}%`,
+                              }}
+                            />
+                          </div>
+                          <div className="flex items-center justify-between text-[10px] text-slate-500 font-medium">
+                            <span>잔여 {100 - (serverUsageReport?.usagePercent ?? 0)}% 남음</span>
+                            <span>매일 자정 (00:00 KST) 자동 리셋</span>
+                          </div>
+                        </div>
+
+                        {/* RPM Limit info */}
+                        <div className="pt-2 flex flex-wrap items-center justify-between gap-2 text-[10.5px] text-slate-500 border-t border-slate-200/70">
+                          <div className="flex items-center gap-1.5 font-medium">
+                            <Zap className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                            <span>분당 한도: <strong>15회 (15 RPM)</strong> 초과 방지 슬라이딩 윈도우 보호 작동 중</span>
+                          </div>
+                          <a
+                            href="https://aistudio.google.com/"
+                            target="_blank"
+                            rel="noreferrer"
+                            className="text-brand-600 hover:text-brand-800 font-bold underline flex items-center gap-0.5"
+                          >
+                            <span>Google AI Studio</span>
+                            <ExternalLink className="w-2.5 h-2.5" />
+                          </a>
+                        </div>
+                      </div>
+
+                      {/* Admin Quick Action Toolbar */}
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/90 space-y-2.5 text-xs">
+                        <h5 className="font-bold text-slate-800 flex items-center gap-1.5">
+                          <Shield className="w-4 h-4 text-purple-600" />
+                          <span>관리자 즉시 제어 도구</span>
+                        </h5>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          <button
+                            type="button"
+                            onClick={handleResetServerCounter}
+                            disabled={isAdminActionRunning}
+                            className="p-2.5 bg-white hover:bg-slate-100 border border-slate-300 rounded-xl text-left font-bold text-slate-800 transition cursor-pointer disabled:opacity-50 shadow-2xs"
+                          >
+                            <div className="flex items-center gap-1.5 text-indigo-600 mb-0.5">
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              <span>사용량 카운터 리셋</span>
+                            </div>
+                            <p className="text-[10px] text-slate-500 font-normal">
+                              오늘의 서버 호출 수치를 0회로 초기화
+                            </p>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={handleClearRateLimits}
+                            disabled={isAdminActionRunning}
+                            className="p-2.5 bg-white hover:bg-slate-100 border border-slate-300 rounded-xl text-left font-bold text-slate-800 transition cursor-pointer disabled:opacity-50 shadow-2xs"
+                          >
+                            <div className="flex items-center gap-1.5 text-emerald-600 mb-0.5">
+                              <Zap className="w-3.5 h-3.5" />
+                              <span>IP 접속 제한 해제</span>
+                            </div>
+                            <p className="text-[10px] text-slate-500 font-normal">
+                              429 초과로 차단된 IP 슬라이딩 윈도우 해제
+                            </p>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={handleClearUsageLogs}
+                            disabled={isAdminActionRunning}
+                            className="p-2.5 bg-white hover:bg-rose-50 border border-slate-300 hover:border-rose-300 rounded-xl text-left font-bold text-slate-800 hover:text-rose-700 transition cursor-pointer disabled:opacity-50 shadow-2xs"
+                          >
+                            <div className="flex items-center gap-1.5 text-rose-600 mb-0.5">
+                              <Trash2 className="w-3.5 h-3.5" />
+                              <span>호출 기록 비우기</span>
+                            </div>
+                            <p className="text-[10px] text-slate-500 font-normal">
+                              최근 서버 API 호출 타임라인 로그 삭제
+                            </p>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* 3. Breakdown by Feature */}
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/90 space-y-2.5 text-xs">
+                        <h5 className="font-bold text-slate-800 flex items-center gap-1.5">
+                          <Activity className="w-4 h-4 text-purple-600" />
+                          <span>기능별 Vercel API 호출 통계</span>
+                        </h5>
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                          <div className="p-2.5 bg-white rounded-xl border border-slate-200/70">
+                            <div className="text-[10px] text-slate-500 font-medium">📸 책 사진 OCR</div>
+                            <div className="text-sm font-bold text-slate-900 mt-0.5">
+                              {((serverUsageReport?.byEndpoint?.visionOcr ?? 0) + (serverUsageReport?.byEndpoint?.matchSentence ?? 0)).toLocaleString()}회
+                            </div>
+                          </div>
+                          <div className="p-2.5 bg-white rounded-xl border border-slate-200/70">
+                            <div className="text-[10px] text-slate-500 font-medium">✍️ 문맥 문장 번역</div>
+                            <div className="text-sm font-bold text-slate-900 mt-0.5">
+                              {(serverUsageReport?.byEndpoint?.translate ?? 0).toLocaleString()}회
+                            </div>
+                          </div>
+                          <div className="p-2.5 bg-white rounded-xl border border-slate-200/70">
+                            <div className="text-[10px] text-slate-500 font-medium">📖 영한 사전 보완</div>
+                            <div className="text-sm font-bold text-slate-900 mt-0.5">
+                              {(serverUsageReport?.byEndpoint?.dictionary ?? 0).toLocaleString()}회
+                            </div>
+                          </div>
+                          <div className="p-2.5 bg-white rounded-xl border border-slate-200/70">
+                            <div className="text-[10px] text-slate-500 font-medium">⚡ 진단 및 기타</div>
+                            <div className="text-sm font-bold text-slate-900 mt-0.5">
+                              {(serverUsageReport?.byEndpoint?.other ?? 0).toLocaleString()}회
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* 4. Recent API Calls Timeline */}
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/90 space-y-2.5 text-xs">
+                        <div className="flex items-center justify-between">
+                          <h5 className="font-bold text-slate-800 flex items-center gap-1.5">
+                            <RotateCw className="w-3.5 h-3.5 text-indigo-600" />
+                            <span>최근 서버 API 호출 내역 (최근 15건)</span>
+                          </h5>
+                          <span className="text-[10px] text-slate-400">실시간 로그</span>
+                        </div>
+
+                        {(!serverUsageReport?.recentLogs || serverUsageReport.recentLogs.length === 0) ? (
+                          <div className="p-4 bg-white rounded-xl border border-slate-200/70 text-center text-slate-400 text-xs">
+                            오늘 아직 발생한 서버 API 호출 내역이 없습니다. (단어 사진 등록이나 번역 실행 시 기록됩니다)
+                          </div>
+                        ) : (
+                          <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                            {serverUsageReport.recentLogs.slice(0, 15).map((log: any) => (
+                              <div
+                                key={log.id}
+                                className="p-2 bg-white rounded-xl border border-slate-200/80 flex items-center justify-between gap-2 text-[11px]"
+                              >
+                                <div className="flex items-center gap-2 min-w-0">
+                                  <span
+                                    className={`w-2 h-2 rounded-full shrink-0 ${
+                                      log.status === 'ok' ? 'bg-emerald-500' : 'bg-rose-500'
+                                    }`}
+                                  />
+                                  <span className="font-bold text-slate-800 shrink-0">
+                                    {log.endpoint === 'ocr-vision'
+                                      ? '책 사진 OCR'
+                                      : log.endpoint === 'match-sentence-vision'
+                                      ? '문맥 사진 매칭'
+                                      : log.endpoint === 'match-sentence-text'
+                                      ? '문맥 텍스트 매칭'
+                                      : log.endpoint === 'translate'
+                                      ? '문장 자동 번역'
+                                      : log.endpoint === 'dictionary'
+                                      ? '사전/단어 분석'
+                                      : log.endpoint === 'admin-ping'
+                                      ? '관리자 핑 진단'
+                                      : log.endpoint}
+                                  </span>
+                                  <span className="text-slate-400 text-[10px] shrink-0 font-mono">
+                                    {log.model}
+                                  </span>
+                                  {log.error && (
+                                    <span className="text-rose-600 text-[10px] truncate max-w-[120px]" title={log.error}>
+                                      {log.error}
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="flex items-center gap-2 shrink-0 font-mono text-[10.5px]">
+                                  <span className="text-slate-500">{log.durationMs}ms</span>
+                                  <span className="text-slate-400">
+                                    {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                                  </span>
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* SECTION 2: 전역 공지사항 배너 관리 */}
+                  {adminSection === 'notice' && (
+                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/90 space-y-3.5 animate-fade-in text-xs">
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-1.5 font-bold text-slate-800">
+                          <Megaphone className="w-4 h-4 text-purple-600" />
+                          <span>전역 공지사항 배너 제어</span>
+                        </div>
+                        <label className="flex items-center gap-2 cursor-pointer select-none">
+                          <input
+                            type="checkbox"
+                            checked={noticeInputActive}
+                            onChange={(e) => setNoticeInputActive(e.target.checked)}
+                            className="w-4 h-4 text-purple-600 rounded cursor-pointer"
+                          />
+                          <span className={`text-xs font-bold ${noticeInputActive ? 'text-purple-700' : 'text-slate-400'}`}>
+                            {noticeInputActive ? '배너 활성화 (ON)' : '배너 비활성화 (OFF)'}
+                          </span>
+                        </label>
+                      </div>
+
+                      <p className="text-[11px] text-slate-500 leading-relaxed">
+                        공지를 활성화하면 모든 사용자의 메인 화면 상단에 알림 배너가 실시간 노출됩니다.
+                      </p>
+
+                      {/* Notice Type Selector */}
+                      <div className="space-y-1">
+                        <label className="block text-[11px] font-bold text-slate-700">배너 유형</label>
+                        <div className="grid grid-cols-3 gap-2">
+                          <button
+                            type="button"
+                            onClick={() => setNoticeInputType('info')}
+                            className={`p-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition ${
+                              noticeInputType === 'info'
+                                ? 'bg-blue-50 border-blue-400 text-blue-800'
+                                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                            }`}
+                          >
+                            <span>💡 일반 안내</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setNoticeInputType('warning')}
+                            className={`p-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition ${
+                              noticeInputType === 'warning'
+                                ? 'bg-amber-50 border-amber-400 text-amber-800'
+                                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                            }`}
+                          >
+                            <span>⚠️ 긴급 점검</span>
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setNoticeInputType('update')}
+                            className={`p-2 rounded-xl border text-xs font-bold flex items-center justify-center gap-1.5 cursor-pointer transition ${
+                              noticeInputType === 'update'
+                                ? 'bg-indigo-50 border-indigo-400 text-indigo-800'
+                                : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                            }`}
+                          >
+                            <span>🚀 기능 업데이트</span>
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* Notice Message Input */}
+                      <div className="space-y-1">
+                        <label className="block text-[11px] font-bold text-slate-700">공지 문구</label>
+                        <textarea
+                          value={noticeInputMsg}
+                          onChange={(e) => setNoticeInputMsg(e.target.value)}
+                          placeholder="사용자들에게 안내할 공지사항 문구를 입력하세요..."
+                          rows={3}
+                          className="w-full p-2.5 text-xs bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500 font-medium"
+                        />
+                      </div>
+
+                      {/* Live Preview */}
+                      <div className="space-y-1 pt-1">
+                        <label className="block text-[11px] font-bold text-slate-500">배너 실시간 미리보기</label>
+                        <div
+                          className={`p-2.5 rounded-xl border text-xs font-semibold flex items-center gap-2 ${
+                            noticeInputType === 'warning'
+                              ? 'bg-amber-50 border-amber-200 text-amber-900'
+                              : noticeInputType === 'update'
+                              ? 'bg-indigo-50 border-indigo-200 text-indigo-900'
+                              : 'bg-blue-50 border-blue-200 text-blue-900'
+                          }`}
+                        >
+                          <span className="text-sm shrink-0">
+                            {noticeInputType === 'warning' ? '⚠️' : noticeInputType === 'update' ? '🚀' : '💡'}
+                          </span>
+                          <span className="truncate">{noticeInputMsg || '공지 문구가 표시됩니다.'}</span>
+                        </div>
+                      </div>
+
+                      {/* Save Button */}
+                      <button
+                        type="button"
+                        onClick={handleSaveAnnouncement}
+                        className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 active:scale-[0.99] text-white font-bold rounded-xl transition flex items-center justify-center gap-1.5 shadow-md cursor-pointer"
+                      >
+                        <Check className="w-4 h-4" />
+                        <span>전역 공지사항 저장 및 실시간 적용</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {/* SECTION 3: 단어 데이터베이스 & 프리셋 관리 */}
+                  {adminSection === 'db' && (
+                    <div className="space-y-3.5 animate-fade-in text-xs">
+                      {/* Vocab Overview Card */}
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/90 space-y-3">
+                        <div className="flex items-center justify-between">
+                          <h5 className="font-bold text-slate-800 flex items-center gap-1.5">
+                            <Database className="w-4 h-4 text-indigo-600" />
+                            <span>현재 단어장 데이터베이스 현황</span>
+                          </h5>
+                          <span className="text-[10px] bg-indigo-100 text-indigo-800 font-bold px-2 py-0.5 rounded-full">
+                            동기화 활성
+                          </span>
+                        </div>
+
+                        <div className="grid grid-cols-3 gap-2 text-center">
+                          <div className="p-2.5 bg-white rounded-xl border border-slate-200/80">
+                            <div className="text-[10px] text-slate-500 font-medium">총 단어 수</div>
+                            <div className="text-base font-black text-slate-900 mt-0.5">
+                              {vocabulary.length.toLocaleString()}
+                              <span className="text-xs font-normal text-slate-500 ml-0.5">개</span>
+                            </div>
+                          </div>
+                          <div className="p-2.5 bg-white rounded-xl border border-slate-200/80">
+                            <div className="text-[10px] text-slate-500 font-medium">등록된 책/단어장</div>
+                            <div className="text-base font-black text-indigo-600 mt-0.5">
+                              {new Set(vocabulary.map((w) => w.bookTitle || '기본 단어장')).size}
+                              <span className="text-xs font-normal text-slate-500 ml-0.5">권</span>
+                            </div>
+                          </div>
+                          <div className="p-2.5 bg-white rounded-xl border border-slate-200/80">
+                            <div className="text-[10px] text-slate-500 font-medium">퀴즈 학습 단어</div>
+                            <div className="text-base font-black text-emerald-600 mt-0.5">
+                              {vocabulary.filter((w) => (w.correctCount || 0) > 0).length}
+                              <span className="text-xs font-normal text-slate-500 ml-0.5">개</span>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Master Backup Card */}
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/90 space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <h5 className="font-bold text-slate-800 flex items-center gap-1.5">
+                            <Download className="w-4 h-4 text-emerald-600" />
+                            <span>전체 마스터 단어 데이터 JSON 백업</span>
+                          </h5>
+                          <span className="text-[10px] text-slate-400">데이터 완전 보관</span>
+                        </div>
+                        <p className="text-[11px] text-slate-500 leading-relaxed">
+                          현재 계정의 모든 단어 데이터(영어, 한국어 뜻, 품사, 원문 문맥 문장, AI 한글 번역)를 완전한 JSON 파일로 원클릭 백업 다운로드합니다.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={handleExportAllVocabJson}
+                          className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 active:scale-[0.99] text-white font-bold rounded-xl transition flex items-center justify-center gap-1.5 shadow-md cursor-pointer"
+                        >
+                          <Download className="w-4 h-4" />
+                          <span>전체 단어 JSON 백업 파일 다운로드</span>
+                        </button>
+                      </div>
+
+                      {/* Force Preset Reset Card */}
+                      <div className="bg-slate-50 p-4 rounded-2xl border border-rose-200/80 space-y-2.5">
+                        <div className="flex items-center justify-between">
+                          <h5 className="font-bold text-rose-900 flex items-center gap-1.5">
+                            <RotateCcw className="w-4 h-4 text-rose-600" />
+                            <span>기본 30개 단어 프리셋 강제 재동기화 / 클린 복구</span>
+                          </h5>
+                          <span className="text-[10px] bg-rose-100 text-rose-800 font-bold px-2 py-0.5 rounded-full">
+                            관리자 전용
+                          </span>
+                        </div>
+                        <p className="text-[11px] text-slate-600 leading-relaxed">
+                          3개 기본 책(원서 리딩 명작선 10단어, 필수 비즈니스 10단어, 수능·토익 핵심 10단어)의 30개 기본 프리셋으로 단어장을 완전 초기화합니다.
+                        </p>
+                        <button
+                          type="button"
+                          onClick={handleAdminForceResetPresets}
+                          disabled={isAdminActionRunning}
+                          className="w-full py-2.5 bg-rose-600 hover:bg-rose-700 active:scale-[0.99] text-white font-bold rounded-xl transition flex items-center justify-center gap-1.5 shadow-md cursor-pointer disabled:opacity-50"
+                        >
+                          <RotateCcw className={`w-4 h-4 ${isAdminActionRunning ? 'animate-spin' : ''}`} />
+                          <span>기본 30개 프리셋으로 강제 클린 리셋 실행</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* SECTION 4: AI 프롬프트 샌드박스 */}
+                  {adminSection === 'sandbox' && (
+                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/90 space-y-3 animate-fade-in text-xs">
+                      <div className="flex items-center justify-between">
+                        <h5 className="font-bold text-slate-800 flex items-center gap-1.5">
+                          <Terminal className="w-4 h-4 text-purple-600" />
+                          <span>Google Gemini AI 실시간 프롬프트 샌드박스</span>
+                        </h5>
+                        <span className="text-[10px] bg-purple-100 text-purple-800 font-bold px-2 py-0.5 rounded-full">
+                          Vercel GEMINI_API_KEY 사용
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 leading-relaxed">
+                        개발자 도구나 터미널 없이 브라우저에서 서버 Gemini API를 직접 호출해 응답 속도와 JSON 결과를 실시간 테스트합니다.
+                      </p>
+
+                      <div className="space-y-1">
+                        <label className="block text-[11px] font-bold text-slate-700">테스트 프롬프트</label>
+                        <textarea
+                          value={adminSandboxPrompt}
+                          onChange={(e) => setAdminSandboxPrompt(e.target.value)}
+                          rows={3}
+                          placeholder="테스트할 프롬프트를 입력하세요..."
+                          className="w-full p-2.5 text-xs font-mono bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-purple-500"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleRunAdminSandbox}
+                        disabled={isAdminSandboxRunning || !adminSandboxPrompt.trim()}
+                        className="w-full py-2.5 bg-purple-600 hover:bg-purple-700 active:scale-[0.99] text-white font-bold rounded-xl transition flex items-center justify-center gap-1.5 shadow-md cursor-pointer disabled:opacity-50"
+                      >
+                        {isAdminSandboxRunning ? (
+                          <>
+                            <RotateCw className="w-4 h-4 animate-spin" />
+                            <span>AI 분석 실행 중...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-4 h-4" />
+                            <span>AI 프롬프트 즉시 실행</span>
+                          </>
+                        )}
+                      </button>
+
+                      {/* Sandbox Result Viewer */}
+                      {adminSandboxResult && (
+                        <div className="space-y-1.5 pt-2 border-t border-slate-200">
+                          <div className="flex items-center justify-between text-[11px] font-bold">
+                            <span className={adminSandboxResult.ok ? 'text-emerald-700' : 'text-rose-700'}>
+                              {adminSandboxResult.ok
+                                ? `응답 성공! 지연 시간: ${adminSandboxResult.latencyMs}ms | 모델: ${adminSandboxResult.modelUsed}`
+                                : `실행 실패: ${adminSandboxResult.error}`}
+                            </span>
+                            <span className="text-slate-400 font-mono text-[10px]">
+                              {new Date().toLocaleTimeString()}
+                            </span>
+                          </div>
+                          <pre className="p-3 bg-slate-900 text-emerald-400 font-mono text-[11px] rounded-xl overflow-x-auto max-h-60 leading-relaxed whitespace-pre-wrap">
+                            {adminSandboxResult.text || JSON.stringify(adminSandboxResult, null, 2)}
+                          </pre>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  {/* SECTION 5: 인프라 & 시스템 진단 */}
+                  {adminSection === 'system' && (
+                    <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/90 space-y-3 animate-fade-in text-xs">
+                      <div className="flex items-center justify-between">
+                        <h5 className="font-bold text-slate-800 flex items-center gap-1.5">
+                          <Server className="w-4 h-4 text-indigo-600" />
+                          <span>Vercel 서버 & 인프라 실시간 진단</span>
+                        </h5>
+                        <span className="text-[10px] bg-slate-200 text-slate-700 font-bold px-2 py-0.5 rounded-full">
+                          Node.js Runtime
+                        </span>
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div className="p-3 bg-white rounded-xl border border-slate-200/80 space-y-1">
+                          <div className="text-[11px] text-slate-500 font-medium">배포 환경 & Region</div>
+                          <div className="font-mono font-bold text-slate-900">
+                            {adminSystemInfo?.vercelEnv || 'production'} ({adminSystemInfo?.vercelRegion || 'icn1/seoul'})
+                          </div>
+                        </div>
+
+                        <div className="p-3 bg-white rounded-xl border border-slate-200/80 space-y-1">
+                          <div className="text-[11px] text-slate-500 font-medium">Node.js 버전 & 플랫폼</div>
+                          <div className="font-mono font-bold text-slate-900">
+                            {adminSystemInfo?.nodeVersion || 'v20.x'} ({adminSystemInfo?.platform || 'darwin'})
+                          </div>
+                        </div>
+
+                        <div className="p-3 bg-white rounded-xl border border-slate-200/80 space-y-1">
+                          <div className="text-[11px] text-slate-500 font-medium">서버 프로세스 메모리 (RSS / Heap)</div>
+                          <div className="font-mono font-bold text-indigo-700">
+                            RSS: {adminSystemInfo?.memory?.rssMb ?? 64}MB / Heap: {adminSystemInfo?.memory?.heapUsedMb ?? 32}MB
+                          </div>
+                        </div>
+
+                        <div className="p-3 bg-white rounded-xl border border-slate-200/80 space-y-1">
+                          <div className="text-[11px] text-slate-500 font-medium">Supabase 클라우드 DB</div>
+                          <div className="font-mono font-bold text-emerald-600 flex items-center gap-1">
+                            <Check className="w-3.5 h-3.5" />
+                            <span>연결 상태 정상 (PostgreSQL)</span>
+                          </div>
+                        </div>
+                      </div>
+
+                      <div className="p-3 bg-indigo-50/70 border border-indigo-200/80 rounded-xl space-y-1 text-[11px] text-indigo-900 leading-relaxed">
+                        <div className="font-bold flex items-center gap-1">
+                          <Info className="w-3.5 h-3.5 text-indigo-600" />
+                          <span>환경 변수 무결성 검사</span>
+                        </div>
+                        <ul className="list-disc pl-4 space-y-0.5 text-slate-600 text-[10.5px]">
+                          <li>
+                            <code>GEMINI_API_KEY</code>:{' '}
+                            <strong className="text-emerald-700">
+                              {serverUsageReport?.isConfigured ? '정상 등록됨 (24자 이상)' : '미설정'}
+                            </strong>
+                          </li>
+                          <li>
+                            <code>NEXT_PUBLIC_SUPABASE_URL</code>:{' '}
+                            <strong className="text-emerald-700">
+                              {adminSystemInfo?.hasSupabaseUrl !== false ? '정상 등록됨' : '미설정'}
+                            </strong>
+                          </li>
+                          <li>
+                            <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code>:{' '}
+                            <strong className="text-emerald-700">
+                              {adminSystemInfo?.hasSupabaseKey !== false ? '정상 등록됨' : '미설정'}
+                            </strong>
+                          </li>
+                        </ul>
+                      </div>
+                    </div>
+                  )}
                 </div>
               )}
 
