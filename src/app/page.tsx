@@ -5858,22 +5858,24 @@ export default function Home() {
         </div>
       )}
 
-      {/* Floating Animated Toast Notification */}
+      {/* Floating Animated Toast Notification (Bottom placed to never cover top tabs or header) */}
       {toast && (
-        <div className="fixed top-6 inset-x-0 z-[9999] flex justify-center pointer-events-none px-4">
-          <div className="pointer-events-auto bg-slate-900/95 text-white px-5 py-3.5 rounded-2xl shadow-2xl border border-slate-700/60 backdrop-blur-md flex items-center gap-3.5 max-w-md w-full animate-fade-in">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-amber-400 to-rose-400 flex items-center justify-center text-lg shadow-md shrink-0">
+        <div className="fixed bottom-6 sm:bottom-8 inset-x-0 z-[9999] flex justify-center pointer-events-none px-4 pb-[env(safe-area-inset-bottom)]">
+          <div className="pointer-events-auto bg-slate-900/95 text-white px-4 py-3 sm:px-5 sm:py-3.5 rounded-2xl shadow-2xl border border-slate-700/60 backdrop-blur-md flex items-center gap-3 max-w-sm sm:max-w-md w-full animate-fade-in">
+            <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-amber-400 to-rose-400 flex items-center justify-center text-base shadow-md shrink-0">
               🎉
             </div>
             <div className="flex-1 min-w-0">
-              <h4 className="text-sm font-black text-white leading-tight">{toast.title}</h4>
+              <h4 className="text-xs sm:text-sm font-black text-white leading-tight">{toast.title}</h4>
               {toast.subtitle && (
-                <p className="text-[11px] text-slate-300 truncate mt-0.5">{toast.subtitle}</p>
+                <p className="text-[10.5px] sm:text-[11px] text-slate-300 truncate mt-0.5">{toast.subtitle}</p>
               )}
             </div>
             <button
+              type="button"
               onClick={() => setToast(null)}
-              className="text-slate-400 hover:text-white text-xs p-1 rounded-lg"
+              className="text-slate-400 hover:text-white text-xs p-1 rounded-lg cursor-pointer transition hover:bg-slate-800"
+              title="닫기"
             >
               ✕
             </button>
