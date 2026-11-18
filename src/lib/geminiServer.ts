@@ -613,11 +613,19 @@ export async function callGeminiWithFallback(options: {
   }
   candidates.forEach(addCandidateToPool);
 
-  // Start ListModels in parallel at t=0.00s (non-blocking) so live models are ready if 1st model errors or exceeds 3.0s
+  // Start ListModels in parallel at t=0.00s (non-blocking) so live models are ready if 1st model errors, is absent from list, or exceeds 3.0s
   let liveModelsMerged = false;
+  let onLiveModelsReady: ((liveList: GeminiModelCandidate[]) => void) | null = null;
   const liveModelsPromise = fetchLiveOrderedModels(cleanApiKey, attemptLogs).then((liveList) => {
-    liveList.forEach(addCandidateToPool);
+    if (liveList.length > 0) {
+      // Replace candidatePool with verified live models sorted by speed so no non-existent model is ever called
+      candidatePool.length = 0;
+      liveList.forEach(addCandidateToPool);
+    }
     liveModelsMerged = true;
+    if (onLiveModelsReady) {
+      onLiveModelsReady(liveList);
+    }
     return liveList;
   });
 
@@ -657,6 +665,26 @@ export async function callGeminiWithFallback(options: {
         }
       }
       return null;
+    };
+
+    // 목록(ListModels)이 도착했을 때, 처음에 병렬로 먼저 쏜 모델이 가능 리스트에 없으면 3초를 기다리지 않고 즉시(0.08초 시점) 리스트 1순위 모델을 바로 투입!
+    onLiveModelsReady = (liveList: GeminiModelCandidate[]) => {
+      if (resolved || fatalAuthError || liveList.length === 0) return;
+      const liveSet = new Set(liveList.map((m) => m.model));
+      const missingLaunched = Array.from(launchedModels).filter((m) => !liveSet.has(m));
+      if (missingLaunched.length > 0) {
+        missingLaunched.forEach((m) => {
+          unsupportedModelsCache.add(m);
+          if (lastSuccessfulModelName === m) {
+            lastSuccessfulModelName = null;
+          }
+        });
+        const hasAnyValidInFlight = Array.from(launchedModels).some((m) => liveSet.has(m));
+        if (!hasAnyValidInFlight) {
+          attemptLogs.push(`${missingLaunched.join(',')}: 가능 목록에 없음 ➔ 3초 대기 없이 즉시 차순위 투입`);
+          void launchNextModel();
+        }
+      }
     };
 
     const launchNextModel = async () => {
