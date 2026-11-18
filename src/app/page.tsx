@@ -4370,11 +4370,11 @@ export default function Home() {
 
                               <div className="bg-slate-800/70 p-2 rounded-lg border border-slate-700/50 space-y-0.5">
                                 <div className="text-slate-400 font-bold flex items-center justify-between">
-                                  <span>2. 📡 데이터 송수신 (네트워크)</span>
+                                  <span>2. 📡 데이터 송/수신 + 서버 대기</span>
                                   <span className="text-sky-300 font-black">{transferSec.toFixed(2)}초</span>
                                 </div>
                                 <div className="text-[10px] text-slate-400">
-                                  총 시간에서 압축·AI·로컬 처리를 제외한 순수 업/다운로드 시간
+                                  네트워크 업/다운로드 및 Vercel 서버 응답 대기 (서울 icn1)
                                 </div>
                               </div>
                             </div>
