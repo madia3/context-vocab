@@ -699,6 +699,7 @@ Return strictly valid JSON:
 }`;
         const aiRes = await callGeminiWithFallback({
           apiKey: geminiKey,
+          endpoint: 'dictionary',
           parts: [{ text: aiPrompt }],
           responseMimeType: 'application/json',
           temperature: 0.0,

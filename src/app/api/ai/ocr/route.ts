@@ -131,6 +131,7 @@ Output strictly valid JSON in this exact structure without markdown backticks:
 
       const visionRes = await callGeminiWithFallback({
         apiKey,
+        endpoint: 'ocr-vision',
         parts: contentParts,
         temperature: 0.0,
         responseMimeType: 'application/json',
@@ -192,6 +193,7 @@ ${String(fallbackRawText).slice(0, 6000)}
 
       const textRes = await callGeminiWithFallback({
         apiKey,
+        endpoint: 'ocr-text-repair',
         parts: [{ text: repairPrompt }],
         temperature: 0.0,
         responseMimeType: 'application/json',

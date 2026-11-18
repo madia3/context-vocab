@@ -47,6 +47,7 @@ TASK:
 
     const aiRes = await callGeminiWithFallback({
       apiKey,
+      endpoint: 'complete-sentence',
       parts: [{ text: prompt }],
       temperature: 0.2,
       responseMimeType: 'text/plain',

@@ -1,4 +1,6 @@
 import crypto from 'crypto';
+import fs from 'fs';
+import path from 'path';
 
 // Shared server-side Gemini API model configuration, rate limiter & fast fallback caller
 // Optimized to remember the fastest working model and avoid sequential timeout cascades
@@ -126,6 +128,209 @@ export const FAST_GEMINI_CANDIDATES: GeminiModelCandidate[] = [
 // Remember the last model that succeeded so subsequent calls hit the working model on attempt #1
 let lastSuccessfulModelName: string | null = null;
 
+// Server-side Gemini API Usage Tracker (persists across warm serverless lambdas in /tmp)
+export interface ServerUsageLogItem {
+  id: string;
+  timestamp: number;
+  endpoint: string;
+  model: string;
+  status: 'ok' | 'error';
+  durationMs: number;
+  keyType: 'vercel_env' | 'custom_key';
+  error?: string;
+}
+
+export interface ServerUsageReport {
+  isConfigured: boolean;
+  maskedKey: string;
+  keyLength: number;
+  todayDate: string;
+  serverEnvCallsToday: number;
+  customKeyCallsToday: number;
+  totalCallsToday: number;
+  dailyLimit: number;
+  remainingCalls: number;
+  usagePercent: number;
+  rpmLimit: number;
+  lastActiveModel: string | null;
+  lastCallAt: number | null;
+  byEndpoint: {
+    matchSentence: number;
+    visionOcr: number;
+    translate: number;
+    dictionary: number;
+    other: number;
+  };
+  recentLogs: ServerUsageLogItem[];
+}
+
+function getTodayServerDate(): string {
+  const now = new Date();
+  const year = now.getFullYear();
+  const month = String(now.getMonth() + 1).padStart(2, '0');
+  const day = String(now.getDate()).padStart(2, '0');
+  return `${year}-${month}-${day}`;
+}
+
+const USAGE_FILE_PATH = path.join('/tmp', 'cv_gemini_server_usage.json');
+
+interface PersistedServerUsage {
+  todayDate: string;
+  serverEnvCallsToday: number;
+  customKeyCallsToday: number;
+  byEndpoint: {
+    matchSentence: number;
+    visionOcr: number;
+    translate: number;
+    dictionary: number;
+    other: number;
+  };
+  lastActiveModel: string | null;
+  lastCallAt: number | null;
+  recentLogs: ServerUsageLogItem[];
+}
+
+let inMemoryServerUsage: PersistedServerUsage = {
+  todayDate: getTodayServerDate(),
+  serverEnvCallsToday: 0,
+  customKeyCallsToday: 0,
+  byEndpoint: {
+    matchSentence: 0,
+    visionOcr: 0,
+    translate: 0,
+    dictionary: 0,
+    other: 0,
+  },
+  lastActiveModel: null,
+  lastCallAt: null,
+  recentLogs: [],
+};
+
+function loadServerUsage(): PersistedServerUsage {
+  const today = getTodayServerDate();
+  try {
+    if (fs.existsSync(USAGE_FILE_PATH)) {
+      const content = fs.readFileSync(USAGE_FILE_PATH, 'utf8');
+      const parsed = JSON.parse(content);
+      if (parsed && parsed.todayDate === today) {
+        inMemoryServerUsage = parsed;
+        return inMemoryServerUsage;
+      }
+    }
+  } catch {}
+
+  // If new day or file missing, reset for today
+  if (inMemoryServerUsage.todayDate !== today) {
+    inMemoryServerUsage = {
+      todayDate: today,
+      serverEnvCallsToday: 0,
+      customKeyCallsToday: 0,
+      byEndpoint: {
+        matchSentence: 0,
+        visionOcr: 0,
+        translate: 0,
+        dictionary: 0,
+        other: 0,
+      },
+      lastActiveModel: inMemoryServerUsage.lastActiveModel,
+      lastCallAt: inMemoryServerUsage.lastCallAt,
+      recentLogs: [],
+    };
+    saveServerUsage();
+  }
+  return inMemoryServerUsage;
+}
+
+function saveServerUsage() {
+  try {
+    fs.writeFileSync(USAGE_FILE_PATH, JSON.stringify(inMemoryServerUsage), 'utf8');
+  } catch {}
+}
+
+export function recordServerUsage(entry: {
+  isServerKey: boolean;
+  endpoint: string;
+  model: string;
+  status: 'ok' | 'error';
+  durationMs: number;
+  error?: string;
+}) {
+  const usage = loadServerUsage();
+  if (entry.isServerKey) {
+    usage.serverEnvCallsToday += 1;
+  } else {
+    usage.customKeyCallsToday += 1;
+  }
+
+  const ep = (entry.endpoint || '').toLowerCase();
+  if (ep.includes('match') || ep.includes('sentence')) {
+    usage.byEndpoint.matchSentence = (usage.byEndpoint.matchSentence || 0) + 1;
+  } else if (ep.includes('ocr') || ep.includes('vision')) {
+    usage.byEndpoint.visionOcr = (usage.byEndpoint.visionOcr || 0) + 1;
+  } else if (ep.includes('translate')) {
+    usage.byEndpoint.translate = (usage.byEndpoint.translate || 0) + 1;
+  } else if (ep.includes('dict')) {
+    usage.byEndpoint.dictionary = (usage.byEndpoint.dictionary || 0) + 1;
+  } else {
+    usage.byEndpoint.other = (usage.byEndpoint.other || 0) + 1;
+  }
+
+  if (entry.status === 'ok') {
+    usage.lastActiveModel = entry.model;
+  }
+  usage.lastCallAt = Date.now();
+
+  const logItem: ServerUsageLogItem = {
+    id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    timestamp: Date.now(),
+    endpoint: entry.endpoint || 'general',
+    model: entry.model,
+    status: entry.status,
+    durationMs: Math.round(entry.durationMs),
+    keyType: entry.isServerKey ? 'vercel_env' : 'custom_key',
+    error: entry.error ? entry.error.slice(0, 100) : undefined,
+  };
+
+  if (!Array.isArray(usage.recentLogs)) {
+    usage.recentLogs = [];
+  }
+  usage.recentLogs.unshift(logItem);
+  if (usage.recentLogs.length > 30) {
+    usage.recentLogs = usage.recentLogs.slice(0, 30);
+  }
+
+  saveServerUsage();
+}
+
+export function getServerUsageReport(): ServerUsageReport {
+  const usage = loadServerUsage();
+  const serverKey = process.env.GEMINI_API_KEY?.trim() || '';
+  const isConfigured = Boolean(serverKey && serverKey.length >= 10);
+  const maskedKey = isConfigured ? maskGeminiKey(serverKey) : '미설정 (process.env.GEMINI_API_KEY)';
+  const dailyLimit = 1500;
+  const totalCalls = usage.serverEnvCallsToday + usage.customKeyCallsToday;
+  const remainingCalls = Math.max(0, dailyLimit - usage.serverEnvCallsToday);
+  const usagePercent = Math.min(100, Math.round((usage.serverEnvCallsToday / dailyLimit) * 100));
+
+  return {
+    isConfigured,
+    maskedKey,
+    keyLength: serverKey.length,
+    todayDate: usage.todayDate,
+    serverEnvCallsToday: usage.serverEnvCallsToday,
+    customKeyCallsToday: usage.customKeyCallsToday,
+    totalCallsToday: totalCalls,
+    dailyLimit,
+    remainingCalls,
+    usagePercent,
+    rpmLimit: 15,
+    lastActiveModel: usage.lastActiveModel || lastSuccessfulModelName || 'gemini-2.5-flash',
+    lastCallAt: usage.lastCallAt,
+    byEndpoint: usage.byEndpoint,
+    recentLogs: usage.recentLogs || [],
+  };
+}
+
 // Per-IP Sliding Window Rate Limiter (protects API credits & server resources)
 const ipRequestMap = new Map<string, { count: number; resetAt: number }>();
 const RATE_LIMIT_WINDOW_MS = 60 * 1000; // 1 minute
@@ -182,7 +387,8 @@ export async function callGeminiWithFallback(options: {
   responseMimeType?: string;
   maxOutputTokens?: number;
   candidates?: GeminiModelCandidate[];
-}): Promise<{ ok: boolean; text: string; rawData?: any; modelUsed?: string; lastError?: string }> {
+  endpoint?: string;
+}): Promise<{ ok: boolean; text: string; rawData?: any; modelUsed?: string; lastError?: string; durationMs?: number }> {
   const {
     apiKey,
     parts,
@@ -190,9 +396,14 @@ export async function callGeminiWithFallback(options: {
     responseMimeType = 'application/json',
     maxOutputTokens,
     candidates = FAST_GEMINI_CANDIDATES,
+    endpoint = 'general',
   } = options;
 
+  const startTime = Date.now();
   const cleanApiKey = (apiKey || '').trim();
+  const serverEnvKey = process.env.GEMINI_API_KEY?.trim() || '';
+  const isServerKey = Boolean(serverEnvKey && cleanApiKey === serverEnvKey);
+
   if (!cleanApiKey) {
     return { ok: false, text: '', lastError: 'API 키가 비어있습니다.' };
   }
@@ -240,11 +451,20 @@ export async function callGeminiWithFallback(options: {
         const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
         if (text) {
           lastSuccessfulModelName = candidate.model;
+          const durationMs = Date.now() - startTime;
+          recordServerUsage({
+            isServerKey,
+            endpoint,
+            model: candidate.model,
+            status: 'ok',
+            durationMs,
+          });
           return {
             ok: true,
             text,
             rawData: data,
             modelUsed: candidate.model,
+            durationMs,
           };
         }
       } else {
@@ -285,11 +505,20 @@ export async function callGeminiWithFallback(options: {
             const retryText = retryData.candidates?.[0]?.content?.parts?.[0]?.text || '';
             if (retryText) {
               lastSuccessfulModelName = candidate.model;
+              const durationMs = Date.now() - startTime;
+              recordServerUsage({
+                isServerKey,
+                endpoint,
+                model: candidate.model,
+                status: 'ok',
+                durationMs,
+              });
               return {
                 ok: true,
                 text: retryText,
                 rawData: retryData,
                 modelUsed: candidate.model,
+                durationMs,
               };
             }
           }
@@ -301,18 +530,71 @@ export async function callGeminiWithFallback(options: {
   }
 
   // If client-provided key failed due to invalid key or auth error, and server environment has a fallback key, retry once with server env key
-  const serverEnvKey = process.env.GEMINI_API_KEY?.trim();
   if (serverEnvKey && apiKey !== serverEnvKey && (lastError.includes('API_KEY_INVALID') || lastError.includes('401') || lastError.includes('403'))) {
     console.warn('Client-provided Gemini API key failed with auth error, falling back to server GEMINI_API_KEY...');
     return callGeminiWithFallback({
       ...options,
       apiKey: serverEnvKey,
+      endpoint: `${endpoint}-fallback`,
     });
   }
+
+  const durationMs = Date.now() - startTime;
+  recordServerUsage({
+    isServerKey,
+    endpoint,
+    model: orderedCandidates[0]?.model || 'gemini',
+    status: 'error',
+    durationMs,
+    error: lastError,
+  });
 
   return {
     ok: false,
     text: '',
     lastError,
+    durationMs,
+  };
+}
+
+/**
+ * Real-time diagnostic ping test for Vercel process.env.GEMINI_API_KEY
+ */
+export async function pingServerGeminiKey(): Promise<{
+  ok: boolean;
+  serverConfigured: boolean;
+  modelUsed?: string;
+  durationMs: number;
+  error?: string;
+  timestamp: number;
+}> {
+  const serverKey = process.env.GEMINI_API_KEY?.trim() || '';
+  if (!serverKey) {
+    return {
+      ok: false,
+      serverConfigured: false,
+      durationMs: 0,
+      error: 'Vercel 환경 변수에 GEMINI_API_KEY가 등록되어 있지 않습니다.',
+      timestamp: Date.now(),
+    };
+  }
+
+  const startTime = Date.now();
+  const res = await callGeminiWithFallback({
+    apiKey: serverKey,
+    parts: [{ text: 'Ping. Reply OK.' }],
+    temperature: 0.0,
+    responseMimeType: 'text/plain',
+    maxOutputTokens: 5,
+    endpoint: 'admin-ping',
+  });
+
+  return {
+    ok: res.ok,
+    serverConfigured: true,
+    modelUsed: res.modelUsed,
+    durationMs: Date.now() - startTime,
+    error: res.lastError,
+    timestamp: Date.now(),
   };
 }

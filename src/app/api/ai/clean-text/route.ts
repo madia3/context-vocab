@@ -82,6 +82,7 @@ ${rawText.slice(0, 8000)}
 
     const aiRes = await callGeminiWithFallback({
       apiKey,
+      endpoint: 'clean-text',
       parts: [{ text: prompt }],
       temperature: 0.0,
       responseMimeType: 'application/json',

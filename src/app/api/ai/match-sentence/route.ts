@@ -83,6 +83,7 @@ Return strictly valid JSON:
     if (hasImage && cleanBase64) {
       const visionRes = await callGeminiWithFallback({
         apiKey,
+        endpoint: 'match-sentence-vision',
         parts: [
           { text: buildPrompt(true) },
           {
@@ -111,6 +112,7 @@ Return strictly valid JSON:
     if (!rawJsonText && pageText) {
       const textRes = await callGeminiWithFallback({
         apiKey,
+        endpoint: 'match-sentence-text',
         parts: [{ text: buildPrompt(false) }],
         temperature: 0.0,
         responseMimeType: 'application/json',

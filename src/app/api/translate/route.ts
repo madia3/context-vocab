@@ -59,6 +59,7 @@ RULES:
 
       const aiRes = await callGeminiWithFallback({
         apiKey,
+        endpoint: 'translate',
         parts: [{ text: prompt }],
         temperature: 0.1,
         responseMimeType: 'text/plain',

@@ -106,7 +106,11 @@ import {
   CheckSquare,
   Gauge,
   Zap,
+  Activity,
+  Server,
+  Shield,
 } from 'lucide-react';
+import { isUserAdmin } from '@/lib/admin';
 import {
   getAiUsageStats,
   recordAiUsage,
@@ -581,7 +585,7 @@ export default function Home() {
 
   // Settings State
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
-  const [settingsTab, setSettingsTab] = useState<'profile' | 'ai' | 'preferences'>('profile');
+  const [settingsTab, setSettingsTab] = useState<'profile' | 'ai' | 'preferences' | 'admin'>('profile');
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [isTestingKey, setIsTestingKey] = useState(false);
   const [keyTestStatus, setKeyTestStatus] = useState<{ ok: boolean; message: string } | null>(null);
@@ -591,6 +595,12 @@ export default function Home() {
   const [geminiKeyInput, setGeminiKeyInput] = useState('');
   const [isServerGeminiReady, setIsServerGeminiReady] = useState(false);
   const [aiUsageStats, setAiUsageStats] = useState<AiUsageStats>(() => getAiUsageStats());
+
+  // Admin Vercel Server API Usage State (Ashstone3@gmail.com)
+  const [serverUsageReport, setServerUsageReport] = useState<any | null>(null);
+  const [isLoadingServerUsage, setIsLoadingServerUsage] = useState<boolean>(false);
+  const [isPingTesting, setIsPingTesting] = useState<boolean>(false);
+  const [pingResult, setPingResult] = useState<{ ok: boolean; durationMs?: number; modelUsed?: string; error?: string } | null>(null);
 
   useEffect(() => {
     function handleUsageChange() {
@@ -614,6 +624,60 @@ export default function Home() {
   const [isSavingProfile, setIsSavingProfile] = useState(false);
   const avatarFileInputRef = useRef<HTMLInputElement>(null);
 
+  // Admin identity check (case-insensitive)
+  const isAdmin = Boolean(currentUser?.email && isUserAdmin(currentUser.email));
+
+  const fetchServerUsage = useCallback(async () => {
+    if (!currentUser?.email || !isUserAdmin(currentUser.email)) return;
+    setIsLoadingServerUsage(true);
+    try {
+      const res = await fetch(`/api/admin/usage?email=${encodeURIComponent(currentUser.email)}`, {
+        headers: {
+          'x-user-email': currentUser.email,
+        },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data?.ok && data?.report) {
+          setServerUsageReport(data.report);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to fetch server usage:', err);
+    } finally {
+      setIsLoadingServerUsage(false);
+    }
+  }, [currentUser?.email]);
+
+  async function handlePingServerKey() {
+    if (!currentUser?.email || !isUserAdmin(currentUser.email)) return;
+    setIsPingTesting(true);
+    setPingResult(null);
+    try {
+      const res = await fetch('/api/admin/usage', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-user-email': currentUser.email,
+        },
+        body: JSON.stringify({ action: 'ping', email: currentUser.email }),
+      });
+      const data = await res.json();
+      setPingResult(data);
+      fetchServerUsage();
+    } catch (err: any) {
+      setPingResult({ ok: false, error: err?.message || '실시간 진단 실패' });
+    } finally {
+      setIsPingTesting(false);
+    }
+  }
+
+  useEffect(() => {
+    if (isSettingsOpen && isAdmin) {
+      fetchServerUsage();
+    }
+  }, [isSettingsOpen, isAdmin, fetchServerUsage]);
+
   // Computed User Identity for UI Display
   const effectiveAvatar =
     customAvatar ||
@@ -626,7 +690,7 @@ export default function Home() {
     (currentUser?.email ? currentUser.email.split('@')[0] : '게스트 사용자');
 
   // Open settings with a specific tab
-  function openSettingsWithTab(tab: 'profile' | 'ai' | 'preferences') {
+  function openSettingsWithTab(tab: 'profile' | 'ai' | 'preferences' | 'admin') {
     setSettingsTab(tab);
     setIsSettingsOpen(true);
   }
@@ -3272,6 +3336,11 @@ export default function Home() {
                     <span className="hidden sm:inline text-xs font-bold max-w-[85px] truncate">
                       {effectiveDisplayName}
                     </span>
+                    {isAdmin && (
+                      <span className="text-[10px] bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-black px-1.5 py-0.5 rounded-full shadow-2xs">
+                        👑 관리자
+                      </span>
+                    )}
                   </>
                 ) : (
                   <UserIcon className="w-5 h-5 text-slate-700 shrink-0" />
@@ -3302,9 +3371,16 @@ export default function Home() {
                             </div>
                           )}
                           <div className="min-w-0">
-                            <p className="font-bold text-slate-900 truncate">
-                              {effectiveDisplayName}
-                            </p>
+                            <div className="flex items-center gap-1.5">
+                              <p className="font-bold text-slate-900 truncate">
+                                {effectiveDisplayName}
+                              </p>
+                              {isAdmin && (
+                                <span className="text-[9px] bg-purple-100 text-purple-800 font-extrabold px-1.5 py-0.5 rounded-md border border-purple-200">
+                                  👑 관리자
+                                </span>
+                              )}
+                            </div>
                             <p className="text-[11px] text-slate-500 truncate">{currentUser.email}</p>
                           </div>
                         </div>
@@ -3515,6 +3591,25 @@ export default function Home() {
                         </span>
                       )}
                     </button>
+
+                    {isAdmin && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          openSettingsWithTab('admin');
+                          setIsUserMenuOpen(false);
+                        }}
+                        className="w-full text-left px-3 py-2 bg-gradient-to-r from-purple-50 to-indigo-50 hover:from-purple-100 hover:to-indigo-100 text-purple-950 font-bold rounded-xl flex items-center justify-between transition cursor-pointer border border-purple-200/80 shadow-2xs"
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className="text-xs">👑</span>
+                          <span>Vercel 서버 API 모니터링</span>
+                        </div>
+                        <span className="text-[9px] bg-purple-600 text-white font-black px-1.5 py-0.5 rounded-full">
+                          관리자
+                        </span>
+                      </button>
+                    )}
 
                     {currentUser && (
                       <button
@@ -6495,6 +6590,21 @@ export default function Home() {
                   <span className="w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white" />
                 )}
               </button>
+              {isAdmin && (
+                <button
+                  type="button"
+                  onClick={() => setSettingsTab('admin')}
+                  className={`flex-1 py-2.5 px-3 text-xs font-bold border-b-2 flex items-center justify-center gap-1.5 transition cursor-pointer ${
+                    settingsTab === 'admin'
+                      ? 'border-purple-600 text-purple-700 bg-purple-50/40 rounded-t-xl'
+                      : 'border-transparent text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  <span className="text-xs">👑</span>
+                  <span>서버 API 관제</span>
+                  <span className="w-2 h-2 rounded-full bg-purple-500 ring-2 ring-white" />
+                </button>
+              )}
             </div>
 
             {/* Tab Body */}
@@ -6701,6 +6811,30 @@ export default function Home() {
               {/* TAB 2: Google Gemini AI 연동 */}
               {settingsTab === 'ai' && (
                 <div className="space-y-4 animate-fade-in">
+                  {/* Admin Shortcut Banner */}
+                  {isAdmin && (
+                    <div className="p-3 bg-gradient-to-r from-purple-50 via-indigo-50 to-purple-50 rounded-2xl border border-purple-200 flex items-center justify-between gap-2.5 shadow-2xs">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-base shrink-0">👑</span>
+                        <div className="min-w-0 text-[11px] leading-tight">
+                          <span className="font-bold text-purple-900 block">
+                            최고 관리자 계정 ({currentUser?.email}) 인증됨
+                          </span>
+                          <span className="text-purple-700 text-[10.5px]">
+                            Vercel 서버 전역 API 키 실시간 사용량 및 핑 진단이 활성화되어 있습니다.
+                          </span>
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => setSettingsTab('admin')}
+                        className="px-2.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-bold text-[11px] rounded-xl shrink-0 transition shadow-xs cursor-pointer flex items-center gap-1"
+                      >
+                        <span>서버 관제 열기 →</span>
+                      </button>
+                    </div>
+                  )}
+
                   {/* Status Banner */}
                   <div className="bg-brand-50/70 rounded-2xl p-4 border border-brand-200/80 space-y-2 text-xs">
                     <div className="flex items-center justify-between">
@@ -6887,6 +7021,306 @@ export default function Home() {
                         >
                           연동 해제
                         </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* TAB: 👑 Vercel 서버 API 모니터링 (관리자 전용) */}
+              {settingsTab === 'admin' && isAdmin && (
+                <div className="space-y-4 animate-fade-in">
+                  {/* Admin Top Header Card */}
+                  <div className="bg-gradient-to-br from-slate-900 via-purple-950 to-indigo-950 text-white rounded-2xl p-4.5 shadow-lg border border-purple-500/30 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xl">👑</span>
+                        <div>
+                          <h4 className="font-black text-sm text-white flex items-center gap-1.5">
+                            <span>Vercel 서버 GEMINI_API_KEY 실시간 관제</span>
+                            <span className="text-[10px] bg-purple-500/40 text-purple-200 border border-purple-400/40 px-2 py-0.5 rounded-full font-bold">
+                              관리자 전용
+                            </span>
+                          </h4>
+                          <p className="text-[11px] text-purple-200/80">
+                            Vercel 환경 변수에 설정된 전역 Gemini API 키의 호출량과 구글 할당량을 실시간 모니터링합니다.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Refresh & Live Ping Buttons */}
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => fetchServerUsage()}
+                          disabled={isLoadingServerUsage}
+                          className="px-2.5 py-1.5 bg-white/10 hover:bg-white/20 active:scale-95 text-white text-xs font-bold rounded-xl transition flex items-center gap-1.5 border border-white/15 cursor-pointer disabled:opacity-50"
+                          title="서버 통계 새로고침"
+                        >
+                          <RotateCw className={`w-3.5 h-3.5 ${isLoadingServerUsage ? 'animate-spin' : ''}`} />
+                          <span>새로고침</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handlePingServerKey()}
+                          disabled={isPingTesting}
+                          className="px-3 py-1.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 active:scale-95 text-white text-xs font-black rounded-xl transition flex items-center gap-1.5 shadow-md cursor-pointer disabled:opacity-50"
+                        >
+                          {isPingTesting ? (
+                            <>
+                              <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                              <span>진단 중...</span>
+                            </>
+                          ) : (
+                            <>
+                              <Zap className="w-3.5 h-3.5" />
+                              <span>⚡ 실시간 핑 진단</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Live Ping Test Result Toast inside card */}
+                    {pingResult && (
+                      <div
+                        className={`p-2.5 rounded-xl text-xs font-bold flex items-center justify-between gap-2 border animate-fade-in ${
+                          pingResult.ok
+                            ? 'bg-emerald-500/20 border-emerald-400/40 text-emerald-200'
+                            : 'bg-rose-500/20 border-rose-400/40 text-rose-200'
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          {pingResult.ok ? (
+                            <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                          ) : (
+                            <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+                          )}
+                          <span>
+                            {pingResult.ok
+                              ? `정상 응답! Google API 지연 시간: ${pingResult.durationMs}ms | 응답 모델: ${pingResult.modelUsed || 'gemini-2.5-flash'}`
+                              : `진단 실패: ${pingResult.error || '연결 오류'}`}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-white/60">
+                          {new Date().toLocaleTimeString()}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* 1. Vercel Environment API Key Status Card */}
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/90 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                        <Server className="w-4 h-4 text-indigo-600" />
+                        <span>Vercel 서버 환경 변수 상태</span>
+                      </div>
+                      {serverUsageReport?.isConfigured ? (
+                        <span className="text-[10px] bg-emerald-100 text-emerald-800 font-extrabold px-2.5 py-0.5 rounded-full flex items-center gap-1 border border-emerald-300">
+                          <Check className="w-2.5 h-2.5" />
+                          <span>연동됨 (Active)</span>
+                        </span>
+                      ) : (
+                        <span className="text-[10px] bg-rose-100 text-rose-800 font-bold px-2.5 py-0.5 rounded-full border border-rose-300">
+                          미설정 (GEMINI_API_KEY 필요)
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                      <div className="p-2.5 bg-white rounded-xl border border-slate-200/80">
+                        <div className="text-[11px] text-slate-500 font-medium">마스킹된 서버 API 키</div>
+                        <div className="font-mono font-bold text-slate-900 mt-0.5 truncate">
+                          {serverUsageReport?.maskedKey || (isServerGeminiReady ? 'AIzaSy••••••••••••••••••••' : '미등록')}
+                        </div>
+                      </div>
+                      <div className="p-2.5 bg-white rounded-xl border border-slate-200/80">
+                        <div className="text-[11px] text-slate-500 font-medium">현재 작동 중인 AI 모델</div>
+                        <div className="font-mono font-bold text-indigo-700 mt-0.5">
+                          {serverUsageReport?.lastActiveModel || 'gemini-2.5-flash'} (자동 폴백)
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 text-[11px] text-slate-500">
+                      <Shield className="w-3.5 h-3.5 text-emerald-600 shrink-0" />
+                      <span>
+                        보안: Vercel Serverless Function 백엔드에 안전하게 격리되어 사용자 기기나 브라우저 개발자 도구에 노출되지 않습니다.
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 2. Today's Server API Usage & Quota Gauge */}
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/90 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-slate-800">
+                        <Gauge className="w-4 h-4 text-emerald-600" />
+                        <span>오늘 Vercel API 사용량 & 구글 무료 한도</span>
+                      </div>
+                      <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
+                        Google Free Tier (1,500 RPD)
+                      </span>
+                    </div>
+
+                    {/* Stat Badges Grid */}
+                    <div className="grid grid-cols-3 gap-2 text-center">
+                      <div className="p-2.5 bg-white rounded-xl border border-slate-200/80">
+                        <div className="text-[10.5px] text-slate-500 font-semibold">오늘 서버 호출</div>
+                        <div className="text-base font-black text-slate-900 mt-0.5">
+                          {(serverUsageReport?.serverEnvCallsToday ?? 0).toLocaleString()}
+                          <span className="text-xs font-normal text-slate-500 ml-0.5">회</span>
+                        </div>
+                      </div>
+                      <div className="p-2.5 bg-white rounded-xl border border-slate-200/80">
+                        <div className="text-[10.5px] text-emerald-700 font-semibold">오늘 남은 횟수</div>
+                        <div className="text-base font-black text-emerald-600 mt-0.5">
+                          {(serverUsageReport?.remainingCalls ?? 1500).toLocaleString()}
+                          <span className="text-xs font-normal text-slate-500 ml-0.5">회</span>
+                        </div>
+                      </div>
+                      <div className="p-2.5 bg-white rounded-xl border border-slate-200/80">
+                        <div className="text-[10.5px] text-slate-500 font-semibold">일일 소모율</div>
+                        <div className="text-base font-black text-indigo-600 mt-0.5">
+                          {serverUsageReport?.usagePercent ?? 0}
+                          <span className="text-xs font-normal text-slate-500 ml-0.5">%</span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Progress Bar */}
+                    <div className="space-y-1">
+                      <div className="w-full h-3 bg-slate-200 rounded-full overflow-hidden p-0.5">
+                        <div
+                          className={`h-full rounded-full transition-all duration-500 ${
+                            (serverUsageReport?.usagePercent ?? 0) < 70
+                              ? 'bg-gradient-to-r from-emerald-500 to-teal-500'
+                              : (serverUsageReport?.usagePercent ?? 0) < 90
+                              ? 'bg-gradient-to-r from-amber-500 to-orange-500'
+                              : 'bg-gradient-to-r from-rose-500 to-red-500'
+                          }`}
+                          style={{
+                            width: `${Math.max(3, 100 - (serverUsageReport?.usagePercent ?? 0))}%`,
+                          }}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between text-[10px] text-slate-500 font-medium">
+                        <span>잔여 {100 - (serverUsageReport?.usagePercent ?? 0)}% 남음</span>
+                        <span>매일 자정 (00:00 KST) 자동 리셋</span>
+                      </div>
+                    </div>
+
+                    {/* RPM Limit info */}
+                    <div className="pt-2 flex flex-wrap items-center justify-between gap-2 text-[10.5px] text-slate-500 border-t border-slate-200/70">
+                      <div className="flex items-center gap-1.5 font-medium">
+                        <Zap className="w-3.5 h-3.5 text-amber-500 shrink-0" />
+                        <span>분당 한도: <strong>15회 (15 RPM)</strong> 초과 방지 슬라이딩 윈도우 보호 작동 중</span>
+                      </div>
+                      <a
+                        href="https://aistudio.google.com/"
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-brand-600 hover:text-brand-800 font-bold underline flex items-center gap-0.5"
+                      >
+                        <span>Google AI Studio</span>
+                        <ExternalLink className="w-2.5 h-2.5" />
+                      </a>
+                    </div>
+                  </div>
+
+                  {/* 3. Breakdown by Feature */}
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/90 space-y-2.5 text-xs">
+                    <h5 className="font-bold text-slate-800 flex items-center gap-1.5">
+                      <Activity className="w-4 h-4 text-purple-600" />
+                      <span>기능별 Vercel API 호출 통계</span>
+                    </h5>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                      <div className="p-2.5 bg-white rounded-xl border border-slate-200/70">
+                        <div className="text-[10px] text-slate-500 font-medium">📸 책 사진 OCR</div>
+                        <div className="text-sm font-bold text-slate-900 mt-0.5">
+                          {((serverUsageReport?.byEndpoint?.visionOcr ?? 0) + (serverUsageReport?.byEndpoint?.matchSentence ?? 0)).toLocaleString()}회
+                        </div>
+                      </div>
+                      <div className="p-2.5 bg-white rounded-xl border border-slate-200/70">
+                        <div className="text-[10px] text-slate-500 font-medium">✍️ 문맥 문장 번역</div>
+                        <div className="text-sm font-bold text-slate-900 mt-0.5">
+                          {(serverUsageReport?.byEndpoint?.translate ?? 0).toLocaleString()}회
+                        </div>
+                      </div>
+                      <div className="p-2.5 bg-white rounded-xl border border-slate-200/70">
+                        <div className="text-[10px] text-slate-500 font-medium">📖 영한 사전 보완</div>
+                        <div className="text-sm font-bold text-slate-900 mt-0.5">
+                          {(serverUsageReport?.byEndpoint?.dictionary ?? 0).toLocaleString()}회
+                        </div>
+                      </div>
+                      <div className="p-2.5 bg-white rounded-xl border border-slate-200/70">
+                        <div className="text-[10px] text-slate-500 font-medium">⚡ 진단 및 기타</div>
+                        <div className="text-sm font-bold text-slate-900 mt-0.5">
+                          {(serverUsageReport?.byEndpoint?.other ?? 0).toLocaleString()}회
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* 4. Recent API Calls Timeline */}
+                  <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200/90 space-y-2.5 text-xs">
+                    <div className="flex items-center justify-between">
+                      <h5 className="font-bold text-slate-800 flex items-center gap-1.5">
+                        <RotateCw className="w-3.5 h-3.5 text-indigo-600" />
+                        <span>최근 서버 API 호출 내역 (최근 15건)</span>
+                      </h5>
+                      <span className="text-[10px] text-slate-400">실시간 로그</span>
+                    </div>
+
+                    {(!serverUsageReport?.recentLogs || serverUsageReport.recentLogs.length === 0) ? (
+                      <div className="p-4 bg-white rounded-xl border border-slate-200/70 text-center text-slate-400 text-xs">
+                        오늘 아직 발생한 서버 API 호출 내역이 없습니다. (단어 사진 등록이나 번역 실행 시 기록됩니다)
+                      </div>
+                    ) : (
+                      <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                        {serverUsageReport.recentLogs.slice(0, 15).map((log: any) => (
+                          <div
+                            key={log.id}
+                            className="p-2 bg-white rounded-xl border border-slate-200/80 flex items-center justify-between gap-2 text-[11px]"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <span
+                                className={`w-2 h-2 rounded-full shrink-0 ${
+                                  log.status === 'ok' ? 'bg-emerald-500' : 'bg-rose-500'
+                                }`}
+                              />
+                              <span className="font-bold text-slate-800 shrink-0">
+                                {log.endpoint === 'ocr-vision'
+                                  ? '책 사진 OCR'
+                                  : log.endpoint === 'match-sentence-vision'
+                                  ? '문맥 사진 매칭'
+                                  : log.endpoint === 'match-sentence-text'
+                                  ? '문맥 텍스트 매칭'
+                                  : log.endpoint === 'translate'
+                                  ? '문장 자동 번역'
+                                  : log.endpoint === 'dictionary'
+                                  ? '사전/단어 분석'
+                                  : log.endpoint === 'admin-ping'
+                                  ? '관리자 핑 진단'
+                                  : log.endpoint}
+                              </span>
+                              <span className="text-slate-400 text-[10px] shrink-0 font-mono">
+                                {log.model}
+                              </span>
+                              {log.error && (
+                                <span className="text-rose-600 text-[10px] truncate max-w-[120px]" title={log.error}>
+                                  {log.error}
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 shrink-0 font-mono text-[10.5px]">
+                              <span className="text-slate-500">{log.durationMs}ms</span>
+                              <span className="text-slate-400">
+                                {new Date(log.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' })}
+                              </span>
+                            </div>
+                          </div>
+                        ))}
                       </div>
                     )}
                   </div>
