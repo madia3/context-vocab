@@ -71,6 +71,8 @@ export async function POST(req: NextRequest) {
     }
 
     let visionLastError = '';
+    let visionDurationMs: number | undefined;
+    let visionModelAttempted: string | undefined;
 
     // 1. 원본 이미지가 있는 경우: 초고속 Vision OCR (thinkingLevel: LOW / thinkingBudget: 0 적용)
     if (hasImages) {
@@ -136,6 +138,9 @@ Output strictly valid JSON:
         responseMimeType: 'application/json',
       });
 
+      visionDurationMs = visionRes.durationMs;
+      visionModelAttempted = visionRes.modelUsed;
+
       if (visionRes.ok && visionRes.text) {
         let text = visionRes.text;
         let markedWords: string[] = [];
@@ -157,7 +162,13 @@ Output strictly valid JSON:
         }
 
         if (text) {
-          return NextResponse.json({ text, markedWords, method: 'vision' });
+          return NextResponse.json({
+            text,
+            markedWords,
+            method: 'vision',
+            modelUsed: visionRes.modelUsed,
+            serverDurationMs: visionRes.durationMs,
+          });
         }
       } else {
         visionLastError = visionRes.lastError || '';
@@ -198,12 +209,24 @@ ${String(fallbackRawText).slice(0, 6000)}
           const parsed = JSON.parse(cleanJson);
           const restored = (parsed.text || parsed.cleanedText || '').trim();
           if (restored.length > 10) {
-            return NextResponse.json({ text: restored, markedWords: [], method: 'text_repair' });
+            return NextResponse.json({
+              text: restored,
+              markedWords: [],
+              method: 'text_repair',
+              modelUsed: textRes.modelUsed,
+              serverDurationMs: textRes.durationMs,
+            });
           }
         } catch {
           const rawTrimmed = textRes.text.trim();
           if (rawTrimmed.length > 10) {
-            return NextResponse.json({ text: rawTrimmed, markedWords: [], method: 'text_repair' });
+            return NextResponse.json({
+              text: rawTrimmed,
+              markedWords: [],
+              method: 'text_repair',
+              modelUsed: textRes.modelUsed,
+              serverDurationMs: textRes.durationMs,
+            });
           }
         }
       }
@@ -211,7 +234,11 @@ ${String(fallbackRawText).slice(0, 6000)}
 
     const finalErrMsg = extractGeminiErrorMessage(visionLastError || 'Gemini Vision 호출 실패');
     return NextResponse.json(
-      { error: finalErrMsg },
+      {
+        error: finalErrMsg,
+        serverDurationMs: visionDurationMs,
+        modelAttempted: visionModelAttempted,
+      },
       { status: 502 }
     );
   } catch (err: any) {
