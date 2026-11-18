@@ -538,6 +538,8 @@ function getUserStorageKey(userId?: string): string {
   return userId ? `context_vocab_user_${userId}` : GUEST_STORAGE_KEY;
 }
 
+export const GLOBAL_CLEAN_RESET_VERSION = 'v20261118_clean_30_all_v4';
+
 /**
  * 단어 목록을 가져옵니다.
  * - 로그인된 유저가 있으면: Supabase에서 user_id로 격리된 단어를 가져오며, 사용자 로컬 캐시에 동기화
@@ -547,6 +549,24 @@ export async function fetchVocabulary(targetUser?: User | null): Promise<VocabIt
   const isConfigured = checkIsSupabaseConfigured();
   const user = targetUser !== undefined ? targetUser : await getCurrentUser();
   const storageKey = getUserStorageKey(user?.id);
+  const versionKey = user?.id ? `context_vocab_clean_ver_${user.id}` : 'context_vocab_clean_ver_guest';
+
+  // 💡 모든 계정에 단어 초기화 및 기본 30개 자동 세팅
+  if (typeof window !== 'undefined') {
+    const isCleaned = localStorage.getItem(versionKey) === GLOBAL_CLEAN_RESET_VERSION;
+    if (!isCleaned) {
+      localStorage.setItem(versionKey, GLOBAL_CLEAN_RESET_VERSION);
+      try {
+        const resetItems = await resetWithSamples(user?.id);
+        if (resetItems && resetItems.length > 0) {
+          localStorage.setItem(storageKey, JSON.stringify(resetItems));
+          return resetItems;
+        }
+      } catch (err) {
+        console.warn('Auto reset to clean 30 samples error:', err);
+      }
+    }
+  }
 
   // 1. Supabase 연동 시도 (로그인된 사용자가 있을 때만 Supabase와 동기화)
   if (isConfigured && supabase && user?.id) {
@@ -1527,7 +1547,12 @@ export async function loadSamplesForUser(userId: string): Promise<VocabItem[]> {
     try {
       const { error } = await supabase.from('vocab_words').upsert(itemsToInsert);
       if (error) {
-        console.warn('loadSamplesForUser supabase upsert error:', error);
+        if (error.message?.includes('sentence_translation')) {
+          const fallbackRows = itemsToInsert.map(({ sentence_translation, ...rest }: any) => rest);
+          await supabase.from('vocab_words').upsert(fallbackRows);
+        } else {
+          console.warn('loadSamplesForUser supabase upsert error:', error);
+        }
       }
       // 다른 기기/브라우저에서 로그인하더라도 이미 초기 샘플이 세팅되었음을 user_metadata에 기록
       supabase.auth.updateUser({ data: { vocab_seeded: true } }).catch(() => {});
@@ -1578,7 +1603,12 @@ export async function resetWithSamples(userId?: string): Promise<VocabItem[]> {
         console.warn('Supabase clear before reset error:', e);
       }
     }
-    return await loadSamplesForUser(userId);
+    const samples = await loadSamplesForUser(userId);
+    if (typeof window !== 'undefined') {
+      const storageKey = getUserStorageKey(userId);
+      localStorage.setItem(storageKey, JSON.stringify(samples));
+    }
+    return samples;
   }
 
   if (typeof window !== 'undefined') {

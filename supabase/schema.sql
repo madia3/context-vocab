@@ -22,6 +22,7 @@ create table if not exists public.vocab_words (
 alter table public.vocab_words add column if not exists book_title text default '기본 단어장';
 alter table public.vocab_words add column if not exists quiz_count integer default 0;
 alter table public.vocab_words add column if not exists correct_count integer default 0;
+alter table public.vocab_words add column if not exists sentence_translation text;
 
 -- 2. 인덱스 생성
 create index if not exists vocab_words_user_id_idx on public.vocab_words(user_id);
