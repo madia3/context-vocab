@@ -1,2 +1,2 @@
-export const APP_BUILD_VERSION = 'v2026.11.19-05 (11/19 07:32 KST)';
-export const APP_BUILD_SUMMARY = '목록 미포함 시 3초 대기 없이 즉시 투입 + 3초 단위 병렬 레이스';
+export const APP_BUILD_VERSION = 'v2026.11.19-06 (11/19 07:42 KST)';
+export const APP_BUILD_SUMMARY = '진단 카드 기본 접힘(숨김) & 실시간 경과 타이머 제거';

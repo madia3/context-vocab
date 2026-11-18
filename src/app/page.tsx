@@ -380,16 +380,7 @@ export default function Home() {
   const [ocrProgress, setOcrProgress] = useState(0);
   const [ocrDetectedNotice, setOcrDetectedNotice] = useState<string | null>(null);
   const [ocrTimingStats, setOcrTimingStats] = useState<OcrTimingStats | null>(null);
-  const [ocrElapsedMs, setOcrElapsedMs] = useState<number>(0);
-
-  useEffect(() => {
-    if (!isOcrProcessing) return;
-    const start = performance.now();
-    const timer = setInterval(() => {
-      setOcrElapsedMs(Math.round(performance.now() - start));
-    }, 100);
-    return () => clearInterval(timer);
-  }, [isOcrProcessing]);
+  const [isOcrTimingExpanded, setIsOcrTimingExpanded] = useState<boolean>(false);
   const [detectedCandidateSentences, setDetectedCandidateSentences] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -1704,6 +1695,7 @@ export default function Home() {
 
     setIsOcrProcessing(true);
     setOcrProgress(30);
+    setIsOcrTimingExpanded(false);
 
     triggerToast(
       isAppend ? '연속 페이지 분석 시작! 📄' : '사진 분석 시작! 📸',
@@ -4235,14 +4227,9 @@ export default function Home() {
 
                   {isSourceProcessing ? (
                     <div className="py-2.5 px-3 bg-white/95 rounded-xl border border-indigo-200 shadow-xs space-y-1 animate-pulse">
-                      <div className="flex items-center justify-between text-xs font-bold text-indigo-800">
-                        <div className="flex items-center gap-1.5">
-                          <RotateCw className="w-3.5 h-3.5 animate-spin text-indigo-600 shrink-0" />
-                          <span>백그라운드에서 {sourceProcessTaskName || '원문'} 분석 중...</span>
-                        </div>
-                        <span className="font-mono text-indigo-600 font-black text-xs">
-                          ⏱️ {(ocrElapsedMs / 1000).toFixed(1)}초 경과
-                        </span>
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-indigo-800">
+                        <RotateCw className="w-3.5 h-3.5 animate-spin text-indigo-600 shrink-0" />
+                        <span>백그라운드에서 {sourceProcessTaskName || '원문'} 분석 중...</span>
                       </div>
                       <p className="text-[11px] text-slate-500">
                         기다리지 말고 아래 단어를 바로 입력하세요! 분석 완료 시 문장이 자동 연결됩니다.
@@ -4288,22 +4275,35 @@ export default function Home() {
                             </div>
                           </div>
 
-                          {lastOcrEngineInfo.method === 'tesseract' && (
-                            <button
-                              type="button"
-                              onClick={() => handleAiCleanPageText()}
-                              className="px-2 py-1 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white rounded-lg font-bold text-[10px] sm:text-[11px] shrink-0 shadow-xs cursor-pointer flex items-center gap-1"
-                              title="Tesseract가 잘못 읽은 글자를 Gemini AI로 깔끔하게 교정합니다"
-                            >
-                              <Sparkles className="w-3 h-3" />
-                              <span>AI 오타 교정 🪄</span>
-                            </button>
-                          )}
+                          <div className="flex items-center gap-1.5 shrink-0">
+                            {lastOcrEngineInfo.method === 'tesseract' && (
+                              <button
+                                type="button"
+                                onClick={() => handleAiCleanPageText()}
+                                className="px-2 py-1 bg-amber-600 hover:bg-amber-700 active:bg-amber-800 text-white rounded-lg font-bold text-[10px] sm:text-[11px] shrink-0 shadow-xs cursor-pointer flex items-center gap-1"
+                                title="Tesseract가 잘못 읽은 글자를 Gemini AI로 깔끔하게 교정합니다"
+                              >
+                                <Sparkles className="w-3 h-3" />
+                                <span>AI 오타 교정 🪄</span>
+                              </button>
+                            )}
+                            {ocrTimingStats && (
+                              <button
+                                type="button"
+                                onClick={() => setIsOcrTimingExpanded((prev) => !prev)}
+                                className="px-2 py-0.5 rounded-lg text-[10px] font-mono font-bold bg-white/80 hover:bg-white border border-slate-300/80 text-slate-600 flex items-center gap-1 shrink-0 cursor-pointer transition"
+                                title="단계별 상세 처리 시간 보기/접기"
+                              >
+                                <span>상세</span>
+                                <ChevronDown className={`w-3 h-3 transition-transform ${isOcrTimingExpanded ? 'rotate-180' : ''}`} />
+                              </button>
+                            )}
+                          </div>
                         </div>
                       )}
 
-                      {/* ⏱️ 실시간 단계별 처리 시간 진단 카드 (압축 / 네트워크 / Gemini 서버 / Tesseract) */}
-                      {ocrTimingStats && (
+                      {/* ⏱️ 단계별 처리 시간 진단 카드 (기본 접힘 - 상세 버튼 클릭 시에만 펼침) */}
+                      {ocrTimingStats && isOcrTimingExpanded && (
                         <div className="bg-slate-900 text-slate-100 rounded-xl p-3 text-xs font-mono shadow-sm border border-slate-800 space-y-2 animate-fade-in">
                           <div className="flex items-center justify-between border-b border-slate-800 pb-1.5 gap-2">
                             <div className="flex items-center gap-1.5 font-bold text-slate-200 min-w-0">
