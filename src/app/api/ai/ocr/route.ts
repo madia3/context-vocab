@@ -73,6 +73,7 @@ export async function POST(req: NextRequest) {
     let visionLastError = '';
     let visionDurationMs: number | undefined;
     let visionModelAttempted: string | undefined;
+    let visionAttemptLogs: string[] = [];
 
     // 1. 원본 이미지가 있는 경우: 초고속 Vision OCR (thinkingLevel: LOW / thinkingBudget: 0 적용)
     if (hasImages) {
@@ -136,10 +137,12 @@ Output strictly valid JSON:
         parts: contentParts,
         temperature: 0.0,
         responseMimeType: 'application/json',
+        maxOutputTokens: 2048,
       });
 
       visionDurationMs = visionRes.durationMs;
       visionModelAttempted = visionRes.modelUsed;
+      visionAttemptLogs = visionRes.attemptLogs || [];
 
       if (visionRes.ok && visionRes.text) {
         let text = visionRes.text;
@@ -168,6 +171,7 @@ Output strictly valid JSON:
             method: 'vision',
             modelUsed: visionRes.modelUsed,
             serverDurationMs: visionRes.durationMs,
+            attemptLogs: visionAttemptLogs,
           });
         }
       } else {
@@ -238,6 +242,7 @@ ${String(fallbackRawText).slice(0, 6000)}
         error: finalErrMsg,
         serverDurationMs: visionDurationMs,
         modelAttempted: visionModelAttempted,
+        attemptLogs: visionAttemptLogs,
       },
       { status: 502 }
     );

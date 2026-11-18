@@ -100,6 +100,9 @@ ${rawText.slice(0, 8000)}
             removedCount: heuristicResult.removedCount || 1,
             notes: parsed.removedAdNotes || '',
             method: 'gemini',
+            modelUsed: aiRes.modelUsed,
+            serverDurationMs: aiRes.durationMs,
+            attemptLogs: aiRes.attemptLogs || [],
           });
         }
       } catch (err) {

@@ -4305,12 +4305,12 @@ export default function Home() {
                       {/* ⏱️ 실시간 단계별 처리 시간 진단 카드 (압축 / 네트워크 / Gemini 서버 / Tesseract) */}
                       {ocrTimingStats && (
                         <div className="bg-slate-900 text-slate-100 rounded-xl p-3 text-xs font-mono shadow-sm border border-slate-800 space-y-2 animate-fade-in">
-                          <div className="flex items-center justify-between border-b border-slate-800 pb-1.5">
-                            <div className="flex items-center gap-1.5 font-bold text-slate-200">
+                          <div className="flex items-center justify-between border-b border-slate-800 pb-1.5 gap-2">
+                            <div className="flex items-center gap-1.5 font-bold text-slate-200 min-w-0">
                               <Activity className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                              <span>⏱️ 사진 처리 단계별 실시간 소요 시간</span>
+                              <span className="truncate">⏱️ 단계별 실시간 소요 시간 ({APP_BUILD_VERSION.split(' ')[0]})</span>
                             </div>
-                            <span className="px-2 py-0.5 rounded-full text-[11px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                            <span className="px-2 py-0.5 rounded-full text-[11px] font-black bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0">
                               총 {(ocrTimingStats.totalMs / 1000).toFixed(2)}초
                             </span>
                           </div>
@@ -4339,9 +4339,19 @@ export default function Home() {
                               <div className="text-[10px] text-slate-400">
                                 서버 Gemini: {ocrTimingStats.serverDurationMs ? `${(ocrTimingStats.serverDurationMs / 1000).toFixed(2)}초` : 'N/A'}
                               </div>
-                              <div className="text-[10px] text-slate-400 truncate">
+                              <div className="text-[10px] text-slate-400 break-all">
                                 모델: {ocrTimingStats.modelUsed || 'default'}
                               </div>
+                              {ocrTimingStats.attemptLogs && ocrTimingStats.attemptLogs.length > 0 && (
+                                <div className="text-[9.5px] text-cyan-200/90 pt-0.5 break-all">
+                                  시도: {ocrTimingStats.attemptLogs.join(' ➔ ')}
+                                </div>
+                              )}
+                              {ocrTimingStats.visionError && (
+                                <div className="text-[9.5px] text-rose-300 pt-0.5 break-all">
+                                  오류: {ocrTimingStats.visionError}
+                                </div>
+                              )}
                             </div>
                           </div>
 
@@ -4352,15 +4362,22 @@ export default function Home() {
                                 <span className="font-black">{(ocrTimingStats.tesseractMs / 1000).toFixed(2)}초</span>
                               </div>
                               <div className="text-[10px] text-rose-300/80">
-                                사유: Vision API 실패/타임아웃으로 모바일 CPU에서 직접 문자인식 수행됨
+                                사유: {ocrTimingStats.visionError || 'Vision API 실패/타임아웃'}
                               </div>
                             </div>
                           ) : null}
 
                           {ocrTimingStats.repairMs ? (
-                            <div className="bg-indigo-950/50 p-2 rounded-lg border border-indigo-800/60 text-[11px] text-indigo-300 flex items-center justify-between">
-                              <span>4. ✨ Gemini 텍스트 문맥 복원</span>
-                              <span className="font-black text-indigo-200">{(ocrTimingStats.repairMs / 1000).toFixed(2)}초</span>
+                            <div className="bg-indigo-950/50 p-2 rounded-lg border border-indigo-800/60 text-[11px] text-indigo-300 space-y-0.5">
+                              <div className="flex items-center justify-between">
+                                <span>4. ✨ Gemini 텍스트 문맥 복원 ({ocrTimingStats.repairModelUsed || 'gemini'})</span>
+                                <span className="font-black text-indigo-200">{(ocrTimingStats.repairMs / 1000).toFixed(2)}초</span>
+                              </div>
+                              {ocrTimingStats.repairAttemptLogs && ocrTimingStats.repairAttemptLogs.length > 0 && (
+                                <div className="text-[9.5px] text-indigo-200/80 break-all">
+                                  시도: {ocrTimingStats.repairAttemptLogs.join(' ➔ ')}
+                                </div>
+                              )}
                             </div>
                           ) : null}
                         </div>

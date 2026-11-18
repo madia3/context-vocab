@@ -109,7 +109,7 @@ export function fileToBase64(file: File | Blob): Promise<ProcessedImageData> {
       img.onload = () => {
         URL.revokeObjectURL(objectUrl);
         const originalDimensions = `${img.naturalWidth || img.width} x ${img.naturalHeight || img.height}`;
-        const maxDimension = 1200; // 원서 빽빽한 글자 및 밑줄/동그라미 고해상도 인식 최적화 (토큰 및 대역폭 절감 -> 100~150KB 경량화)
+        const maxDimension = 1024; // Gemini Vision 768px 타일 경계 최적화 (768x1024 -> 타일 수 50% 감소 & 140~180KB 초경량화)
         let { width, height } = img;
 
         if (width > maxDimension || height > maxDimension) {
@@ -128,7 +128,7 @@ export function fileToBase64(file: File | Blob): Promise<ProcessedImageData> {
         const ctx = canvas.getContext('2d');
         if (ctx) {
           ctx.drawImage(img, 0, 0, width, height);
-          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.78);
+          const compressedDataUrl = canvas.toDataURL('image/jpeg', 0.72);
           const [, base64] = compressedDataUrl.split(',');
           const compressionMs = Math.round(performance.now() - t0);
           const compressedSizeKb = Math.round((base64.length * 0.75) / 1024);
@@ -194,6 +194,19 @@ export async function repairOcrTextWithAI(
   rawText: string,
   customApiKey?: string
 ): Promise<string | null> {
+  const res = await repairOcrTextWithAIMeta(rawText, customApiKey);
+  return res?.cleanedText || null;
+}
+
+export async function repairOcrTextWithAIMeta(
+  rawText: string,
+  customApiKey?: string
+): Promise<{
+  cleanedText: string;
+  modelUsed?: string;
+  serverDurationMs?: number;
+  attemptLogs?: string[];
+} | null> {
   if (!rawText || !rawText.trim()) return null;
   const apiKey = customApiKey || getStoredGeminiKey();
 
@@ -210,7 +223,12 @@ export async function repairOcrTextWithAI(
       const data = await res.json();
       if (data.cleanedText && data.cleanedText.trim().length > 10 && data.method === 'gemini') {
         recordAiUsage(1);
-        return data.cleanedText.trim();
+        return {
+          cleanedText: data.cleanedText.trim(),
+          modelUsed: data.modelUsed,
+          serverDurationMs: data.serverDurationMs,
+          attemptLogs: data.attemptLogs,
+        };
       }
     }
   } catch (err) {
@@ -237,8 +255,12 @@ export interface OcrTimingStats {
   networkMs: number;
   serverDurationMs?: number;
   modelUsed?: string;
+  visionError?: string;
+  attemptLogs?: string[];
   tesseractMs?: number;
   repairMs?: number;
+  repairModelUsed?: string;
+  repairAttemptLogs?: string[];
   totalMs: number;
   pipelineSteps: OcrStepLog[];
 }
@@ -276,7 +298,7 @@ export async function extractTextWithAI(
     step: '1. 이미지 압축 (브라우저 Canvas)',
     durationMs: compressionMs,
     status: 'ok',
-    detail: `${originalFileSizeKb}KB ➔ ${compressedSizeKb}KB (${primary.compressedDimensions || '1200px'})`,
+    detail: `${originalFileSizeKb}KB ➔ ${compressedSizeKb}KB (${primary.compressedDimensions || '1024px'})`,
   });
 
   const imagesToSend =
@@ -290,6 +312,7 @@ export async function extractTextWithAI(
   let visionNetworkMs = 0;
   let serverGeminiMs: number | undefined;
   let modelUsed: string | undefined;
+  let visionAttemptLogs: string[] = [];
 
   // 1. Gemini Vision OCR 우선 시도 (2장일 경우 전후 관계 자동 파악 및 잘린 문장 완벽 결합)
   const visionStart = performance.now();
@@ -300,7 +323,7 @@ export async function extractTextWithAI(
         'Content-Type': 'application/json',
         ...(apiKey ? { 'x-gemini-key': apiKey } : {}),
       },
-      signal: AbortSignal.timeout(15000),
+      signal: AbortSignal.timeout(22000),
       body: JSON.stringify({
         base64: primary.base64,
         mimeType: primary.mimeType,
@@ -314,6 +337,7 @@ export async function extractTextWithAI(
       const data = await res.json();
       serverGeminiMs = data.serverDurationMs;
       modelUsed = data.modelUsed;
+      visionAttemptLogs = Array.isArray(data.attemptLogs) ? data.attemptLogs : [];
 
       if (data.text && data.text.trim()) {
         recordAiUsage(1);
@@ -342,6 +366,7 @@ export async function extractTextWithAI(
             networkMs: visionNetworkMs,
             serverDurationMs: serverGeminiMs,
             modelUsed,
+            attemptLogs: visionAttemptLogs,
             totalMs,
             pipelineSteps,
           },
@@ -352,6 +377,7 @@ export async function extractTextWithAI(
       visionError = errData?.error || `HTTP ${res.status}`;
       serverGeminiMs = errData?.serverDurationMs;
       modelUsed = errData?.modelAttempted;
+      visionAttemptLogs = Array.isArray(errData?.attemptLogs) ? errData.attemptLogs : [];
       pipelineSteps.push({
         step: '2. Gemini Vision 호출 실패',
         durationMs: visionNetworkMs,
@@ -363,7 +389,7 @@ export async function extractTextWithAI(
   } catch (err: any) {
     visionNetworkMs = Math.round(performance.now() - visionStart);
     const isTimeout = err?.name === 'TimeoutError' || String(err).includes('timeout');
-    visionError = isTimeout ? '네트워크 타임아웃 (11초 초과)' : (err?.message || '네트워크 오류');
+    visionError = isTimeout ? '클라이언트 타임아웃 (22초 초과)' : (err?.message || '네트워크 오류');
     pipelineSteps.push({
       step: '2. Gemini Vision 호출 에러',
       durationMs: visionNetworkMs,
@@ -388,21 +414,26 @@ export async function extractTextWithAI(
   const heuristicCleaned = cleanOcrText(fallbackText);
 
   let repairMs = 0;
+  let repairModelUsed: string | undefined;
+  let repairAttemptLogs: string[] = [];
+
   if (heuristicCleaned && heuristicCleaned.length > 10) {
     const repairStart = performance.now();
-    const aiRepaired = await repairOcrTextWithAI(heuristicCleaned, apiKey);
+    const aiRepairedMeta = await repairOcrTextWithAIMeta(heuristicCleaned, apiKey);
     repairMs = Math.round(performance.now() - repairStart);
 
-    if (aiRepaired) {
+    if (aiRepairedMeta?.cleanedText) {
+      repairModelUsed = aiRepairedMeta.modelUsed;
+      repairAttemptLogs = Array.isArray(aiRepairedMeta.attemptLogs) ? aiRepairedMeta.attemptLogs : [];
       pipelineSteps.push({
         step: '4. Gemini 텍스트 문맥 복원',
         durationMs: repairMs,
         status: 'ok',
-        detail: '오타 교정 및 문맥 정상화',
+        detail: `모델: ${repairModelUsed || 'gemini'}`,
       });
       const totalMs = Math.round(performance.now() - globalStart);
       return {
-        text: aiRepaired,
+        text: aiRepairedMeta.cleanedText,
         method: 'gemini_repair',
         markedWords: [],
         engineLabel: 'Gemini AI 텍스트 복원',
@@ -416,8 +447,12 @@ export async function extractTextWithAI(
           networkMs: visionNetworkMs,
           serverDurationMs: serverGeminiMs,
           modelUsed,
+          visionError,
+          attemptLogs: visionAttemptLogs,
           tesseractMs,
           repairMs,
+          repairModelUsed,
+          repairAttemptLogs,
           totalMs,
           pipelineSteps,
         },
@@ -441,8 +476,12 @@ export async function extractTextWithAI(
       networkMs: visionNetworkMs,
       serverDurationMs: serverGeminiMs,
       modelUsed,
+      visionError,
+      attemptLogs: visionAttemptLogs,
       tesseractMs,
       repairMs,
+      repairModelUsed,
+      repairAttemptLogs,
       totalMs,
       pipelineSteps,
     },

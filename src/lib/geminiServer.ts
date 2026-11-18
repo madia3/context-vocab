@@ -105,43 +105,50 @@ export interface GeminiModelCandidate {
 
 // Officially supported Google Generative Language API models (compatible with both legacy AIza... and 2026 AQ... keys)
 export const FAST_GEMINI_CANDIDATES: GeminiModelCandidate[] = [
-  // 1. Officially active and verified high-speed production models in Google AI Studio
+  // 1. Primary active 2026 Google AI Studio Flash models with thinking disabled (thinkingBudget: 0) for 1~2s ultra-fast OCR
+  {
+    model: 'gemini-2.5-flash',
+    apiVersion: 'v1beta',
+    thinkingConfig: { thinkingBudget: 0 },
+    timeoutMs: 11000,
+  },
+  {
+    model: 'gemini-2.5-flash-lite',
+    apiVersion: 'v1beta',
+    thinkingConfig: { thinkingBudget: 0 },
+    timeoutMs: 9000,
+  },
+  {
+    model: 'gemini-flash-latest',
+    apiVersion: 'v1beta',
+    thinkingConfig: { thinkingBudget: 0 },
+    timeoutMs: 9000,
+  },
   {
     model: 'gemini-2.0-flash',
     apiVersion: 'v1beta',
     timeoutMs: 8500,
   },
-  {
-    model: 'gemini-1.5-flash',
-    apiVersion: 'v1beta',
-    timeoutMs: 8500,
-  },
-  {
-    model: 'gemini-2.0-flash-lite-preview-02-05',
-    apiVersion: 'v1beta',
-    timeoutMs: 7500,
-  },
-  {
-    model: 'gemini-1.5-flash-8b',
-    apiVersion: 'v1beta',
-    timeoutMs: 7500,
-  },
-  {
-    model: 'gemini-1.5-pro',
-    apiVersion: 'v1beta',
-    timeoutMs: 12000,
-  },
 ];
 
 // Remember the last model that succeeded so subsequent calls hit the working model on attempt #1
 let lastSuccessfulModelName: string | null = null;
-// Remember models that returned 404 / deprecated / no longer available so we never retry them
+// Remember models that returned 404 / deprecated / no longer available / 0-quota so we never retry them
 const unsupportedModelsCache = new Set<string>();
+
+function getFastThinkingConfig(modelName: string): Record<string, any> | undefined {
+  const lower = (modelName || '').toLowerCase();
+  if (lower.includes('2.5-flash') || lower.includes('flash-lite') || lower === 'gemini-flash-latest') {
+    return { thinkingBudget: 0 };
+  }
+  return undefined;
+}
 
 function isModelUnsupportedError(status: number, errorText: string): boolean {
   const lower = (errorText || '').toLowerCase();
   return (
     status === 404 ||
+    (status === 429 && (lower.includes('limit: 0') || lower.includes('quota') || lower.includes('resource_exhausted'))) ||
     lower.includes('not found') ||
     lower.includes('not supported') ||
     lower.includes('no longer available') ||
@@ -464,11 +471,16 @@ export function resolveServerGeminiKey(req: Request, explicitKey?: string): stri
 
 function scoreDiscoveredModel(modelName: string): number {
   const clean = modelName.replace(/^models\//, '').toLowerCase();
-  if (clean === 'gemini-2.0-flash') return 100;
-  if (clean === 'gemini-1.5-flash') return 95;
-  if (clean.includes('2.0') && clean.includes('flash')) return 90;
-  if (clean.includes('1.5') && clean.includes('flash')) return 85;
-  if (clean.includes('flash')) return 80;
+  if (clean === 'gemini-2.5-flash') return 100;
+  if (clean === 'gemini-2.5-flash-lite') return 99;
+  if (clean.includes('2.5-flash')) return 96;
+  if (clean === 'gemini-flash-latest') return 94;
+  if (clean === 'gemini-flash-lite-latest') return 92;
+  if ((clean.includes('gemini-3') || clean.includes('gemini-4')) && clean.includes('flash')) return 90;
+  if (clean === 'gemini-2.0-flash') return 50;
+  if (clean.includes('2.0') && clean.includes('flash')) return 45;
+  if (clean.includes('1.5') && clean.includes('flash')) return 30;
+  if (clean.includes('flash')) return 40;
   return 10;
 }
 
@@ -497,22 +509,25 @@ async function autoDiscoverWorkingModelAndCall(options: {
   apiKey: string;
   parts: any[];
   generationConfig: Record<string, any>;
+  attemptLogs?: string[];
 }): Promise<{ ok: boolean; text: string; rawData?: any; modelUsed?: string; lastError?: string } | null> {
-  const { apiKey, parts, generationConfig } = options;
+  const { apiKey, parts, generationConfig, attemptLogs } = options;
   let lastDiscoveryError = '';
 
   for (const ver of ['v1beta', 'v1']) {
     try {
+      const listStart = Date.now();
       const listUrl = `https://generativelanguage.googleapis.com/${ver}/models?key=${encodeURIComponent(apiKey)}`;
       const listRes = await fetch(listUrl, {
         headers: {
           'Content-Type': 'application/json',
           'x-goog-api-key': apiKey,
         },
-        signal: AbortSignal.timeout(4500),
+        signal: AbortSignal.timeout(4000),
       });
       if (!listRes.ok) {
         lastDiscoveryError = await listRes.text();
+        attemptLogs?.push(`ListModels(${ver}): HTTP ${listRes.status} (${((Date.now() - listStart) / 1000).toFixed(2)}s)`);
         continue;
       }
 
@@ -529,21 +544,29 @@ async function autoDiscoverWorkingModelAndCall(options: {
         )
         .sort((a, b) => scoreDiscoveredModel(b.name) - scoreDiscoveredModel(a.name));
 
-      // Try up to 6 discovered models in priority order until one works
-      for (const candidateModel of supported.slice(0, 6)) {
+      attemptLogs?.push(`ListModels(${ver}): ${supported.length}개 발견 (${((Date.now() - listStart) / 1000).toFixed(2)}s)`);
+
+      // Try up to 4 discovered models in priority order until one works
+      for (const candidateModel of supported.slice(0, 4)) {
         const modelClean = candidateModel.name.replace(/^models\//, '');
         if (unsupportedModelsCache.has(modelClean)) continue;
 
+        const callStart = Date.now();
         try {
           const callUrl = `https://generativelanguage.googleapis.com/${ver}/models/${modelClean}:generateContent?key=${encodeURIComponent(apiKey)}`;
+          const fastThinking = getFastThinkingConfig(modelClean);
+          const modelGenConfig = fastThinking
+            ? { ...generationConfig, thinkingConfig: fastThinking }
+            : generationConfig;
+
           const genRes = await fetch(callUrl, {
             method: 'POST',
             headers: {
               'Content-Type': 'application/json',
               'x-goog-api-key': apiKey,
             },
-            signal: AbortSignal.timeout(8500),
-            body: JSON.stringify({ contents: [{ parts }], generationConfig }),
+            signal: AbortSignal.timeout(9500),
+            body: JSON.stringify({ contents: [{ parts }], generationConfig: modelGenConfig }),
           });
 
           if (genRes.ok) {
@@ -551,6 +574,7 @@ async function autoDiscoverWorkingModelAndCall(options: {
             const genText = extractTextFromGeminiResponse(genData);
             if (genText) {
               lastSuccessfulModelName = modelClean;
+              attemptLogs?.push(`${modelClean}: OK (${((Date.now() - callStart) / 1000).toFixed(2)}s)`);
               return {
                 ok: true,
                 text: genText,
@@ -561,6 +585,35 @@ async function autoDiscoverWorkingModelAndCall(options: {
           } else {
             const errText = await genRes.text();
             lastDiscoveryError = errText;
+            attemptLogs?.push(`${modelClean}: HTTP ${genRes.status} (${((Date.now() - callStart) / 1000).toFixed(2)}s)`);
+
+            if (genRes.status === 400 && fastThinking) {
+              const retryStart = Date.now();
+              const retryRes = await fetch(callUrl, {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'x-goog-api-key': apiKey,
+                },
+                signal: AbortSignal.timeout(9500),
+                body: JSON.stringify({ contents: [{ parts }], generationConfig }),
+              });
+              if (retryRes.ok) {
+                const retryData = await retryRes.json();
+                const retryText = extractTextFromGeminiResponse(retryData);
+                if (retryText) {
+                  lastSuccessfulModelName = modelClean;
+                  attemptLogs?.push(`${modelClean}(retry): OK (${((Date.now() - retryStart) / 1000).toFixed(2)}s)`);
+                  return {
+                    ok: true,
+                    text: retryText,
+                    rawData: retryData,
+                    modelUsed: modelClean,
+                  };
+                }
+              }
+            }
+
             if (isModelUnsupportedError(genRes.status, errText)) {
               unsupportedModelsCache.add(modelClean);
               continue;
@@ -571,6 +624,7 @@ async function autoDiscoverWorkingModelAndCall(options: {
           }
         } catch (innerErr: any) {
           lastDiscoveryError = innerErr?.message || String(innerErr);
+          attemptLogs?.push(`${modelClean}: 타임아웃/에러 (${((Date.now() - callStart) / 1000).toFixed(2)}s)`);
         }
       }
     } catch (err: any) {
@@ -588,7 +642,15 @@ export async function callGeminiWithFallback(options: {
   maxOutputTokens?: number;
   candidates?: GeminiModelCandidate[];
   endpoint?: string;
-}): Promise<{ ok: boolean; text: string; rawData?: any; modelUsed?: string; lastError?: string; durationMs?: number }> {
+}): Promise<{
+  ok: boolean;
+  text: string;
+  rawData?: any;
+  modelUsed?: string;
+  lastError?: string;
+  durationMs?: number;
+  attemptLogs?: string[];
+}> {
   const {
     apiKey,
     parts,
@@ -600,12 +662,13 @@ export async function callGeminiWithFallback(options: {
   } = options;
 
   const startTime = Date.now();
+  const attemptLogs: string[] = [];
   const cleanApiKey = (apiKey || '').trim();
   const serverEnvKey = process.env.GEMINI_API_KEY?.trim() || '';
   const isServerKey = Boolean(serverEnvKey && cleanApiKey === serverEnvKey);
 
   if (!cleanApiKey) {
-    return { ok: false, text: '', lastError: 'API 키가 비어있습니다.' };
+    return { ok: false, text: '', lastError: 'API 키가 비어있습니다.', attemptLogs };
   }
 
   // Restore last known working model from persisted usage if memory is cold
@@ -627,7 +690,8 @@ export async function callGeminiWithFallback(options: {
       orderedCandidates.unshift({
         model: lastSuccessfulModelName,
         apiVersion: 'v1beta',
-        timeoutMs: 8500,
+        thinkingConfig: getFastThinkingConfig(lastSuccessfulModelName),
+        timeoutMs: 10000,
       });
     }
   }
@@ -637,9 +701,12 @@ export async function callGeminiWithFallback(options: {
 
   for (const candidate of orderedCandidates) {
     if (unsupportedModelsCache.has(candidate.model)) continue;
-    // After 2 failed attempts on static candidates, jump straight to dynamic ListModels discovery to avoid slow sequential 404s
+    // After 2 failed attempts on static candidates, jump straight to dynamic ListModels discovery
     if (attemptsMade >= 2) break;
     attemptsMade += 1;
+
+    const callStart = Date.now();
+    const activeThinkingConfig = candidate.thinkingConfig || getFastThinkingConfig(candidate.model);
 
     try {
       const apiVer = candidate.apiVersion || 'v1beta';
@@ -653,8 +720,8 @@ export async function callGeminiWithFallback(options: {
       if (typeof maxOutputTokens === 'number') {
         generationConfig.maxOutputTokens = maxOutputTokens;
       }
-      if (candidate.thinkingConfig) {
-        generationConfig.thinkingConfig = candidate.thinkingConfig;
+      if (activeThinkingConfig) {
+        generationConfig.thinkingConfig = activeThinkingConfig;
       }
 
       const res = await fetch(url, {
@@ -676,6 +743,9 @@ export async function callGeminiWithFallback(options: {
         if (text) {
           lastSuccessfulModelName = candidate.model;
           const durationMs = Date.now() - startTime;
+          attemptLogs.push(
+            `${candidate.model}${activeThinkingConfig ? '(thinking:0)' : ''}: OK (${((Date.now() - callStart) / 1000).toFixed(2)}s)`
+          );
           recordServerUsage({
             isServerKey,
             endpoint,
@@ -689,12 +759,14 @@ export async function callGeminiWithFallback(options: {
             rawData: data,
             modelUsed: candidate.model,
             durationMs,
+            attemptLogs,
           };
         }
       } else {
         lastError = await res.text();
+        attemptLogs.push(`${candidate.model}: HTTP ${res.status} (${((Date.now() - callStart) / 1000).toFixed(2)}s)`);
 
-        // Remember unsupported/deprecated models so we never waste time calling them again
+        // Remember unsupported/deprecated/0-quota models so we never waste time calling them again
         if (isModelUnsupportedError(res.status, lastError)) {
           unsupportedModelsCache.add(candidate.model);
           if (lastSuccessfulModelName === candidate.model) {
@@ -711,7 +783,8 @@ export async function callGeminiWithFallback(options: {
         }
 
         // If 400 Invalid Argument due to thinkingConfig, retry immediately without thinkingConfig
-        if (res.status === 400 && candidate.thinkingConfig) {
+        if (res.status === 400 && activeThinkingConfig) {
+          const retryStart = Date.now();
           const retryGenConfig: Record<string, any> = { temperature };
           if (responseMimeType) retryGenConfig.responseMimeType = responseMimeType;
           if (typeof maxOutputTokens === 'number') retryGenConfig.maxOutputTokens = maxOutputTokens;
@@ -734,6 +807,7 @@ export async function callGeminiWithFallback(options: {
             if (retryText) {
               lastSuccessfulModelName = candidate.model;
               const durationMs = Date.now() - startTime;
+              attemptLogs.push(`${candidate.model}(retry): OK (${((Date.now() - retryStart) / 1000).toFixed(2)}s)`);
               recordServerUsage({
                 isServerKey,
                 endpoint,
@@ -747,6 +821,7 @@ export async function callGeminiWithFallback(options: {
                 rawData: retryData,
                 modelUsed: candidate.model,
                 durationMs,
+                attemptLogs,
               };
             }
           }
@@ -754,6 +829,10 @@ export async function callGeminiWithFallback(options: {
       }
     } catch (err: any) {
       lastError = err?.message || String(err);
+      attemptLogs.push(`${candidate.model}: 타임아웃 (${((Date.now() - callStart) / 1000).toFixed(2)}s)`);
+      if (lastSuccessfulModelName === candidate.model) {
+        lastSuccessfulModelName = null;
+      }
     }
   }
 
@@ -767,6 +846,7 @@ export async function callGeminiWithFallback(options: {
       apiKey: cleanApiKey,
       parts,
       generationConfig: fallbackGenConfig,
+      attemptLogs,
     });
 
     if (dynamicDiscovery && dynamicDiscovery.ok) {
@@ -784,15 +864,24 @@ export async function callGeminiWithFallback(options: {
         rawData: dynamicDiscovery.rawData,
         modelUsed: dynamicDiscovery.modelUsed,
         durationMs,
+        attemptLogs,
       };
     } else if (dynamicDiscovery?.lastError) {
       lastError = dynamicDiscovery.lastError;
     }
   }
 
-  // If client-provided key failed due to invalid key or auth error, and server environment has a fallback key, retry once with server env key
-  if (serverEnvKey && apiKey !== serverEnvKey && (lastError.includes('API_KEY_INVALID') || lastError.includes('401') || lastError.includes('403'))) {
-    console.warn('Client-provided Gemini API key failed with auth error, falling back to server GEMINI_API_KEY...');
+  // If client-provided key failed due to invalid key or auth error or quota error, and server environment has a fallback key, retry once with server env key
+  if (
+    serverEnvKey &&
+    cleanApiKey !== serverEnvKey &&
+    (lastError.includes('API_KEY_INVALID') ||
+      lastError.includes('401') ||
+      lastError.includes('403') ||
+      lastError.includes('quota') ||
+      lastError.includes('RESOURCE_EXHAUSTED'))
+  ) {
+    console.warn('Client-provided Gemini API key failed, falling back to server GEMINI_API_KEY...');
     return callGeminiWithFallback({
       ...options,
       apiKey: serverEnvKey,
@@ -815,6 +904,7 @@ export async function callGeminiWithFallback(options: {
     text: '',
     lastError,
     durationMs,
+    attemptLogs,
   };
 }
 
