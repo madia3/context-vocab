@@ -4557,9 +4557,6 @@ export default function Home() {
                       총 {vocabulary.length}단어 ({availableBookTitles.length}개 단어장)
                     </span>
                   </h2>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    학습할 단어장을 선택하고 바로 퀴즈를 풀거나 문맥 카드로 복습하세요.
-                  </p>
                 </div>
               </div>
 
@@ -4716,40 +4713,6 @@ export default function Home() {
                     </div>
                   </div>
                 )}
-
-                {/* 가로 스와이프 가능한 빠른 단어장 선택 칩 */}
-                <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none pt-0.5" data-no-swipe="true">
-                  <button
-                    type="button"
-                    onClick={() => setSelectedBookFilters(['all'])}
-                    className={`px-3 py-1.5 text-xs font-bold rounded-xl transition shrink-0 cursor-pointer shadow-2xs ${
-                      isAllBooksSelected
-                        ? 'bg-indigo-600 text-white ring-2 ring-indigo-200'
-                        : 'bg-white text-slate-700 border border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-                    }`}
-                  >
-                    전체 ({vocabulary.length})
-                  </button>
-                  {availableBookTitles.map((title) => {
-                    const count = vocabulary.filter((v) => (v.bookTitle || '기본 단어장') === title).length;
-                    const isChecked = isBookSelected(title) && !isAllBooksSelected;
-                    return (
-                      <button
-                        key={title}
-                        type="button"
-                        onClick={() => toggleBookCheckbox(title)}
-                        className={`px-3 py-1.5 text-xs font-bold rounded-xl transition flex items-center gap-1.5 shrink-0 cursor-pointer shadow-2xs ${
-                          isChecked
-                            ? 'bg-indigo-600 text-white ring-2 ring-indigo-200'
-                            : 'bg-white text-slate-700 border border-slate-200 hover:border-slate-300 hover:bg-slate-50'
-                        }`}
-                      >
-                        {isChecked && <Check className="w-3 h-3 stroke-[3]" />}
-                        <span>{title} ({count})</span>
-                      </button>
-                    );
-                  })}
-                </div>
               </div>
 
               {/* 2. 문장 듣기 (왼쪽) & 퀴즈 풀기 (오른쪽) 2분할 버튼 바 */}
@@ -6619,48 +6582,11 @@ export default function Home() {
                     >
                       <option value={10}>10문제 (가벼운 복습)</option>
                       <option value={15}>15문제</option>
-                      <option value={20}>20문제 (기본값 · 추천)</option>
+                      <option value={20}>20문제 (추천)</option>
                       <option value={25}>25문제</option>
                       <option value={30}>30문제 (집중 복습)</option>
                       <option value={0}>전체 (단어장 수록 단어 모두 출제)</option>
                     </select>
-                  </div>
-
-                  {/* Supabase Status Info & Connect Button */}
-                  <div
-                    className={`p-3.5 rounded-2xl border ${
-                      isSupabaseReady
-                        ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
-                        : 'bg-amber-50 border-amber-200 text-amber-900'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between font-bold mb-1">
-                      <div className="flex items-center gap-1.5">
-                        <Database className="w-4 h-4" />
-                        <span>
-                          {isSupabaseReady
-                            ? (currentUser ? '개인 클라우드 계정 연결됨 ☁️' : 'Supabase 클라우드 연동됨')
-                            : 'Supabase 미연동 (로컬 스토리지 모드)'}
-                        </span>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setIsSettingsOpen(false);
-                          setIsSupabaseModalOpen(true);
-                        }}
-                        className="text-[11px] underline font-bold hover:opacity-80 cursor-pointer"
-                      >
-                        연동 설정 열기
-                      </button>
-                    </div>
-                    <p className="text-[11px] leading-relaxed">
-                      {isSupabaseReady
-                        ? (currentUser
-                            ? `${currentUser.email} 계정으로 RLS 보안 격리된 개인 단어장이 실시간 동기화됩니다.`
-                            : 'Google 로그인 시 사용자별 개인 단어장이 자동으로 클라우드에 백업됩니다.')
-                        : 'Supabase URL과 Anon Key를 등록하면 Google 로그인 및 개인별 클라우드 격리 저장이 활성화됩니다.'}
-                    </p>
                   </div>
 
                   {/* TTS Voice Select & Speed Slider */}
@@ -6687,7 +6613,7 @@ export default function Home() {
                           <span>읽기 속도 조절</span>
                           <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-mono">
                             {ttsRate.toFixed(2)}x
-                            {ttsRate === 1.25 ? ' (기본값)' : ttsRate === 1.0 ? ' (보통)' : ttsRate < 1.0 ? ' (느리게)' : ' (빠르게)'}
+                            {ttsRate === 1.25 ? '' : ttsRate === 1.0 ? ' (보통)' : ttsRate < 1.0 ? ' (느리게)' : ' (빠르게)'}
                           </span>
                         </label>
                         <button
@@ -6721,7 +6647,7 @@ export default function Home() {
                         {[
                           { label: '0.8x', rate: 0.8 },
                           { label: '1.0x', rate: 1.0 },
-                          { label: '1.25x (기본값)', rate: 1.25 },
+                          { label: '1.25x', rate: 1.25 },
                           { label: '1.4x', rate: 1.4 },
                         ].map((preset) => (
                           <button
