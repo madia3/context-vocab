@@ -27,7 +27,7 @@ export function fileToBase64(file: File | Blob): Promise<{ base64: string; mimeT
 
       img.onload = () => {
         URL.revokeObjectURL(objectUrl);
-        const maxDimension = 1200; // OCR 및 밑줄/동그라미 인식에 최적화된 고속 해상도
+        const maxDimension = 1600; // 원서 빽빽한 글자 및 밑줄/동그라미 고해상도 인식 (1600px)
         let { width, height } = img;
 
         if (width > maxDimension || height > maxDimension) {

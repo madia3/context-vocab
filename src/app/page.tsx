@@ -104,6 +104,12 @@ import {
   getCustomDisplayName,
   updateProfile,
 } from '@/lib/profileService';
+import {
+  saveBookSourceData,
+  loadBookSourceData,
+  deleteBookSourceData,
+  migrateLegacySourceData,
+} from '@/lib/bookSourceStorage';
 
 function GoogleIcon({ className = 'w-4 h-4' }: { className?: string }) {
   return (
@@ -216,6 +222,60 @@ export default function Home() {
       }
       return next;
     });
+  }
+
+  // 단어장 변경 시: 이전 단어장의 사진(최대 2장) 및 OCR 텍스트를 저장하고, 변경된 단어장의 사진을 복원
+  async function handleSwitchBook(nextTitle: string) {
+    const trimmedNext = nextTitle.trim();
+    if (!trimmedNext) return;
+
+    // 1) 이전 단어장의 사진 및 OCR 텍스트 저장
+    const currentBook = inputBookTitle.trim();
+    if (currentBook && currentBook !== '__custom__') {
+      try {
+        await saveBookSourceData(currentBook, sourceImagesRef.current, pageOcrText);
+      } catch (err) {
+        console.warn('이전 단어장 사진 저장 실패:', err);
+      }
+    }
+
+    // 2) 신규 단어장 설정 및 recency 갱신
+    setInputBookTitle(trimmedNext);
+    touchBookUsage(trimmedNext);
+
+    // 3) 신규 단어장의 보관된 사진(최대 2장) 및 텍스트 복원
+    try {
+      const saved = await loadBookSourceData(trimmedNext);
+      if (saved && (saved.images.length > 0 || saved.ocrText)) {
+        sourceImagesRef.current = saved.images;
+        setSourceImages(saved.images);
+        const latest = saved.images.length > 0 ? saved.images[saved.images.length - 1] : null;
+        currentSourceImageRef.current = latest;
+        setCurrentSourceImage(latest);
+        setPageOcrText(saved.ocrText || '');
+        setLoadedSourceType(saved.images.length > 0 ? 'camera' : (saved.ocrText ? 'web' : null));
+        if (typeof window !== 'undefined') {
+          if (saved.ocrText) {
+            localStorage.setItem('context_vocab_cached_page_ocr', saved.ocrText);
+          } else {
+            localStorage.removeItem('context_vocab_cached_page_ocr');
+          }
+        }
+      } else {
+        // 해당 단어장에 아직 저장된 사진이 없는 경우: 깨끗한 상태로 준비
+        sourceImagesRef.current = [];
+        setSourceImages([]);
+        currentSourceImageRef.current = null;
+        setCurrentSourceImage(null);
+        setPageOcrText('');
+        setLoadedSourceType(null);
+        if (typeof window !== 'undefined') {
+          localStorage.removeItem('context_vocab_cached_page_ocr');
+        }
+      }
+    } catch (err) {
+      console.warn('단어장 사진 복원 실패:', err);
+    }
   }
 
   // OCR & Web Source State (현재 로드된 페이지/웹문서 텍스트 & 캐시)
@@ -592,32 +652,28 @@ export default function Home() {
         }
       }
 
-      try {
-        const savedImgList = sessionStorage.getItem('context_vocab_source_images');
-        if (savedImgList) {
-          const parsedList = JSON.parse(savedImgList);
-          if (Array.isArray(parsedList) && parsedList.length > 0) {
-            sourceImagesRef.current = parsedList;
-            setSourceImages(parsedList);
-            const latest = parsedList[parsedList.length - 1];
+      // 단어장별 최신 사진(최대 2장) 및 OCR 텍스트 복원
+      (async () => {
+        try {
+          const targetBook = (lastBook && !lastBook.includes('햄릿') ? lastBook : '원서 첫걸음: 어린 왕자').trim();
+          await migrateLegacySourceData(targetBook);
+          const bookData = await loadBookSourceData(targetBook);
+          if (bookData && (bookData.images.length > 0 || bookData.ocrText)) {
+            sourceImagesRef.current = bookData.images;
+            setSourceImages(bookData.images);
+            const latest = bookData.images.length > 0 ? bookData.images[bookData.images.length - 1] : null;
             currentSourceImageRef.current = latest;
             setCurrentSourceImage(latest);
-          }
-        } else {
-          const savedImg = sessionStorage.getItem('context_vocab_source_image');
-          if (savedImg) {
-            const parsedImg = JSON.parse(savedImg);
-            if (parsedImg && parsedImg.base64) {
-              sourceImagesRef.current = [parsedImg];
-              setSourceImages([parsedImg]);
-              currentSourceImageRef.current = parsedImg;
-              setCurrentSourceImage(parsedImg);
+            if (bookData.ocrText) {
+              const cleaned = cleanOcrText(bookData.ocrText);
+              setPageOcrText(cleaned);
+              setLoadedSourceType(bookData.images.length > 0 ? 'camera' : 'web');
             }
           }
+        } catch (e) {
+          console.warn('Initial book source load error:', e);
         }
-      } catch {
-        // ignore storage parse error
-      }
+      })();
 
       const savedGeminiKey = getStoredGeminiKey();
       if (savedGeminiKey) {
@@ -1039,6 +1095,7 @@ export default function Home() {
           setCurrentSourceImage(imgData);
 
           try {
+            saveBookSourceData(inputBookTitle, updatedImages, pageOcrText);
             sessionStorage.setItem('context_vocab_source_images', JSON.stringify(updatedImages));
             sessionStorage.setItem('context_vocab_source_image', JSON.stringify(imgData));
           } catch {
@@ -1055,6 +1112,9 @@ export default function Home() {
           updatedImages
         );
         setOcrProgress(100);
+
+        // 현재 단어장별 스토리지에 최신 2장 사진과 추출 텍스트 영구 보관
+        saveBookSourceData(inputBookTitle, updatedImages, extractedText);
 
         return { text: extractedText, markedWords };
       }
@@ -2633,8 +2693,7 @@ export default function Home() {
                         setIsCustomBook(true);
                       } else {
                         setIsCustomBook(false);
-                        setInputBookTitle(e.target.value);
-                        touchBookUsage(e.target.value);
+                        handleSwitchBook(e.target.value);
                       }
                     }}
                     className="w-full px-3 py-2 text-xs bg-white text-slate-900 border border-slate-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-indigo-500 font-bold cursor-pointer"
@@ -2845,6 +2904,7 @@ export default function Home() {
                                 sessionStorage.removeItem('context_vocab_source_image');
                                 sessionStorage.removeItem('context_vocab_source_images');
                               }
+                              deleteBookSourceData(inputBookTitle);
                             }}
                             className="w-full h-9 text-xs text-slate-500 hover:text-rose-600 font-bold bg-white hover:bg-rose-50 border border-slate-200 hover:border-rose-200 rounded-xl transition cursor-pointer whitespace-nowrap flex items-center justify-center gap-1 active:scale-95 px-1"
                             title="불러온 원문 지우기"
