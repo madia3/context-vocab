@@ -2570,7 +2570,6 @@ export default function Home() {
                   : 'text-slate-600 hover:text-slate-900'
               }`}
             >
-              <BookOpen className="w-3.5 h-3.5 shrink-0" />
               <span>단어장</span>
               <span className="bg-indigo-100 text-indigo-700 text-[10px] px-1.5 py-0.2 rounded-full font-bold ml-0.5">
                 {vocabulary.length}
@@ -2627,10 +2626,10 @@ export default function Home() {
                   >
                     {availableBookTitles.map((title) => (
                       <option key={title} value={title}>
-                        📖 {title}
+                        {title}
                       </option>
                     ))}
-                    <option value="__custom__">➕ + 새 단어장 직접 추가하기...</option>
+                    <option value="__custom__">+ 새 단어장 직접 추가하기...</option>
                   </select>
 
                   {/* 새 단어장 직접 입력란 (필요할 때만 펼쳐짐) */}
@@ -3692,12 +3691,12 @@ export default function Home() {
                     }}
                     className="w-full px-4 py-3 text-sm font-bold bg-slate-50 hover:bg-slate-100/80 text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs cursor-pointer appearance-none pr-10 transition"
                   >
-                    <option value="all">📚 전체 단어장 보기 (총 {vocabulary.length}단어)</option>
+                    <option value="all">전체 단어장 보기 (총 {vocabulary.length}단어)</option>
                     {availableBookTitles.map((title) => {
                       const count = vocabulary.filter((v) => (v.bookTitle || '기본 단어장') === title).length;
                       return (
                         <option key={title} value={title}>
-                          📖 {title} ({count}단어)
+                          {title} ({count}단어)
                         </option>
                       );
                     })}
@@ -6002,11 +6001,11 @@ export default function Home() {
                                     ).length;
                                     return (
                                       <option key={title} value={title}>
-                                        📖 {title} ({c}단어 보관 중)
+                                        {title} ({c}단어 보관 중)
                                       </option>
                                     );
                                   })}
-                                  <option value="__custom__">➕ + 새 단어장 만들어 이동...</option>
+                                  <option value="__custom__">+ 새 단어장 만들어 이동...</option>
                                 </select>
                               </div>
 
