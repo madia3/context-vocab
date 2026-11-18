@@ -314,6 +314,30 @@ export async function extractTextWithAI(
   let modelUsed: string | undefined;
   let visionAttemptLogs: string[] = [];
 
+  // 4.0초 지연 백그라운드 예열: Vision이 4초 안에 안 끝나면 장애/지연 대비로 백그라운드에서 Tesseract 미리 시동
+  const prewarmRef: { promise: Promise<{ text: string; durationMs: number }> | null } = { promise: null };
+  let tesseractPrewarmTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
+    tesseractPrewarmTimer = null;
+    const preStart = performance.now();
+    prewarmRef.promise = import('./ocr')
+      .then(({ extractTextFromPageImage }) => extractTextFromPageImage(file))
+      .then((text) => ({
+        text,
+        durationMs: Math.round(performance.now() - preStart),
+      }))
+      .catch(() => ({
+        text: '',
+        durationMs: Math.round(performance.now() - preStart),
+      }));
+  }, 4000);
+
+  const clearTesseractPrewarmTimer = () => {
+    if (tesseractPrewarmTimer) {
+      clearTimeout(tesseractPrewarmTimer);
+      tesseractPrewarmTimer = null;
+    }
+  };
+
   // 1. Gemini Vision OCR 우선 시도 (2장일 경우 전후 관계 자동 파악 및 잘린 문장 완벽 결합)
   const visionStart = performance.now();
   try {
@@ -338,6 +362,7 @@ export async function extractTextWithAI(
       visionAttemptLogs = Array.isArray(data.attemptLogs) ? data.attemptLogs : [];
 
       if (data.text && data.text.trim()) {
+        clearTesseractPrewarmTimer();
         recordAiUsage(1);
         const detected = data.markedWords || data.underlinedWords;
         const markedWords: string[] = Array.isArray(detected) ? detected : [];
@@ -395,18 +420,35 @@ export async function extractTextWithAI(
       detail: visionError,
     });
     console.warn('AI Vision OCR 1차 호출 네트워크 에러:', err);
+  } finally {
+    clearTesseractPrewarmTimer();
   }
 
-  // 2. Vision 실패 시 로컬 Tesseract로 1차 추출 후 -> Gemini 초고속(1.5초) 텍스트 문맥 복원으로 오타 완벽 제거!
-  const tessStart = performance.now();
+  // 2. Vision 실패 시: 이미 4초 시점에 예열된 Tesseract가 있으면 0초 대기로 즉시 합류, 없으면 지금 시작
   const { extractTextFromPageImage, cleanOcrText } = await import('./ocr');
-  const fallbackText = await extractTextFromPageImage(file);
-  const tesseractMs = Math.round(performance.now() - tessStart);
+  let fallbackText = '';
+  let tesseractMs = 0;
+  let wasPrewarmed = false;
+
+  if (prewarmRef.promise) {
+    const waitStart = performance.now();
+    const prewarmedRes = await prewarmRef.promise;
+    fallbackText = prewarmedRes.text;
+    tesseractMs = Math.round(performance.now() - waitStart);
+    wasPrewarmed = true;
+  } else {
+    const tessStart = performance.now();
+    fallbackText = await extractTextFromPageImage(file);
+    tesseractMs = Math.round(performance.now() - tessStart);
+  }
+
   pipelineSteps.push({
     step: '3. 로컬 Tesseract WASM OCR',
     durationMs: tesseractMs,
     status: 'ok',
-    detail: `${fallbackText.length}글자 추출 (스마트폰 기기 CPU 동작)`,
+    detail: wasPrewarmed
+      ? `${fallbackText.length}글자 추출 (4초 백그라운드 예열 완료 · 추가 대기 ${(tesseractMs / 1000).toFixed(2)}초)`
+      : `${fallbackText.length}글자 추출 (스마트폰 기기 CPU 동작)`,
   });
 
   const heuristicCleaned = cleanOcrText(fallbackText);
