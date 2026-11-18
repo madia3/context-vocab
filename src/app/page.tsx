@@ -2836,7 +2836,7 @@ export default function Home() {
     return withSentence.length > 0 ? withSentence : filteredVocabulary;
   }, [filteredVocabulary]);
 
-  // 문장 연속 듣기 토글 핸들러
+  // 문장 연속 듣기 토글 핸들러 (현재 선택된 단어장의 모든 문장을 무한 반복 연속 낭독)
   const handleToggleListenSentences = useCallback(async () => {
     if (isListeningSentences) {
       cancelSentencePlayRef.current = true;
@@ -2854,27 +2854,54 @@ export default function Home() {
     cancelSentencePlayRef.current = false;
     setIsListeningSentences(true);
 
-    for (let i = 0; i < sentencePlayList.length; i++) {
-      if (cancelSentencePlayRef.current) break;
-      setCurrentSentencePlayIdx(i);
+    // 사용자가 중지할 때까지 현재 선택된 단어장의 문장들을 계속 반복 낭독
+    while (!cancelSentencePlayRef.current) {
+      for (let i = 0; i < sentencePlayList.length; i++) {
+        if (cancelSentencePlayRef.current) break;
+        setCurrentSentencePlayIdx(i);
 
-      const item = sentencePlayList[i];
-      const textToRead = (item.contextSentence || item.word).trim();
+        const item = sentencePlayList[i];
+        const cardSentenceIdx = listCardSentenceIdx[item.id] || 0;
+        const textToRead = (
+          (item.candidateSentences && item.candidateSentences.length > 0
+            ? item.candidateSentences[cardSentenceIdx % item.candidateSentences.length]
+            : item.contextSentence) || item.word
+        ).trim();
 
-      // 원어민 음성으로 읽기
-      await speakSentenceTTS(textToRead, ttsVoice, ttsRate);
+        // 다음 재생할 문장 백그라운드 사전 캐싱 (0ms 지연 재생 보장)
+        const nextIdx = (i + 1) % sentencePlayList.length;
+        const nextItem = sentencePlayList[nextIdx];
+        if (nextItem) {
+          const nextCardIdx = listCardSentenceIdx[nextItem.id] || 0;
+          const nextText = (
+            (nextItem.candidateSentences && nextItem.candidateSentences.length > 0
+              ? nextItem.candidateSentences[nextCardIdx % nextItem.candidateSentences.length]
+              : nextItem.contextSentence) || nextItem.word
+          ).trim();
+          preloadSentenceTTS(nextText, ttsVoice);
+        }
 
-      if (cancelSentencePlayRef.current) break;
+        // 현재 낭독 중인 단어 카드로 부드럽게 스크롤
+        if (typeof document !== 'undefined') {
+          const el = document.getElementById(`vocab-card-${item.id}`);
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
+        }
 
-      // 다음 문장 넘어가기 전 0.8초의 편안한 쉼
-      await new Promise((resolve) => setTimeout(resolve, 800));
+        // 원어민 음성으로 읽기
+        await speakSentenceTTS(textToRead, ttsVoice, ttsRate);
+
+        if (cancelSentencePlayRef.current) break;
+
+        // 다음 문장 넘어가기 전 0.8초의 편안한 쉼
+        await new Promise((resolve) => setTimeout(resolve, 800));
+      }
     }
 
-    if (!cancelSentencePlayRef.current) {
-      setIsListeningSentences(false);
-      setCurrentSentencePlayIdx(-1);
-    }
-  }, [isListeningSentences, sentencePlayList, ttsVoice, ttsRate]);
+    setIsListeningSentences(false);
+    setCurrentSentencePlayIdx(-1);
+  }, [isListeningSentences, sentencePlayList, listCardSentenceIdx, ttsVoice, ttsRate]);
 
   // 탭 변경 시 문장 연속 낭독 즉시 중지
   useEffect(() => {
@@ -4604,13 +4631,13 @@ export default function Home() {
                     <>
                       <Square className="w-3.5 h-3.5 fill-current shrink-0" />
                       <span className="truncate">
-                        중지 ({currentSentencePlayIdx + 1}/{sentencePlayList.length})
+                        중지 ({currentSentencePlayIdx + 1}/{sentencePlayList.length} · 반복 낭독 중 🔁)
                       </span>
                     </>
                   ) : (
                     <>
                       <Volume2 className="w-4 h-4 text-emerald-200 shrink-0" />
-                      <span className="truncate">🎧 문장 듣기</span>
+                      <span className="truncate">🎧 문장 연속 듣기 (무한 반복)</span>
                     </>
                   )}
                 </button>
@@ -4809,6 +4836,7 @@ export default function Home() {
                   return (
                     <div
                       key={item.id}
+                      id={`vocab-card-${item.id}`}
                       className={`bg-white rounded-2xl border p-5 transition flex flex-col justify-between ${
                         isBeingRead
                           ? 'border-emerald-500 ring-2 ring-emerald-400 shadow-md bg-emerald-50/25'
