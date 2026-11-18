@@ -2832,37 +2832,44 @@ export default function Home() {
                 <button
                   type="button"
                   onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                  className="flex items-center gap-1.5 p-1 sm:px-2.5 sm:py-1 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 transition cursor-pointer border border-slate-200 shadow-2xs"
+                  className="flex items-center gap-2 p-1.5 sm:px-3 sm:py-1.5 rounded-2xl bg-white hover:bg-slate-50 text-slate-800 transition cursor-pointer border border-slate-200/90 shadow-2xs hover:border-slate-300 active:scale-[0.98]"
                   title={currentUser.email || '사용자 프로필 및 설정'}
                 >
                   {effectiveAvatar ? (
                     <img
                       src={effectiveAvatar}
                       alt="Profile"
-                      className="w-5 h-5 rounded-full object-cover shrink-0 ring-1 ring-slate-300"
+                      className="w-8 h-8 rounded-full object-cover shrink-0 ring-2 ring-indigo-100 shadow-2xs"
                     />
                   ) : (
-                    <div className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-bold flex items-center justify-center shrink-0">
+                    <div className="w-8 h-8 rounded-full bg-indigo-600 text-white text-xs font-black flex items-center justify-center shrink-0 ring-2 ring-indigo-100 shadow-2xs">
                       {(effectiveDisplayName || 'U')[0].toUpperCase()}
                     </div>
                   )}
-                  <span className="hidden sm:inline text-xs font-bold max-w-[85px] truncate">
-                    {effectiveDisplayName}
-                  </span>
-                  <ChevronDown className="w-3 h-3 text-slate-500 shrink-0" />
+                  <div className="hidden sm:flex flex-col text-left leading-tight min-w-0 pr-0.5">
+                    <span className="text-xs font-bold text-slate-900 max-w-[100px] truncate">
+                      {effectiveDisplayName}
+                    </span>
+                    <span className="text-[10px] text-slate-400 font-medium">설정 / 동기화</span>
+                  </div>
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                 </button>
               ) : (
                 <button
                   type="button"
                   onClick={() => setIsUserMenuOpen(!isUserMenuOpen)}
-                  className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs transition cursor-pointer border border-slate-200 shadow-2xs"
+                  className="flex items-center gap-2 p-1.5 sm:px-3 sm:py-1.5 rounded-2xl bg-white hover:bg-slate-50 text-slate-800 transition cursor-pointer border border-slate-200/90 shadow-2xs hover:border-slate-300 active:scale-[0.98]"
                   title="계정 및 환경설정"
                 >
-                  <div className="w-4 h-4 rounded-full bg-slate-200 text-slate-600 flex items-center justify-center">
-                    <UserIcon className="w-2.5 h-2.5" />
+                  <div className="w-8 h-8 rounded-full bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0 ring-2 ring-indigo-100/70 shadow-2xs">
+                    <UserIcon className="w-4 h-4 text-indigo-600" />
                   </div>
-                  <span>계정 / 설정</span>
-                  <ChevronDown className="w-3 h-3 text-slate-500 shrink-0" />
+                  <div className="hidden sm:flex flex-col text-left leading-tight min-w-0 pr-0.5">
+                    <span className="text-xs font-bold text-slate-900">계정 / 설정</span>
+                    <span className="text-[10px] text-slate-400 font-medium">게스트 모드</span>
+                  </div>
+                  <span className="sm:hidden text-xs font-bold text-slate-800 pr-0.5">설정</span>
+                  <ChevronDown className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                 </button>
               )}
 
