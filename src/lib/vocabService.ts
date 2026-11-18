@@ -3,40 +3,341 @@ import { supabase, checkIsSupabaseConfigured, getCurrentUser } from './supabase'
 import { User } from '@supabase/supabase-js';
 
 export const INITIAL_SAMPLES: VocabItem[] = [
+  // =========================================================================
+  // 단어장 1: 원서 첫걸음: 어린 왕자 (The Little Prince) - 10단어
+  // =========================================================================
   {
-    id: "sample_tragedy",
-    word: "tragedy",
-    phonetic: "/ˈtrædʒ.ə.di/",
-    partOfSpeech: "명사",
-    selectedMeaning: "비극, 비극적인 사건이나 참사",
-    allMeanings: ["비극, 참사", "비극적 사건", "비극 작품"],
-    contextSentence: "It was an unspeakable tragedy that shook the entire community and left everyone in deep grief.",
-    sourceMemo: "셰익스피어 원서",
-    bookTitle: "햄릿 (Hamlet)",
-    quizCount: 3,
-    correctCount: 3,
-    wrongCount: 0,
-    consecutiveCorrect: 3,
-    lastQuizDate: "2026-11-15",
-    date: "2026-11-15"
-  },
-  {
-    id: "sample_prevalent",
-    word: "prevalent",
-    phonetic: "/ˈprev.əl.ənt/",
+    id: "sample_essential",
+    word: "essential",
+    phonetic: "/ɪˈsen.ʃəl/",
     partOfSpeech: "형용사",
-    selectedMeaning: "널리 퍼진, 유행하는",
-    allMeanings: ["널리 퍼진, 유행하는", "우세한, 지배적인"],
-    contextSentence: "The respiratory disease is significantly more prevalent in cold and crowded urban areas.",
-    sourceMemo: "의학 저널 12p",
-    bookTitle: "의학 저널 (Medical Journal)",
+    selectedMeaning: "본질적인, 극히 중요한",
+    allMeanings: ["본질적인, 극히 중요한", "필수적인", "가장 중요한"],
+    contextSentence: "What is essential is invisible to the eye.",
+    sourceMemo: "어린 왕자 제21장",
+    bookTitle: "원서 첫걸음: 어린 왕자",
     quizCount: 2,
-    correctCount: 1,
-    wrongCount: 1,
-    consecutiveCorrect: 1,
-    lastQuizDate: "2026-11-15",
-    date: "2026-11-15"
+    correctCount: 2,
+    wrongCount: 0,
+    consecutiveCorrect: 2,
+    lastQuizDate: "2026-11-17",
+    date: "2026-11-17"
   },
+  {
+    id: "sample_tame",
+    word: "tame",
+    phonetic: "/teɪm/",
+    partOfSpeech: "동사",
+    selectedMeaning: "길들이다, 친숙하게 만들다",
+    allMeanings: ["길들이다, 다스리다", "친숙하게 만들다"],
+    contextSentence: "If you tame me, then we shall need each other. To me, you will be unique in all the world.",
+    sourceMemo: "어린 왕자 제21장",
+    bookTitle: "원서 첫걸음: 어린 왕자",
+    quizCount: 1,
+    correctCount: 1,
+    wrongCount: 0,
+    consecutiveCorrect: 1,
+    lastQuizDate: "2026-11-17",
+    date: "2026-11-17"
+  },
+  {
+    id: "sample_responsible",
+    word: "responsible",
+    phonetic: "/rɪˈspɑːn.sə.bəl/",
+    partOfSpeech: "형용사",
+    selectedMeaning: "책임이 있는, 책임을 져야 하는",
+    allMeanings: ["책임이 있는", "신뢰할 수 있는"],
+    contextSentence: "You become responsible, forever, for what you have tamed.",
+    sourceMemo: "어린 왕자 제21장",
+    bookTitle: "원서 첫걸음: 어린 왕자",
+    quizCount: 0,
+    correctCount: 0,
+    wrongCount: 0,
+    consecutiveCorrect: 0,
+    date: "2026-11-17"
+  },
+  {
+    id: "sample_judge",
+    word: "judge",
+    phonetic: "/dʒʌdʒ/",
+    partOfSpeech: "동사",
+    selectedMeaning: "판단하다, 심판하다",
+    allMeanings: ["판단하다", "평가하다", "재판하다"],
+    contextSentence: "It is much more difficult to judge oneself than to judge others.",
+    sourceMemo: "어린 왕자 제10장",
+    bookTitle: "원서 첫걸음: 어린 왕자",
+    quizCount: 0,
+    correctCount: 0,
+    wrongCount: 0,
+    consecutiveCorrect: 0,
+    date: "2026-11-17"
+  },
+  {
+    id: "sample_devote",
+    word: "devote",
+    phonetic: "/dɪˈvoʊt/",
+    partOfSpeech: "동사",
+    selectedMeaning: "(시간, 노력 등을) 쏟다, 헌신하다",
+    allMeanings: ["쏟다, 바치다", "헌신하다", "전념하다"],
+    contextSentence: "It is the time you have devoted to your rose that makes your rose so important.",
+    sourceMemo: "어린 왕자 제21장",
+    bookTitle: "원서 첫걸음: 어린 왕자",
+    quizCount: 0,
+    correctCount: 0,
+    wrongCount: 0,
+    consecutiveCorrect: 0,
+    date: "2026-11-17"
+  },
+  {
+    id: "sample_ordinary",
+    word: "ordinary",
+    phonetic: "/ˈɔːr.dən.er.i/",
+    partOfSpeech: "형용사",
+    selectedMeaning: "평범한, 보통의",
+    allMeanings: ["평범한", "일반적인", "보통의"],
+    contextSentence: "She is not just an ordinary rose; she is a flower I have watered and sheltered.",
+    sourceMemo: "어린 왕자 제21장",
+    bookTitle: "원서 첫걸음: 어린 왕자",
+    quizCount: 0,
+    correctCount: 0,
+    wrongCount: 0,
+    consecutiveCorrect: 0,
+    date: "2026-11-17"
+  },
+  {
+    id: "sample_wander",
+    word: "wander",
+    phonetic: "/ˈwɑːn.dɚ/",
+    partOfSpeech: "동사",
+    selectedMeaning: "방랑하다, 헤매다, 거닐다",
+    allMeanings: ["방랑하다", "헤매다", "돌아다니다"],
+    contextSentence: "All men have stars, but for travelers who wander, the stars are guides.",
+    sourceMemo: "어린 왕자 제26장",
+    bookTitle: "원서 첫걸음: 어린 왕자",
+    quizCount: 0,
+    correctCount: 0,
+    wrongCount: 0,
+    consecutiveCorrect: 0,
+    date: "2026-11-17"
+  },
+  {
+    id: "sample_cherish",
+    word: "cherish",
+    phonetic: "/ˈtʃer.ɪʃ/",
+    partOfSpeech: "동사",
+    selectedMeaning: "소중히 여기다, 아끼다, 간직하다",
+    allMeanings: ["소중히 여기다", "간직하다", "아끼다"],
+    contextSentence: "Words are the source of misunderstandings, so we must cherish our silent moments together.",
+    sourceMemo: "어린 왕자 제21장",
+    bookTitle: "원서 첫걸음: 어린 왕자",
+    quizCount: 0,
+    correctCount: 0,
+    wrongCount: 0,
+    consecutiveCorrect: 0,
+    date: "2026-11-17"
+  },
+  {
+    id: "sample_invisible",
+    word: "invisible",
+    phonetic: "/ɪnˈvɪz.ə.bəl/",
+    partOfSpeech: "형용사",
+    selectedMeaning: "눈에 보이지 않는",
+    allMeanings: ["눈에 보이지 않는", "숨겨진"],
+    contextSentence: "The stars are beautiful, because of a flower that cannot be seen, invisible in the night.",
+    sourceMemo: "어린 왕자 제24장",
+    bookTitle: "원서 첫걸음: 어린 왕자",
+    quizCount: 0,
+    correctCount: 0,
+    wrongCount: 0,
+    consecutiveCorrect: 0,
+    date: "2026-11-17"
+  },
+  {
+    id: "sample_secret",
+    word: "secret",
+    phonetic: "/ˈsiː.krət/",
+    partOfSpeech: "명사",
+    selectedMeaning: "비밀, 비결",
+    allMeanings: ["비밀", "비결", "신비"],
+    contextSentence: "And now here is my secret, a very simple secret: It is only with the heart that one can see rightly.",
+    sourceMemo: "어린 왕자 제21장",
+    bookTitle: "원서 첫걸음: 어린 왕자",
+    quizCount: 0,
+    correctCount: 0,
+    wrongCount: 0,
+    consecutiveCorrect: 0,
+    date: "2026-11-17"
+  },
+
+  // =========================================================================
+  // 단어장 2: 스탠포드 명연설: 인생을 바꾸는 문장 - 10단어
+  // =========================================================================
+  {
+    id: "sample_connect",
+    word: "connect",
+    phonetic: "/kəˈnekt/",
+    partOfSpeech: "동사",
+    selectedMeaning: "연결하다, 이어지다",
+    allMeanings: ["연결하다", "이어지다", "관련시키다"],
+    contextSentence: "You can't connect the dots looking forward; you can only connect them looking backwards.",
+    sourceMemo: "스티브 잡스 2005 스탠포드 연설",
+    bookTitle: "스탠포드 명연설: 인생을 바꾸는 문장",
+    quizCount: 2,
+    correctCount: 2,
+    wrongCount: 0,
+    consecutiveCorrect: 2,
+    lastQuizDate: "2026-11-17",
+    date: "2026-11-17"
+  },
+  {
+    id: "sample_curiosity",
+    word: "curiosity",
+    phonetic: "/ˌkjʊr.iˈɑː.sə.t̬i/",
+    partOfSpeech: "명사",
+    selectedMeaning: "호기심, 진기함",
+    allMeanings: ["호기심", "신기함", "진기한 것"],
+    contextSentence: "Much of what I stumbled into by following my curiosity and intuition turned out to be priceless later on.",
+    sourceMemo: "스티브 잡스 2005 스탠포드 연설",
+    bookTitle: "스탠포드 명연설: 인생을 바꾸는 문장",
+    quizCount: 0,
+    correctCount: 0,
+    wrongCount: 0,
+    consecutiveCorrect: 0,
+    date: "2026-11-17"
+  },
+  {
+    id: "sample_destination",
+    word: "destination",
+    phonetic: "/ˌdes.təˈneɪ.ʃən/",
+    partOfSpeech: "명사",
+    selectedMeaning: "목적지, 종착역",
+    allMeanings: ["목적지", "종착점", "도착지"],
+    contextSentence: "Death is the destination we all share; no one has ever escaped it.",
+    sourceMemo: "스티브 잡스 2005 스탠포드 연설",
+    bookTitle: "스탠포드 명연설: 인생을 바꾸는 문장",
+    quizCount: 0,
+    correctCount: 0,
+    wrongCount: 0,
+    consecutiveCorrect: 0,
+    date: "2026-11-17"
+  },
+  {
+    id: "sample_courage",
+    word: "courage",
+    phonetic: "/ˈkɝː.ɪdʒ/",
+    partOfSpeech: "명사",
+    selectedMeaning: "용기, 담력",
+    allMeanings: ["용기", "담력", "배짱"],
+    contextSentence: "Have the courage to follow your heart and intuition; they somehow already know what you truly want to become.",
+    sourceMemo: "스티브 잡스 2005 스탠포드 연설",
+    bookTitle: "스탠포드 명연설: 인생을 바꾸는 문장",
+    quizCount: 1,
+    correctCount: 1,
+    wrongCount: 0,
+    consecutiveCorrect: 1,
+    lastQuizDate: "2026-11-17",
+    date: "2026-11-17"
+  },
+  {
+    id: "sample_settle",
+    word: "settle",
+    phonetic: "/ˈset̬.əl/",
+    partOfSpeech: "동사",
+    selectedMeaning: "안주하다, 만족하다, 정착하다",
+    allMeanings: ["안주하다", "정착하다", "해결하다"],
+    contextSentence: "If you haven't found what you love yet, keep looking. Don't settle.",
+    sourceMemo: "스티브 잡스 2005 스탠포드 연설",
+    bookTitle: "스탠포드 명연설: 인생을 바꾸는 문장",
+    quizCount: 0,
+    correctCount: 0,
+    wrongCount: 0,
+    consecutiveCorrect: 0,
+    date: "2026-11-17"
+  },
+  {
+    id: "sample_perspective",
+    word: "perspective",
+    phonetic: "/pɚˈspek.tɪv/",
+    partOfSpeech: "명사",
+    selectedMeaning: "관점, 시각, 원근법",
+    allMeanings: ["관점, 시각", "원근법", "균형감"],
+    contextSentence: "A shift in your perspective can transform a frustrating setback into a profound opportunity.",
+    sourceMemo: "명연설 & 자기계발 에세이",
+    bookTitle: "스탠포드 명연설: 인생을 바꾸는 문장",
+    quizCount: 0,
+    correctCount: 0,
+    wrongCount: 0,
+    consecutiveCorrect: 0,
+    date: "2026-11-17"
+  },
+  {
+    id: "sample_obstacle",
+    word: "obstacle",
+    phonetic: "/ˈɑːb.stə.kəl/",
+    partOfSpeech: "명사",
+    selectedMeaning: "장애물, 걸림돌",
+    allMeanings: ["장애물", "걸림돌", "방해물"],
+    contextSentence: "The obstacle in our path becomes the path. What stands in the way becomes the way.",
+    sourceMemo: "스토아 철학 명언",
+    bookTitle: "스탠포드 명연설: 인생을 바꾸는 문장",
+    quizCount: 0,
+    correctCount: 0,
+    wrongCount: 0,
+    consecutiveCorrect: 0,
+    date: "2026-11-17"
+  },
+  {
+    id: "sample_resilience",
+    word: "resilience",
+    phonetic: "/rɪˈzɪl.jəns/",
+    partOfSpeech: "명사",
+    selectedMeaning: "회복탄력성, 회복력, 탄성",
+    allMeanings: ["회복탄력성", "탄력", "회복력"],
+    contextSentence: "True resilience is not about avoiding difficulty, but having the inner strength to rise each time you stumble.",
+    sourceMemo: "회복탄력성 명연설",
+    bookTitle: "스탠포드 명연설: 인생을 바꾸는 문장",
+    quizCount: 0,
+    correctCount: 0,
+    wrongCount: 0,
+    consecutiveCorrect: 0,
+    date: "2026-11-17"
+  },
+  {
+    id: "sample_passion",
+    word: "passion",
+    phonetic: "/ˈpæʃ.ən/",
+    partOfSpeech: "명사",
+    selectedMeaning: "열정, 정열",
+    allMeanings: ["열정", "정열", "격정"],
+    contextSentence: "The only way to do truly exceptional work is to love what you do with genuine passion.",
+    sourceMemo: "스티브 잡스 2005 스탠포드 연설",
+    bookTitle: "스탠포드 명연설: 인생을 바꾸는 문장",
+    quizCount: 0,
+    correctCount: 0,
+    wrongCount: 0,
+    consecutiveCorrect: 0,
+    date: "2026-11-17"
+  },
+  {
+    id: "sample_inspire",
+    word: "inspire",
+    phonetic: "/ɪnˈspaɪr/",
+    partOfSpeech: "동사",
+    selectedMeaning: "영감을 주다, 고무하다",
+    allMeanings: ["영감을 주다", "고무하다", "격려하다"],
+    contextSentence: "Great leaders inspire people not with hollow words, but with the integrity of how they live.",
+    sourceMemo: "리더십 명강연",
+    bookTitle: "스탠포드 명연설: 인생을 바꾸는 문장",
+    quizCount: 0,
+    correctCount: 0,
+    wrongCount: 0,
+    consecutiveCorrect: 0,
+    date: "2026-11-17"
+  },
+
+  // =========================================================================
+  // 단어장 3: 스마트 스타터: 교양 원서 필수 단어 - 10단어
+  // =========================================================================
   {
     id: "sample_ubiquitous",
     word: "ubiquitous",
@@ -44,15 +345,15 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     partOfSpeech: "형용사",
     selectedMeaning: "어디에나 존재하는, 아주 흔한",
     allMeanings: ["어디에나 존재하는, 아주 흔한", "도처에 나타나는"],
-    contextSentence: "Smartphones have become truly ubiquitous in every aspect of modern communication.",
+    contextSentence: "Smartphones and artificial intelligence have become truly ubiquitous in every aspect of modern communication.",
     sourceMemo: "IT 트렌드",
-    bookTitle: "AI & 테크 리포트",
-    quizCount: 4,
-    correctCount: 4,
+    bookTitle: "스마트 스타터: 교양 원서 필수 단어",
+    quizCount: 2,
+    correctCount: 2,
     wrongCount: 0,
-    consecutiveCorrect: 4,
-    lastQuizDate: "2026-11-15",
-    date: "2026-11-15"
+    consecutiveCorrect: 2,
+    lastQuizDate: "2026-11-17",
+    date: "2026-11-17"
   },
   {
     id: "sample_mitigate",
@@ -63,30 +364,141 @@ export const INITIAL_SAMPLES: VocabItem[] = [
     allMeanings: ["완화하다, 경감시키다", "누그러뜨리다"],
     contextSentence: "Governments must implement strict policies to mitigate the severe consequences of climate crisis.",
     sourceMemo: "기후 리포트 3장",
-    bookTitle: "지구 온난화 특별 보고서",
+    bookTitle: "스마트 스타터: 교양 원서 필수 단어",
     quizCount: 1,
     correctCount: 1,
     wrongCount: 0,
     consecutiveCorrect: 1,
-    lastQuizDate: "2026-11-15",
-    date: "2026-11-15"
+    lastQuizDate: "2026-11-17",
+    date: "2026-11-17"
   },
   {
     id: "sample_pragmatic",
     word: "pragmatic",
     phonetic: "/præɡˈmæt.ɪk/",
     partOfSpeech: "형용사",
-    selectedMeaning: "실용적인, 실무적인",
+    selectedMeaning: "실용적인, 현실적인",
     allMeanings: ["실용적인, 실무적인", "현실주의적인"],
     contextSentence: "Instead of debating theoretical models, the team adopted a pragmatic approach to launch the MVP quickly.",
     sourceMemo: "스타트업 경영학 원서",
-    bookTitle: "린 스타트업 (Lean Startup)",
-    quizCount: 2,
-    correctCount: 2,
+    bookTitle: "스마트 스타터: 교양 원서 필수 단어",
+    quizCount: 0,
+    correctCount: 0,
     wrongCount: 0,
-    consecutiveCorrect: 2,
-    lastQuizDate: "2026-11-15",
-    date: "2026-11-15"
+    consecutiveCorrect: 0,
+    date: "2026-11-17"
+  },
+  {
+    id: "sample_inevitable",
+    word: "inevitable",
+    phonetic: "/ɪnˈev.ə.t̬ə.bəl/",
+    partOfSpeech: "형용사",
+    selectedMeaning: "불가피한, 필연적인",
+    allMeanings: ["불가피한", "필연적인", "피할 수 없는"],
+    contextSentence: "Constant technological transformation is inevitable, and our ability to adapt defines our future success.",
+    sourceMemo: "포브스 테크 칼럼",
+    bookTitle: "스마트 스타터: 교양 원서 필수 단어",
+    quizCount: 0,
+    correctCount: 0,
+    wrongCount: 0,
+    consecutiveCorrect: 0,
+    date: "2026-11-17"
+  },
+  {
+    id: "sample_empathy",
+    word: "empathy",
+    phonetic: "/ˈem.pə.θi/",
+    partOfSpeech: "명사",
+    selectedMeaning: "공감, 감정이입",
+    allMeanings: ["공감", "감정이입", "이해"],
+    contextSentence: "Deep empathy enables leaders to understand diverse perspectives and build genuine psychological safety.",
+    sourceMemo: "하버드 비즈니스 리뷰",
+    bookTitle: "스마트 스타터: 교양 원서 필수 단어",
+    quizCount: 0,
+    correctCount: 0,
+    wrongCount: 0,
+    consecutiveCorrect: 0,
+    date: "2026-11-17"
+  },
+  {
+    id: "sample_authentic",
+    word: "authentic",
+    phonetic: "/ɑːˈθen.t̬ɪk/",
+    partOfSpeech: "형용사",
+    selectedMeaning: "진정한, 진짜의, 신뢰할 수 있는",
+    allMeanings: ["진정한", "진짜의", "신뢰할 수 있는"],
+    contextSentence: "Building an authentic brand requires transparent communication and unwavering consistency in values.",
+    sourceMemo: "브랜드 전략 에세이",
+    bookTitle: "스마트 스타터: 교양 원서 필수 단어",
+    quizCount: 0,
+    correctCount: 0,
+    wrongCount: 0,
+    consecutiveCorrect: 0,
+    date: "2026-11-17"
+  },
+  {
+    id: "sample_lucid",
+    word: "lucid",
+    phonetic: "/ˈluː.sɪd/",
+    partOfSpeech: "형용사",
+    selectedMeaning: "명쾌한, 명료한, 맑은",
+    allMeanings: ["명쾌한, 명료한", "맑은", "의식이 또렷한"],
+    contextSentence: "The author provided a lucid explanation of complex economic forces, making the concept accessible to general readers.",
+    sourceMemo: "이코노미스트 서평",
+    bookTitle: "스마트 스타터: 교양 원서 필수 단어",
+    quizCount: 0,
+    correctCount: 0,
+    wrongCount: 0,
+    consecutiveCorrect: 0,
+    date: "2026-11-17"
+  },
+  {
+    id: "sample_profound",
+    word: "profound",
+    phonetic: "/prəˈfaʊnd/",
+    partOfSpeech: "형용사",
+    selectedMeaning: "깊은, 심오한, 엄청난",
+    allMeanings: ["심오한", "깊은", "엄청난"],
+    contextSentence: "Reading timeless literature often leaves a profound and lasting impression on how we understand human nature.",
+    sourceMemo: "타임지 문학 에세이",
+    bookTitle: "스마트 스타터: 교양 원서 필수 단어",
+    quizCount: 0,
+    correctCount: 0,
+    wrongCount: 0,
+    consecutiveCorrect: 0,
+    date: "2026-11-17"
+  },
+  {
+    id: "sample_subtle",
+    word: "subtle",
+    phonetic: "/ˈsʌt̬.əl/",
+    partOfSpeech: "형용사",
+    selectedMeaning: "미묘한, 섬세한, 절묘한",
+    allMeanings: ["미묘한", "섬세한", "감지하기 힘든"],
+    contextSentence: "Experienced negotiators pay close attention to subtle shifts in vocal tone and non-verbal cues.",
+    sourceMemo: "협상의 심리학",
+    bookTitle: "스마트 스타터: 교양 원서 필수 단어",
+    quizCount: 0,
+    correctCount: 0,
+    wrongCount: 0,
+    consecutiveCorrect: 0,
+    date: "2026-11-17"
+  },
+  {
+    id: "sample_versatile",
+    word: "versatile",
+    phonetic: "/ˈvɝː.sə.t̬əl/",
+    partOfSpeech: "형용사",
+    selectedMeaning: "다재다능한, 다용도의",
+    allMeanings: ["다재다능한", "다용도의", "변화무쌍한"],
+    contextSentence: "Python is renowned as a versatile programming language suitable for web development, automation, and machine learning.",
+    sourceMemo: "소프트웨어 엔지니어링 저널",
+    bookTitle: "스마트 스타터: 교양 원서 필수 단어",
+    quizCount: 0,
+    correctCount: 0,
+    wrongCount: 0,
+    consecutiveCorrect: 0,
+    date: "2026-11-17"
   }
 ];
 
@@ -118,6 +530,21 @@ export async function fetchVocabulary(targetUser?: User | null): Promise<VocabIt
       if (error) {
         console.warn('Supabase fetch error, fallback to local storage:', error);
       } else if (data) {
+        // 신규 유저 초기 세팅: 저장된 단어가 0개인 경우 초기 3개 단어장(30단어) 자동 세팅
+        if (data.length === 0) {
+          const seededKey = `context_vocab_seeded_${user.id}`;
+          const isSeeded = typeof window !== 'undefined' ? localStorage.getItem(seededKey) : null;
+          if (!isSeeded) {
+            if (typeof window !== 'undefined') {
+              localStorage.setItem(seededKey, 'true');
+            }
+            const seeded = await loadSamplesForUser(user.id);
+            if (seeded && seeded.length > 0) {
+              return seeded;
+            }
+          }
+        }
+
         const formatted: VocabItem[] = data.map((row: any) => ({
           id: row.id,
           word: row.word,
@@ -659,19 +1086,66 @@ export async function syncGuestWordsToUser(userId: string): Promise<number> {
 }
 
 /**
- * 샘플 단어들을 현재 사용자 계정에 로드합니다.
+ * 샘플 단어들을 현재 사용자 계정에 로드합니다 (신규 가입 시 초기 3개 단어장 자동 세팅)
  */
 export async function loadSamplesForUser(userId: string): Promise<VocabItem[]> {
-  for (const sample of INITIAL_SAMPLES) {
-    await addVocabularyItem(
-      {
-        ...sample,
-        id: `${userId}_sample_${sample.word}_${Date.now()}`,
-      },
-      userId
-    );
+  const today = new Date().toISOString().slice(0, 10);
+  const itemsToInsert = INITIAL_SAMPLES.map((sample, idx) => ({
+    id: `seed_${userId.slice(0, 8)}_${sample.word}_${idx}`,
+    user_id: userId,
+    word: sample.word,
+    phonetic: sample.phonetic,
+    part_of_speech: sample.partOfSpeech,
+    selected_meaning: sample.selectedMeaning,
+    all_meanings: sample.allMeanings || [],
+    context_sentence: sample.contextSentence,
+    candidate_sentences: [sample.contextSentence],
+    source_memo: sample.sourceMemo,
+    book_title: sample.bookTitle,
+    quiz_count: sample.quizCount || 0,
+    correct_count: sample.correctCount || 0,
+    wrong_count: sample.wrongCount || 0,
+    consecutive_correct: sample.consecutiveCorrect || 0,
+    last_quiz_date: sample.lastQuizDate || null,
+  }));
+
+  if (checkIsSupabaseConfigured() && supabase) {
+    try {
+      const { error } = await supabase.from('vocab_words').upsert(itemsToInsert);
+      if (error) {
+        console.warn('loadSamplesForUser supabase upsert error:', error);
+      }
+    } catch (e) {
+      console.warn('loadSamplesForUser supabase exception:', e);
+    }
   }
-  return fetchVocabulary();
+
+  const formatted: VocabItem[] = itemsToInsert.map((row) => ({
+    id: row.id,
+    word: row.word,
+    phonetic: row.phonetic,
+    partOfSpeech: row.part_of_speech,
+    selectedMeaning: row.selected_meaning,
+    allMeanings: row.all_meanings,
+    contextSentence: row.context_sentence,
+    candidateSentences: row.candidate_sentences,
+    sourceMemo: row.source_memo,
+    bookTitle: row.book_title,
+    quizCount: row.quiz_count,
+    correctCount: row.correct_count,
+    wrongCount: row.wrong_count,
+    consecutiveCorrect: row.consecutive_correct,
+    lastQuizDate: row.last_quiz_date || undefined,
+    date: today,
+    user_id: userId,
+  }));
+
+  const storageKey = getUserStorageKey(userId);
+  if (typeof window !== 'undefined') {
+    localStorage.setItem(storageKey, JSON.stringify(formatted));
+  }
+
+  return formatted;
 }
 
 /**
