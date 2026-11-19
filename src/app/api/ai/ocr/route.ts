@@ -101,23 +101,23 @@ Output strictly valid JSON:
   "text": "Clean combined transcribed article/prose text across both pages in chronological reading order...",
   "markedWords": ["word1", "word2"]
 }`
-        : `You are a fast, high-precision OCR and document analysis AI for English books and articles.
+        : `You are an English vocabulary study assistant helping a student extract sentences from a photographed reading page for personal dictionary lookup.
 Carefully inspect the provided image.
 
-Strict Rules:
-1. EXCLUDE CHARTS, GRAPHS & TABLES:
-   - Completely ignore charts, bar graphs, plots, diagrams, axes numbers, and footnote citations.
-   - Transcribe ONLY readable English prose sentences, paragraphs, and headings.
-   - Connect line-broken hyphenated words (e.g. "con- / dition" -> "condition").
+Rules:
+1. EXTRACT READING PROSE ONLY:
+   - Ignore charts, bar graphs, plots, diagrams, axes numbers, and footnote citations.
+   - Extract the readable English sentences and headings in order as clean study text.
+   - Join line-broken hyphenated words (e.g. "con- / dition" -> "condition").
 
 2. DETECT CIRCLED OR UNDERLINED WORDS:
    - Identify any English words marked with handwritten underlines or circles/ovals.
-   - Restore the clean original English word without pen marks into the "markedWords" array (e.g. ["grow", "earnings"]).
+   - Restore the clean original lowercase English word without pen marks into "markedWords" (e.g. ["grow", "earnings"]).
    - If none, return [].
 
 Output strictly valid JSON:
 {
-  "text": "Clean transcribed prose text...",
+  "text": "Clean extracted English study sentences...",
   "markedWords": ["word1", "word2"]
 }`;
 
@@ -137,7 +137,7 @@ Output strictly valid JSON:
         parts: contentParts,
         temperature: 0.0,
         responseMimeType: 'application/json',
-        maxOutputTokens: 2048,
+        maxOutputTokens: 4096,
       });
 
       visionDurationMs = visionRes.durationMs;

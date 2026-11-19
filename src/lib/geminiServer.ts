@@ -459,14 +459,17 @@ export function resolveServerGeminiKey(req: Request, explicitKey?: string): stri
 function scoreDiscoveredModel(modelName: string): number {
   const clean = modelName.replace(/^models\//, '').toLowerCase();
   if (clean === 'gemini-flash-lite-latest') return 100;
-  if (clean.includes('flash-lite')) return 98;
+  if (clean === 'gemini-3.5-flash-lite') return 99;
+  if (clean === 'gemini-3.1-flash-lite') return 98;
+  if (clean === 'gemini-3.1-flash-lite-preview') return 97;
+  if ((clean.includes('gemini-3') || clean.includes('gemini-4')) && clean.includes('flash-lite')) return 96;
   if ((clean.includes('gemini-3') || clean.includes('gemini-4')) && clean.includes('flash')) return 92;
   if (clean === 'gemini-flash-latest') return 85;
-  if (clean.includes('2.5-flash')) return 70;
-  if (clean.includes('2.0') && clean.includes('flash')) return 45;
-  if (clean.includes('1.5') && clean.includes('flash')) return 30;
+  if (clean.includes('2.5')) return 15; // deprecated for new users
+  if (clean.includes('2.0') && clean.includes('flash')) return 20;
+  if (clean.includes('1.5') && clean.includes('flash')) return 10;
   if (clean.includes('flash')) return 40;
-  return 10;
+  return 5;
 }
 
 function isTextCapableGeminiModel(modelName: string): boolean {
@@ -797,7 +800,9 @@ export async function callGeminiWithFallback(options: {
             });
             return;
           } else {
-            attemptLogs.push(`${candidate.model}: 빈 응답 (${((Date.now() - callStart) / 1000).toFixed(2)}s)`);
+            const finishReason = data?.candidates?.[0]?.finishReason || data?.promptFeedback?.blockReason || 'EMPTY';
+            latestError = `${candidate.model} 빈 응답 (${finishReason})`;
+            attemptLogs.push(`${candidate.model}: 빈 응답[${finishReason}] (${((Date.now() - callStart) / 1000).toFixed(2)}s)`);
           }
         } else {
           const errText = await res.text();
