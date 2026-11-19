@@ -6346,58 +6346,42 @@ export default function Home() {
                           const activeSentence = quizActiveSentence || currentQuizItem.contextSentence;
 
                           return (
-                            <div className="bg-amber-50/95 border border-amber-200 rounded-2xl p-5 shadow-sm space-y-3">
-                              <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-2">
-                                  <span className="text-xs font-black text-amber-900 flex items-center gap-1.5">
-                                    📖 원서 / 레포트 속 실제 원문 문맥
+                            <div className="bg-amber-50/95 border border-amber-200 rounded-2xl p-4 sm:p-5 shadow-sm space-y-2.5">
+                              {currentQuizAllSentences.length > 1 && (
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] bg-amber-200/90 text-amber-900 font-bold px-2 py-0.5 rounded-full">
+                                    문장 {quizSentenceIdx + 1}/{currentQuizAllSentences.length}
                                   </span>
-                                  {currentQuizAllSentences.length > 1 && (
-                                    <span className="text-[10px] bg-amber-200/90 text-amber-900 font-bold px-2 py-0.5 rounded-full">
-                                      문장 {quizSentenceIdx + 1}/{currentQuizAllSentences.length}
-                                    </span>
-                                  )}
-                                </div>
-                                <div className="flex items-center gap-1.5">
-                                  {currentQuizAllSentences.length > 1 && (
-                                    <button
-                                      type="button"
-                                      onClick={() => {
-                                        const nextIdx = (quizSentenceIdx + 1) % currentQuizAllSentences.length;
-                                        setQuizSentenceIdx(nextIdx);
-                                        const nextSentence = currentQuizAllSentences[nextIdx];
-                                        setQuizActiveSentence(nextSentence);
-                                        speakSentenceTTS(nextSentence, ttsVoice);
-                                      }}
-                                      className="text-xs bg-amber-200/90 hover:bg-amber-300 text-amber-900 font-bold px-2.5 py-1.5 rounded-xl flex items-center gap-1 transition shadow-2xs cursor-pointer active:scale-95"
-                                      title="이 단어가 쓰인 다른 원문 문맥으로 번갈아가며 봅니다"
-                                    >
-                                      <RotateCw className="w-3 h-3" />
-                                      <span>번갈아 보기</span>
-                                    </button>
-                                  )}
                                   <button
-                                    onClick={() => speakSentenceTTS(activeSentence, ttsVoice)}
-                                    className="text-xs bg-amber-200/90 hover:bg-amber-300 text-amber-900 font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-sm transition active:scale-95 cursor-pointer"
+                                    type="button"
+                                    onClick={() => {
+                                      const nextIdx = (quizSentenceIdx + 1) % currentQuizAllSentences.length;
+                                      setQuizSentenceIdx(nextIdx);
+                                      const nextSentence = currentQuizAllSentences[nextIdx];
+                                      setQuizActiveSentence(nextSentence);
+                                      speakSentenceTTS(nextSentence, ttsVoice);
+                                    }}
+                                    className="text-xs bg-amber-200/90 hover:bg-amber-300 text-amber-900 font-bold px-2.5 py-1 rounded-xl flex items-center gap-1 transition shadow-2xs cursor-pointer active:scale-95"
+                                    title="이 단어가 쓰인 다른 원문 문맥으로 번갈아가며 봅니다"
                                   >
-                                    <Volume2 className="w-3.5 h-3.5" />
-                                    <span>듣기</span>
+                                    <RotateCw className="w-3 h-3" />
+                                    <span>번갈아 보기</span>
                                   </button>
                                 </div>
-                              </div>
+                              )}
                               {/* 클릭 가능한 원문 문장 영역 */}
                               <div
                                 onClick={() => setShowQuizSentenceTranslation((prev) => !prev)}
-                                className="cursor-pointer group/quiz-trans p-3 -mx-2 rounded-xl hover:bg-amber-100/70 transition select-text"
-                                title="문장을 클릭하면 한글 해석을 볼 수 있습니다"
+                                className="cursor-pointer group/quiz-trans p-2.5 -mx-2 rounded-xl hover:bg-amber-100/70 transition select-text"
+                                title="문장을 누르면 한글 해석을 볼 수 있습니다"
                               >
-                                <p className="text-base text-slate-800 leading-relaxed font-serif pt-1">
+                                <p className="text-base text-slate-800 leading-relaxed font-serif">
                                   {renderHighlightedContext(activeSentence, currentQuizItem.word)}
                                 </p>
                                 <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-800 font-semibold select-none">
                                   <Languages className="w-3.5 h-3.5" />
                                   <span>
-                                    {showQuizSentenceTranslation ? '한글 해석 접기 ▴' : '클릭하여 한글 해석 보기 ▾'}
+                                    {showQuizSentenceTranslation ? '한글 해석 접기 ▴' : '한글 해석 보기 ▾'}
                                   </span>
                                 </div>
                               </div>
@@ -6434,15 +6418,26 @@ export default function Home() {
                                   )}
                                 </div>
                               )}
-                              <div className="flex items-center justify-between pt-2 border-t border-amber-200/60 text-xs text-slate-500">
-                                <span>출처: {currentQuizItem.sourceMemo || '원서'}</span>
-                                <button
-                                  onClick={() => speakWordTTS(currentQuizItem.word, ttsVoice)}
-                                  className="text-indigo-600 hover:underline flex items-center gap-1 font-semibold cursor-pointer"
-                                >
-                                  <Volume2 className="w-3 h-3" />
-                                  <span>단어만 다시 듣기</span>
-                                </button>
+                              <div className="flex items-center justify-between gap-2 flex-wrap pt-2 border-t border-amber-200/60 text-xs text-slate-500">
+                                <span className="truncate min-w-0">출처: {currentQuizItem.sourceMemo || '원서'}</span>
+                                <div className="flex items-center gap-1.5 shrink-0">
+                                  <button
+                                    type="button"
+                                    onClick={() => speakSentenceTTS(activeSentence, ttsVoice)}
+                                    className="text-xs bg-amber-200/80 hover:bg-amber-300 text-amber-900 font-bold px-2.5 py-1 rounded-lg flex items-center gap-1 transition active:scale-95 cursor-pointer whitespace-nowrap"
+                                  >
+                                    <Volume2 className="w-3 h-3 shrink-0" />
+                                    <span>문장 듣기</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => speakWordTTS(currentQuizItem.word, ttsVoice)}
+                                    className="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 font-bold px-2.5 py-1 rounded-lg flex items-center gap-1 transition active:scale-95 cursor-pointer whitespace-nowrap"
+                                  >
+                                    <Volume2 className="w-3 h-3 shrink-0" />
+                                    <span>단어 듣기</span>
+                                  </button>
+                                </div>
                               </div>
                             </div>
                           );
