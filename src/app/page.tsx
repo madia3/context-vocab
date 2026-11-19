@@ -6422,7 +6422,7 @@ export default function Home() {
                             <button
                               key={`${currentQuizIndex}-${idx}`}
                               onClick={() => handleSelectOption(opt)}
-                              className="quiz-option-btn w-full text-left p-3.5 rounded-xl border border-slate-200 bg-white [@media(hover:hover)]:hover:border-indigo-500 [@media(hover:hover)]:hover:bg-indigo-50/40 active:border-indigo-500 active:bg-indigo-50/50 focus:outline-none text-[15px] sm:text-base leading-snug font-bold text-slate-900 transition flex items-center gap-3 shadow-sm active:scale-[0.99]"
+                              className="quiz-option-btn w-full min-h-[60px] sm:min-h-[64px] text-left px-3.5 py-2 rounded-xl border border-slate-200 bg-white [@media(hover:hover)]:hover:border-indigo-500 [@media(hover:hover)]:hover:bg-indigo-50/40 active:border-indigo-500 active:bg-indigo-50/50 focus:outline-none text-[15px] sm:text-base leading-snug font-bold text-slate-900 transition flex items-center gap-3 shadow-sm active:scale-[0.99]"
                             >
                               <span className="w-7 h-7 rounded-full bg-slate-100 text-slate-700 font-black flex items-center justify-center text-sm border border-slate-200 shrink-0">
                                 {labels[idx]}
