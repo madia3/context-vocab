@@ -139,6 +139,9 @@ import {
   Megaphone,
   Terminal,
   Play,
+  Pause,
+  SkipBack,
+  SkipForward,
   RotateCcw,
   Info,
   Scissors,
@@ -596,8 +599,12 @@ export default function Home() {
 
   // 문장 듣기 (연속 낭독) 상태
   const [isListeningSentences, setIsListeningSentences] = useState<boolean>(false);
+  const [isSentencePlayPaused, setIsSentencePlayPaused] = useState<boolean>(false);
   const [currentSentencePlayIdx, setCurrentSentencePlayIdx] = useState<number>(-1);
   const cancelSentencePlayRef = useRef<boolean>(false);
+  const sentencePlaySessionIdRef = useRef<number>(0);
+  const sentencePlayIdxRef = useRef<number>(0);
+  const isSentencePlayPausedRef = useRef<boolean>(false);
 
   // Live Dictionary Candidates State (아래쪽 결과 영역 리스트용)
   const [liveCandidates, setLiveCandidates] = useState<SuggestionItem[]>([]);
@@ -3891,7 +3898,7 @@ export default function Home() {
     setTtsBackgroundPlayState(nextVal);
     ttsBackgroundPlayRef.current = nextVal;
     setTtsBackgroundPlay(nextVal);
-    if (isListeningSentences) {
+    if (isListeningSentences && !isSentencePlayPausedRef.current) {
       if (nextVal) {
         startBackgroundAudioKeepAlive();
       } else {
@@ -3900,109 +3907,201 @@ export default function Home() {
     }
   }, [isListeningSentences]);
 
-  // 문장 연속 듣기 토글 핸들러 (현재 선택된 단어장의 모든 문장을 무한 반복 연속 낭독)
-  const handleToggleListenSentences = useCallback(async () => {
-    const stopAllListening = () => {
-      cancelSentencePlayRef.current = true;
-      stopTTS();
-      stopBackgroundAudioKeepAlive();
-      clearMediaSession();
-      setIsListeningSentences(false);
-      setCurrentSentencePlayIdx(-1);
-    };
+  // 문장 연속 듣기 완전 정지 (원래 문장 연속 듣기 / 퀴즈 풀기 버튼 복귀)
+  const handleStopListenSentences = useCallback(() => {
+    sentencePlaySessionIdRef.current += 1;
+    cancelSentencePlayRef.current = true;
+    isSentencePlayPausedRef.current = false;
+    stopTTS();
+    stopBackgroundAudioKeepAlive();
+    clearMediaSession();
+    setIsListeningSentences(false);
+    setIsSentencePlayPaused(false);
+    setCurrentSentencePlayIdx(-1);
+  }, []);
 
-    if (isListeningSentences) {
-      stopAllListening();
-      return;
-    }
-
-    if (sentencePlayList.length === 0) {
-      alert('들려줄 단어 또는 문맥 예문이 없습니다.');
-      return;
-    }
-
-    // 사용자 클릭 이벤트 안에서 공유 Audio 잠금 해제 + 백그라운드 유지 활성화
-    unlockAudioForBackground();
-    if (ttsBackgroundPlayRef.current) {
-      startBackgroundAudioKeepAlive();
-    }
-
-    cancelSentencePlayRef.current = false;
-    setIsListeningSentences(true);
-
-    try {
-      // 사용자가 중지할 때까지 현재 선택된 단어장의 문장들을 계속 반복 낭독
-      while (!cancelSentencePlayRef.current) {
-        for (let i = 0; i < sentencePlayList.length; i++) {
-          if (cancelSentencePlayRef.current) break;
-          setCurrentSentencePlayIdx(i);
-
-          const item = sentencePlayList[i];
-          const cardSentenceIdx = listCardSentenceIdx[item.id] || 0;
-          const textToRead = (
-            (item.candidateSentences && item.candidateSentences.length > 0
-              ? item.candidateSentences[cardSentenceIdx % item.candidateSentences.length]
-              : item.contextSentence) || item.word
-          ).trim();
-
-          // OS 미디어 세션(잠금화면/제어센터/백그라운드 탭 오디오북 인식) 갱신
-          updateMediaSession({
-            title: `${item.word} (${i + 1}/${sentencePlayList.length})`,
-            artist: item.bookTitle || '원서. 문장. 단어.',
-            album: '원서. 문장. 단어. · 문장 연속 듣기',
-            onStop: stopAllListening,
-          });
-
-          // 다음 재생할 문장 백그라운드 사전 캐싱 (0ms 지연 재생 보장)
-          const nextIdx = (i + 1) % sentencePlayList.length;
-          const nextItem = sentencePlayList[nextIdx];
-          if (nextItem) {
-            const nextCardIdx = listCardSentenceIdx[nextItem.id] || 0;
-            const nextText = (
-              (nextItem.candidateSentences && nextItem.candidateSentences.length > 0
-                ? nextItem.candidateSentences[nextCardIdx % nextItem.candidateSentences.length]
-                : nextItem.contextSentence) || nextItem.word
-            ).trim();
-            preloadSentenceTTS(nextText, ttsVoice);
-          }
-
-          // 현재 낭독 중인 단어 카드로 부드럽게 스크롤 (백그라운드 탭일 때는 생략)
-          if (typeof document !== 'undefined' && !document.hidden) {
-            const el = document.getElementById(`vocab-card-${item.id}`);
-            if (el) {
-              el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-            }
-          }
-
-          // 원어민 음성으로 읽기
-          await speakSentenceTTS(textToRead, ttsVoice, ttsRate);
-
-          if (cancelSentencePlayRef.current) break;
-
-          // 다음 문장 넘어가기 전 편안한 쉼 (백그라운드 탭일 때는 짧게 이어서 재생 유지)
-          const gapMs = typeof document !== 'undefined' && document.hidden ? 450 : 800;
-          await new Promise((resolve) => setTimeout(resolve, gapMs));
-        }
+  // 특정 인덱스부터 문장 연속 듣기 실행 (이전/다음/일시정지·시작 모두 이 루프로 깔끔하게 제어)
+  const runSentencePlaybackLoop = useCallback(
+    async (startIdx: number) => {
+      if (sentencePlayList.length === 0) {
+        alert('들려줄 단어 또는 문맥 예문이 없습니다.');
+        return;
       }
-    } finally {
-      stopBackgroundAudioKeepAlive();
-      clearMediaSession();
-      setIsListeningSentences(false);
-      setCurrentSentencePlayIdx(-1);
-    }
-  }, [isListeningSentences, sentencePlayList, listCardSentenceIdx, ttsVoice, ttsRate]);
 
-  // 브라우저 다른 탭으로 이동 시: 백그라운드 계속 듣기 OFF일 때만 중지 (ON이면 계속 재생)
-  useEffect(() => {
-    if (typeof document === 'undefined') return;
-    const handleVisibilityChange = () => {
-      if (document.hidden && isListeningSentences && !ttsBackgroundPlayRef.current) {
-        cancelSentencePlayRef.current = true;
-        stopTTS();
+      const mySessionId = ++sentencePlaySessionIdRef.current;
+      cancelSentencePlayRef.current = false;
+      isSentencePlayPausedRef.current = false;
+      setIsListeningSentences(true);
+      setIsSentencePlayPaused(false);
+
+      unlockAudioForBackground();
+      if (ttsBackgroundPlayRef.current) {
+        startBackgroundAudioKeepAlive();
+      } else {
+        stopBackgroundAudioKeepAlive();
+      }
+
+      const total = sentencePlayList.length;
+      let idx = ((startIdx % total) + total) % total;
+
+      while (!cancelSentencePlayRef.current && sentencePlaySessionIdRef.current === mySessionId) {
+        sentencePlayIdxRef.current = idx;
+        setCurrentSentencePlayIdx(idx);
+
+        const item = sentencePlayList[idx];
+        const cardSentenceIdx = listCardSentenceIdx[item.id] || 0;
+        const textToRead = (
+          (item.candidateSentences && item.candidateSentences.length > 0
+            ? item.candidateSentences[cardSentenceIdx % item.candidateSentences.length]
+            : item.contextSentence) || item.word
+        ).trim();
+
+        // OS 미디어 세션(잠금화면/제어센터/백그라운드 탭 오디오북 인식) 갱신
+        updateMediaSession({
+          title: `${item.word} (${idx + 1}/${total})`,
+          artist: item.bookTitle || '원서. 문장. 단어.',
+          album: '원서. 문장. 단어. · 문장 연속 듣기',
+          playbackState: 'playing',
+          onPlay: () => {
+            void runSentencePlaybackLoop(sentencePlayIdxRef.current);
+          },
+          onPause: () => {
+            sentencePlaySessionIdRef.current += 1;
+            isSentencePlayPausedRef.current = true;
+            stopTTS();
+            stopBackgroundAudioKeepAlive();
+            setIsSentencePlayPaused(true);
+          },
+          onStop: handleStopListenSentences,
+          onPrev: () => {
+            stopTTS();
+            void runSentencePlaybackLoop(sentencePlayIdxRef.current - 1);
+          },
+          onNext: () => {
+            stopTTS();
+            void runSentencePlaybackLoop(sentencePlayIdxRef.current + 1);
+          },
+        });
+
+        // 다음 재생할 문장 백그라운드 사전 캐싱 (0ms 지연 재생 보장)
+        const nextIdx = (idx + 1) % total;
+        const nextItem = sentencePlayList[nextIdx];
+        if (nextItem) {
+          const nextCardIdx = listCardSentenceIdx[nextItem.id] || 0;
+          const nextText = (
+            (nextItem.candidateSentences && nextItem.candidateSentences.length > 0
+              ? nextItem.candidateSentences[nextCardIdx % nextItem.candidateSentences.length]
+              : nextItem.contextSentence) || nextItem.word
+          ).trim();
+          preloadSentenceTTS(nextText, ttsVoice);
+        }
+
+        // 현재 낭독 중인 단어 카드로 부드럽게 스크롤 (백그라운드 탭일 때는 생략)
+        if (typeof document !== 'undefined' && !document.hidden) {
+          const el = document.getElementById(`vocab-card-${item.id}`);
+          if (el) {
+            el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          }
+        }
+
+        // 원어민 음성으로 읽기
+        await speakSentenceTTS(textToRead, ttsVoice, ttsRate);
+
+        if (cancelSentencePlayRef.current || sentencePlaySessionIdRef.current !== mySessionId) {
+          break;
+        }
+
+        // 다음 문장 넘어가기 전 편안한 쉼 (백그라운드 탭일 때는 짧게 이어서 재생 유지)
+        const gapMs = typeof document !== 'undefined' && document.hidden ? 450 : 800;
+        await new Promise((resolve) => setTimeout(resolve, gapMs));
+
+        if (cancelSentencePlayRef.current || sentencePlaySessionIdRef.current !== mySessionId) {
+          break;
+        }
+
+        idx = (idx + 1) % total;
+      }
+
+      // 정상 종료 또는 정지된 경우(일시정지·이전/다음으로 새 세션이 열린 경우 제외)에만 정리
+      if (sentencePlaySessionIdRef.current === mySessionId && !isSentencePlayPausedRef.current) {
         stopBackgroundAudioKeepAlive();
         clearMediaSession();
         setIsListeningSentences(false);
+        setIsSentencePlayPaused(false);
         setCurrentSentencePlayIdx(-1);
+      }
+    },
+    [sentencePlayList, listCardSentenceIdx, ttsVoice, ttsRate, handleStopListenSentences]
+  );
+
+  // 문장 연속 듣기 시작 버튼
+  const handleToggleListenSentences = useCallback(() => {
+    if (isListeningSentences) {
+      handleStopListenSentences();
+      return;
+    }
+    void runSentencePlaybackLoop(0);
+  }, [isListeningSentences, handleStopListenSentences, runSentencePlaybackLoop]);
+
+  // 일시정지 / 시작 토글
+  const handleTogglePauseResumeSentences = useCallback(() => {
+    if (!isListeningSentences) return;
+    if (isSentencePlayPausedRef.current) {
+      // 재개 (현재 위치부터 바로 시작)
+      void runSentencePlaybackLoop(sentencePlayIdxRef.current);
+    } else {
+      // 일시정지 (현재 위치 유지)
+      sentencePlaySessionIdRef.current += 1;
+      isSentencePlayPausedRef.current = true;
+      stopTTS();
+      stopBackgroundAudioKeepAlive();
+      setIsSentencePlayPaused(true);
+      const currentItem = sentencePlayList[sentencePlayIdxRef.current];
+      if (currentItem) {
+        updateMediaSession({
+          title: `${currentItem.word} (${sentencePlayIdxRef.current + 1}/${sentencePlayList.length})`,
+          artist: currentItem.bookTitle || '원서. 문장. 단어.',
+          album: '원서. 문장. 단어. · 일시정지됨',
+          playbackState: 'paused',
+          onPlay: () => void runSentencePlaybackLoop(sentencePlayIdxRef.current),
+          onStop: handleStopListenSentences,
+          onPrev: () => {
+            stopTTS();
+            void runSentencePlaybackLoop(sentencePlayIdxRef.current - 1);
+          },
+          onNext: () => {
+            stopTTS();
+            void runSentencePlaybackLoop(sentencePlayIdxRef.current + 1);
+          },
+        });
+      }
+    }
+  }, [isListeningSentences, runSentencePlaybackLoop, sentencePlayList, handleStopListenSentences]);
+
+  // 이전 문장으로 이동 후 바로 재생
+  const handlePrevSentence = useCallback(() => {
+    if (!isListeningSentences || sentencePlayList.length === 0) return;
+    stopTTS();
+    void runSentencePlaybackLoop(sentencePlayIdxRef.current - 1);
+  }, [isListeningSentences, sentencePlayList.length, runSentencePlaybackLoop]);
+
+  // 다음 문장으로 이동 후 바로 재생
+  const handleNextSentence = useCallback(() => {
+    if (!isListeningSentences || sentencePlayList.length === 0) return;
+    stopTTS();
+    void runSentencePlaybackLoop(sentencePlayIdxRef.current + 1);
+  }, [isListeningSentences, sentencePlayList.length, runSentencePlaybackLoop]);
+
+  // 브라우저 다른 탭으로 이동 시: 백그라운드 계속 듣기 OFF일 때만 일시정지 (ON이면 계속 재생)
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const handleVisibilityChange = () => {
+      if (document.hidden && isListeningSentences && !isSentencePlayPausedRef.current && !ttsBackgroundPlayRef.current) {
+        sentencePlaySessionIdRef.current += 1;
+        isSentencePlayPausedRef.current = true;
+        stopTTS();
+        stopBackgroundAudioKeepAlive();
+        setIsSentencePlayPaused(true);
       }
     };
     document.addEventListener('visibilitychange', handleVisibilityChange);
@@ -4012,14 +4111,9 @@ export default function Home() {
   // 앱 내부 탭 변경 시 문장 연속 낭독 중지 (퀴즈 탭 등 다른 오디오와 충돌 방지)
   useEffect(() => {
     if (activeTab !== 'list' && isListeningSentences) {
-      cancelSentencePlayRef.current = true;
-      stopTTS();
-      stopBackgroundAudioKeepAlive();
-      clearMediaSession();
-      setIsListeningSentences(false);
-      setCurrentSentencePlayIdx(-1);
+      handleStopListenSentences();
     }
-  }, [activeTab, isListeningSentences]);
+  }, [activeTab, isListeningSentences, handleStopListenSentences]);
 
   // 바깥 클릭 시 단어장 다중 선택 팝오버 닫기 (단어장 탭 & 5지선다 탭)
   useEffect(() => {
@@ -6058,34 +6152,15 @@ export default function Home() {
           <section className="space-y-4">
             {/* Top Vocabulary Book Selector & Controls */}
             <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3.5">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <h2 className="text-base font-bold text-slate-900 flex items-center gap-2 min-w-0">
-                  <span className="truncate">내 문맥 영한 단어장</span>
-                  <span className="text-xs bg-indigo-100 text-indigo-700 px-2.5 py-0.5 rounded-full font-bold shrink-0">
-                    총 {vocabulary.length}단어 ({availableBookTitles.length}개 단어장)
-                  </span>
-                </h2>
-                <button
-                  type="button"
-                  role="switch"
-                  aria-checked={ttsBackgroundPlay}
-                  onClick={() => handleToggleBackgroundPlay(!ttsBackgroundPlay)}
-                  className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 hover:text-slate-800 transition cursor-pointer shrink-0"
-                  title="다른 탭이나 백그라운드에서도 문장 연속 듣기 유지"
-                >
-                  <span>백그라운드 듣기</span>
-                  <span
-                    className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors duration-200 ${
-                      ttsBackgroundPlay ? 'bg-emerald-500' : 'bg-slate-300'
-                    }`}
-                  >
-                    <span
-                      className={`inline-block h-3 w-3 transform rounded-full bg-white shadow-xs transition duration-200 ${
-                        ttsBackgroundPlay ? 'translate-x-3.5' : 'translate-x-0.5'
-                      }`}
-                    />
-                  </span>
-                </button>
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                <div>
+                  <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
+                    <span>내 문맥 영한 단어장</span>
+                    <span className="text-xs bg-indigo-100 text-indigo-700 px-2.5 py-0.5 rounded-full font-bold">
+                      총 {vocabulary.length}단어 ({availableBookTitles.length}개 단어장)
+                    </span>
+                  </h2>
+                </div>
               </div>
 
               {/* 1. 단어장 다중 선택기 (복수 선택 지원 & 빠른 선택 칩 제거) */}
@@ -6249,41 +6324,125 @@ export default function Home() {
                 )}
               </div>
 
-              {/* 2. 문장 듣기 (왼쪽) & 퀴즈 풀기 (오른쪽) 2분할 버튼 바 */}
-              <div className="pt-1 grid grid-cols-2 gap-2.5 sm:gap-3">
-                {/* 왼쪽: 문장 듣기 버튼 */}
-                <button
-                  type="button"
-                  onClick={handleToggleListenSentences}
-                  className={`py-3 px-3 sm:px-4 font-black text-xs sm:text-sm rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer active:scale-[0.99] border ${
-                    isListeningSentences
-                      ? 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600 shadow-amber-200'
-                      : 'bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white border-emerald-700 shadow-emerald-200'
-                  }`}
-                >
-                  {isListeningSentences ? (
-                    <>
-                      <Square className="w-3.5 h-3.5 fill-current shrink-0" />
-                      <span className="truncate">
-                        중지 ({currentSentencePlayIdx + 1}/{sentencePlayList.length} · 반복 낭독 중 🔁)
-                      </span>
-                    </>
-                  ) : (
+              {/* 2. 평소: [문장 연속 듣기 | 퀴즈 풀기] / 연속 듣기 중: 오디오북 플레이어 [뒤로 · 정지 · 일시정지/시작 · 앞으로] + 백그라운드 토글 */}
+              {!isListeningSentences ? (
+                <div className="pt-1 grid grid-cols-2 gap-2.5 sm:gap-3">
+                  {/* 왼쪽: 문장 듣기 버튼 */}
+                  <button
+                    type="button"
+                    onClick={handleToggleListenSentences}
+                    className="py-3 px-3 sm:px-4 font-black text-xs sm:text-sm rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer active:scale-[0.99] border bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white border-emerald-700 shadow-emerald-200"
+                  >
                     <span className="truncate">문장 연속 듣기 (무한 반복)</span>
-                  )}
-                </button>
+                  </button>
 
-                {/* 오른쪽: 퀴즈 풀기 버튼 */}
-                <button
-                  type="button"
-                  onClick={() => startQuiz()}
-                  className="py-3 px-3 sm:px-4 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-black text-xs sm:text-sm rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer active:scale-[0.99] border border-indigo-700 shadow-indigo-200"
-                >
-                  <span className="truncate">
-                    퀴즈 풀기 ({filteredVocabulary.length}단어)
-                  </span>
-                </button>
-              </div>
+                  {/* 오른쪽: 퀴즈 풀기 버튼 */}
+                  <button
+                    type="button"
+                    onClick={() => startQuiz()}
+                    className="py-3 px-3 sm:px-4 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-black text-xs sm:text-sm rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer active:scale-[0.99] border border-indigo-700 shadow-indigo-200"
+                  >
+                    <span className="truncate">
+                      퀴즈 풀기 ({filteredVocabulary.length}단어)
+                    </span>
+                  </button>
+                </div>
+              ) : (
+                <div className="pt-1 space-y-2.5 animate-fade-in">
+                  {/* 현재 재생 상태 표시 바 */}
+                  <div className="flex items-center justify-between gap-2 px-3 py-1.5 bg-slate-900 text-white rounded-xl text-xs">
+                    <span className="font-bold flex items-center gap-1.5 truncate">
+                      <span>{isSentencePlayPaused ? '⏸' : '🎧'}</span>
+                      <span className="truncate">
+                        {isSentencePlayPaused ? '일시정지됨' : '연속 낭독 중'}
+                        {currentSentencePlayIdx >= 0 && sentencePlayList[currentSentencePlayIdx]
+                          ? ` · ${sentencePlayList[currentSentencePlayIdx].word}`
+                          : ''}
+                      </span>
+                    </span>
+                    <span className="text-[11px] font-mono font-bold text-emerald-300 shrink-0">
+                      {Math.max(1, currentSentencePlayIdx + 1)} / {sentencePlayList.length}
+                    </span>
+                  </div>
+
+                  {/* 4버튼 오디오 컨트롤: 뒤로 / 정지 / 일시정지·시작 / 앞으로 */}
+                  <div className="grid grid-cols-4 gap-2">
+                    <button
+                      type="button"
+                      onClick={handlePrevSentence}
+                      className="py-2.5 px-2 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-800 border border-slate-200 font-bold text-xs rounded-xl transition flex items-center justify-center gap-1 cursor-pointer active:scale-95"
+                      title="이전 문장"
+                    >
+                      <SkipBack className="w-3.5 h-3.5 shrink-0" />
+                      <span>뒤로</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleStopListenSentences}
+                      className="py-2.5 px-2 bg-rose-500 hover:bg-rose-600 active:bg-rose-700 text-white border border-rose-600 font-bold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-1 cursor-pointer active:scale-95"
+                      title="정지하고 원래 메뉴로 돌아가기"
+                    >
+                      <Square className="w-3.5 h-3.5 fill-current shrink-0" />
+                      <span>정지</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleTogglePauseResumeSentences}
+                      className={`py-2.5 px-2 font-bold text-xs rounded-xl shadow-xs transition flex items-center justify-center gap-1 cursor-pointer active:scale-95 border ${
+                        isSentencePlayPaused
+                          ? 'bg-emerald-600 hover:bg-emerald-700 text-white border-emerald-700'
+                          : 'bg-amber-500 hover:bg-amber-600 text-white border-amber-600'
+                      }`}
+                      title={isSentencePlayPaused ? '이어서 시작' : '일시정지'}
+                    >
+                      {isSentencePlayPaused ? (
+                        <>
+                          <Play className="w-3.5 h-3.5 fill-current shrink-0" />
+                          <span>시작</span>
+                        </>
+                      ) : (
+                        <>
+                          <Pause className="w-3.5 h-3.5 fill-current shrink-0" />
+                          <span>일시정지</span>
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleNextSentence}
+                      className="py-2.5 px-2 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 text-slate-800 border border-slate-200 font-bold text-xs rounded-xl transition flex items-center justify-center gap-1 cursor-pointer active:scale-95"
+                      title="다음 문장"
+                    >
+                      <span>앞으로</span>
+                      <SkipForward className="w-3.5 h-3.5 shrink-0" />
+                    </button>
+                  </div>
+
+                  {/* 백그라운드에서도 연속 듣기 ON/OFF (기본값 OFF) */}
+                  <div className="flex items-center justify-between gap-2 px-3 py-2 bg-slate-50 border border-slate-200/90 rounded-xl text-[11.5px]">
+                    <span className="font-bold text-slate-700 flex items-center gap-1.5 min-w-0">
+                      <span>🎧</span>
+                      <span className="truncate">백그라운드에서도 연속 듣기</span>
+                    </span>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={ttsBackgroundPlay}
+                      onClick={() => handleToggleBackgroundPlay(!ttsBackgroundPlay)}
+                      className={`px-2.5 py-1 rounded-full text-[11px] font-black transition cursor-pointer shrink-0 active:scale-95 ${
+                        ttsBackgroundPlay
+                          ? 'bg-emerald-600 text-white shadow-2xs'
+                          : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                      }`}
+                    >
+                      {ttsBackgroundPlay ? 'ON' : 'OFF'}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* 3. 선택된 단어장의 상세 정보 카드 */}

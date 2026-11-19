@@ -124,7 +124,12 @@ export function updateMediaSession(options: {
   title: string;
   artist?: string;
   album?: string;
+  playbackState?: 'playing' | 'paused';
+  onPlay?: () => void;
+  onPause?: () => void;
   onStop?: () => void;
+  onPrev?: () => void;
+  onNext?: () => void;
 }) {
   if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
   try {
@@ -135,11 +140,12 @@ export function updateMediaSession(options: {
         album: options.album || '원서. 문장. 단어.',
       });
     }
-    navigator.mediaSession.playbackState = 'playing';
-    if (options.onStop) {
-      navigator.mediaSession.setActionHandler('pause', options.onStop);
-      navigator.mediaSession.setActionHandler('stop', options.onStop);
-    }
+    navigator.mediaSession.playbackState = options.playbackState || 'playing';
+    navigator.mediaSession.setActionHandler('play', options.onPlay || null);
+    navigator.mediaSession.setActionHandler('pause', options.onPause || options.onStop || null);
+    navigator.mediaSession.setActionHandler('stop', options.onStop || null);
+    navigator.mediaSession.setActionHandler('previoustrack', options.onPrev || null);
+    navigator.mediaSession.setActionHandler('nexttrack', options.onNext || null);
   } catch {}
 }
 
@@ -147,8 +153,11 @@ export function clearMediaSession() {
   if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
   try {
     navigator.mediaSession.playbackState = 'none';
+    navigator.mediaSession.setActionHandler('play', null);
     navigator.mediaSession.setActionHandler('pause', null);
     navigator.mediaSession.setActionHandler('stop', null);
+    navigator.mediaSession.setActionHandler('previoustrack', null);
+    navigator.mediaSession.setActionHandler('nexttrack', null);
   } catch {}
 }
 
