@@ -5,12 +5,152 @@ type ResolvedGender = 'female' | 'male';
 type ResolvedLang = 'en-US' | 'en-GB';
 
 let currentAudio: HTMLAudioElement | null = null;
+let sharedAudioElement: HTMLAudioElement | null = null;
+let bgKeepAliveCtx: AudioContext | null = null;
+let bgKeepAliveOsc: OscillatorNode | null = null;
 let cancelCurrentPlayback: (() => void) | null = null;
 let activeSpeechId = 0;
 let cachedVoices: SpeechSynthesisVoice[] = [];
 let currentTtsRate: number = 1.0;
 let currentTtsGender: TtsGender = 'random';
+let currentTtsBackgroundPlay: boolean = true;
 let lastRandomVariantKey: string = '';
+
+export function setTtsBackgroundPlay(enabled: boolean) {
+  currentTtsBackgroundPlay = Boolean(enabled);
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('context_vocab_tts_background_play', currentTtsBackgroundPlay ? '1' : '0');
+  }
+}
+
+export function getTtsBackgroundPlay(): boolean {
+  if (typeof window !== 'undefined') {
+    const saved = localStorage.getItem('context_vocab_tts_background_play');
+    if (saved === '0') {
+      currentTtsBackgroundPlay = false;
+      return false;
+    }
+    if (saved === '1') {
+      currentTtsBackgroundPlay = true;
+      return true;
+    }
+  }
+  return currentTtsBackgroundPlay;
+}
+
+function getSharedAudioElement(): HTMLAudioElement | null {
+  if (typeof window === 'undefined') return null;
+  if (!sharedAudioElement) {
+    const audio = new Audio();
+    audio.preload = 'auto';
+    // iOS Safari 인라인/백그라운드 오디오 연속 재생 허용
+    (audio as any).playsInline = true;
+    sharedAudioElement = audio;
+  }
+  return sharedAudioElement;
+}
+
+// 아주 짧은 무음 WAV (사용자 클릭 직후 Audio 엘리먼트 잠금 해제용)
+const SILENT_WAV_DATA_URI =
+  'data:audio/wav;base64,UklGRigAAABXQVZFZm10IBIAAAABAAEARKwAAIhYAQACABAAAABkYXRhAgAAAAEA';
+
+/**
+ * 사용자 클릭 이벤트 안에서 동기적으로 호출해 공유 Audio 엘리먼트의 백그라운드 재생 권한을 확보합니다.
+ */
+export function unlockAudioForBackground() {
+  if (typeof window === 'undefined') return;
+  try {
+    const audio = getSharedAudioElement();
+    if (audio && audio.paused && !audio.src) {
+      audio.src = SILENT_WAV_DATA_URI;
+      audio.volume = 0.01;
+      const p = audio.play();
+      if (p) {
+        p.then(() => {
+          audio.pause();
+          audio.currentTime = 0;
+          audio.volume = 1.0;
+        }).catch(() => {
+          audio.volume = 1.0;
+        });
+      }
+    }
+  } catch {}
+}
+
+/**
+ * 백그라운드 탭에서 브라우저가 문장 간 타이머/오디오 세션을 동결하지 않도록
+ * 비가청 무음 AudioContext를 연속 낭독 중에만 유지합니다.
+ */
+export function startBackgroundAudioKeepAlive() {
+  if (typeof window === 'undefined') return;
+  try {
+    const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioCtx) return;
+    if (!bgKeepAliveCtx || bgKeepAliveCtx.state === 'closed') {
+      bgKeepAliveCtx = new AudioCtx();
+    }
+    if (bgKeepAliveCtx.state === 'suspended') {
+      bgKeepAliveCtx.resume().catch(() => {});
+    }
+    if (!bgKeepAliveOsc) {
+      const osc = bgKeepAliveCtx.createOscillator();
+      const gain = bgKeepAliveCtx.createGain();
+      osc.frequency.value = 20;
+      gain.gain.value = 0.00001; // 완전 비가청 수준
+      osc.connect(gain);
+      gain.connect(bgKeepAliveCtx.destination);
+      osc.start();
+      bgKeepAliveOsc = osc;
+    }
+  } catch {}
+}
+
+export function stopBackgroundAudioKeepAlive() {
+  try {
+    if (bgKeepAliveOsc) {
+      bgKeepAliveOsc.stop();
+      bgKeepAliveOsc.disconnect();
+      bgKeepAliveOsc = null;
+    }
+    if (bgKeepAliveCtx && bgKeepAliveCtx.state !== 'closed') {
+      bgKeepAliveCtx.close().catch(() => {});
+      bgKeepAliveCtx = null;
+    }
+  } catch {}
+}
+
+export function updateMediaSession(options: {
+  title: string;
+  artist?: string;
+  album?: string;
+  onStop?: () => void;
+}) {
+  if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
+  try {
+    if (typeof MediaMetadata !== 'undefined') {
+      navigator.mediaSession.metadata = new MediaMetadata({
+        title: options.title || '원서. 문장. 단어.',
+        artist: options.artist || '원어민 문장 연속 듣기',
+        album: options.album || '원서. 문장. 단어.',
+      });
+    }
+    navigator.mediaSession.playbackState = 'playing';
+    if (options.onStop) {
+      navigator.mediaSession.setActionHandler('pause', options.onStop);
+      navigator.mediaSession.setActionHandler('stop', options.onStop);
+    }
+  } catch {}
+}
+
+export function clearMediaSession() {
+  if (typeof navigator === 'undefined' || !('mediaSession' in navigator)) return;
+  try {
+    navigator.mediaSession.playbackState = 'none';
+    navigator.mediaSession.setActionHandler('pause', null);
+    navigator.mediaSession.setActionHandler('stop', null);
+  } catch {}
+}
 
 export function setTtsVoiceGender(gender: TtsGender) {
   currentTtsGender = gender === 'male' || gender === 'random' ? gender : 'female';
@@ -333,8 +473,15 @@ export function playNaturalAudioTTS(
       }
 
       const playbackSpeed = typeof rate === 'number' ? rate : getTtsPlaybackRate();
-      const audio = new Audio(targetSourceUrl);
+      // 공유 Audio 엘리먼트를 재사용해야 다른 브라우저 탭/백그라운드 전환 후에도 자동재생 차단을 피하고 연속 재생됨
+      const audio = getSharedAudioElement() || new Audio();
+      audio.onended = null;
+      audio.onerror = null;
+      audio.onpause = null;
+      audio.volume = 1.0;
+      audio.src = targetSourceUrl;
       audio.playbackRate = playbackSpeed;
+      audio.currentTime = 0;
       currentAudio = audio;
 
       const cleanup = () => {

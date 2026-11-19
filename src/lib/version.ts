@@ -1,2 +1,2 @@
-export const APP_BUILD_VERSION = 'v2026.11.19-45 (11/19 22:58 KST)';
-export const APP_BUILD_SUMMARY = '최초 기본 TTS 옵션을 목소리 전체 랜덤(미국/영국/남/여), 읽기 속도 1.0배로 변경';
+export const APP_BUILD_VERSION = 'v2026.11.19-46 (11/19 23:03 KST)';
+export const APP_BUILD_SUMMARY = '문장 연속 듣기 다른 탭·백그라운드 계속 재생 지원 (공유 Audio 재사용·MediaSession·무음 Keep-Alive + ON/OFF 토글 옵션)';

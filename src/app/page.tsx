@@ -27,6 +27,13 @@ import {
 import {
   setTtsVoiceGender,
   getTtsVoiceGender,
+  setTtsBackgroundPlay,
+  getTtsBackgroundPlay,
+  unlockAudioForBackground,
+  startBackgroundAudioKeepAlive,
+  stopBackgroundAudioKeepAlive,
+  updateMediaSession,
+  clearMediaSession,
   type TtsGender,
 } from '@/lib/tts';
 import {
@@ -661,6 +668,8 @@ export default function Home() {
   const [ttsVoice, setTtsVoice] = useState('random');
   const [ttsGender, setTtsGender] = useState<TtsGender>('random');
   const [ttsRate, setTtsRate] = useState<number>(1.0);
+  const [ttsBackgroundPlay, setTtsBackgroundPlayState] = useState<boolean>(true);
+  const ttsBackgroundPlayRef = useRef<boolean>(true);
   const [hasPersonalGeminiKey, setHasPersonalGeminiKey] = useState(false);
   const [personalKeyMasked, setPersonalKeyMasked] = useState('');
   const [personalKeyQuota, setPersonalKeyQuota] = useState<{
@@ -1435,6 +1444,9 @@ export default function Home() {
       const savedVoice = localStorage.getItem('context_vocab_tts_voice');
       if (savedVoice) setTtsVoice(savedVoice);
       setTtsGender(getTtsVoiceGender());
+      const bgPlay = getTtsBackgroundPlay();
+      setTtsBackgroundPlayState(bgPlay);
+      ttsBackgroundPlayRef.current = bgPlay;
 
       const savedRate = localStorage.getItem('context_vocab_tts_rate');
       if (savedRate) {
@@ -3875,13 +3887,32 @@ export default function Home() {
     return withSentence.length > 0 ? withSentence : filteredVocabulary;
   }, [filteredVocabulary]);
 
+  const handleToggleBackgroundPlay = useCallback((nextVal: boolean) => {
+    setTtsBackgroundPlayState(nextVal);
+    ttsBackgroundPlayRef.current = nextVal;
+    setTtsBackgroundPlay(nextVal);
+    if (isListeningSentences) {
+      if (nextVal) {
+        startBackgroundAudioKeepAlive();
+      } else {
+        stopBackgroundAudioKeepAlive();
+      }
+    }
+  }, [isListeningSentences]);
+
   // 문장 연속 듣기 토글 핸들러 (현재 선택된 단어장의 모든 문장을 무한 반복 연속 낭독)
   const handleToggleListenSentences = useCallback(async () => {
-    if (isListeningSentences) {
+    const stopAllListening = () => {
       cancelSentencePlayRef.current = true;
       stopTTS();
+      stopBackgroundAudioKeepAlive();
+      clearMediaSession();
       setIsListeningSentences(false);
       setCurrentSentencePlayIdx(-1);
+    };
+
+    if (isListeningSentences) {
+      stopAllListening();
       return;
     }
 
@@ -3890,63 +3921,101 @@ export default function Home() {
       return;
     }
 
+    // 사용자 클릭 이벤트 안에서 공유 Audio 잠금 해제 + 백그라운드 유지 활성화
+    unlockAudioForBackground();
+    if (ttsBackgroundPlayRef.current) {
+      startBackgroundAudioKeepAlive();
+    }
+
     cancelSentencePlayRef.current = false;
     setIsListeningSentences(true);
 
-    // 사용자가 중지할 때까지 현재 선택된 단어장의 문장들을 계속 반복 낭독
-    while (!cancelSentencePlayRef.current) {
-      for (let i = 0; i < sentencePlayList.length; i++) {
-        if (cancelSentencePlayRef.current) break;
-        setCurrentSentencePlayIdx(i);
+    try {
+      // 사용자가 중지할 때까지 현재 선택된 단어장의 문장들을 계속 반복 낭독
+      while (!cancelSentencePlayRef.current) {
+        for (let i = 0; i < sentencePlayList.length; i++) {
+          if (cancelSentencePlayRef.current) break;
+          setCurrentSentencePlayIdx(i);
 
-        const item = sentencePlayList[i];
-        const cardSentenceIdx = listCardSentenceIdx[item.id] || 0;
-        const textToRead = (
-          (item.candidateSentences && item.candidateSentences.length > 0
-            ? item.candidateSentences[cardSentenceIdx % item.candidateSentences.length]
-            : item.contextSentence) || item.word
-        ).trim();
-
-        // 다음 재생할 문장 백그라운드 사전 캐싱 (0ms 지연 재생 보장)
-        const nextIdx = (i + 1) % sentencePlayList.length;
-        const nextItem = sentencePlayList[nextIdx];
-        if (nextItem) {
-          const nextCardIdx = listCardSentenceIdx[nextItem.id] || 0;
-          const nextText = (
-            (nextItem.candidateSentences && nextItem.candidateSentences.length > 0
-              ? nextItem.candidateSentences[nextCardIdx % nextItem.candidateSentences.length]
-              : nextItem.contextSentence) || nextItem.word
+          const item = sentencePlayList[i];
+          const cardSentenceIdx = listCardSentenceIdx[item.id] || 0;
+          const textToRead = (
+            (item.candidateSentences && item.candidateSentences.length > 0
+              ? item.candidateSentences[cardSentenceIdx % item.candidateSentences.length]
+              : item.contextSentence) || item.word
           ).trim();
-          preloadSentenceTTS(nextText, ttsVoice);
-        }
 
-        // 현재 낭독 중인 단어 카드로 부드럽게 스크롤
-        if (typeof document !== 'undefined') {
-          const el = document.getElementById(`vocab-card-${item.id}`);
-          if (el) {
-            el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+          // OS 미디어 세션(잠금화면/제어센터/백그라운드 탭 오디오북 인식) 갱신
+          updateMediaSession({
+            title: `${item.word} (${i + 1}/${sentencePlayList.length})`,
+            artist: item.bookTitle || '원서. 문장. 단어.',
+            album: '원서. 문장. 단어. · 문장 연속 듣기',
+            onStop: stopAllListening,
+          });
+
+          // 다음 재생할 문장 백그라운드 사전 캐싱 (0ms 지연 재생 보장)
+          const nextIdx = (i + 1) % sentencePlayList.length;
+          const nextItem = sentencePlayList[nextIdx];
+          if (nextItem) {
+            const nextCardIdx = listCardSentenceIdx[nextItem.id] || 0;
+            const nextText = (
+              (nextItem.candidateSentences && nextItem.candidateSentences.length > 0
+                ? nextItem.candidateSentences[nextCardIdx % nextItem.candidateSentences.length]
+                : nextItem.contextSentence) || nextItem.word
+            ).trim();
+            preloadSentenceTTS(nextText, ttsVoice);
           }
+
+          // 현재 낭독 중인 단어 카드로 부드럽게 스크롤 (백그라운드 탭일 때는 생략)
+          if (typeof document !== 'undefined' && !document.hidden) {
+            const el = document.getElementById(`vocab-card-${item.id}`);
+            if (el) {
+              el.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            }
+          }
+
+          // 원어민 음성으로 읽기
+          await speakSentenceTTS(textToRead, ttsVoice, ttsRate);
+
+          if (cancelSentencePlayRef.current) break;
+
+          // 다음 문장 넘어가기 전 편안한 쉼 (백그라운드 탭일 때는 짧게 이어서 재생 유지)
+          const gapMs = typeof document !== 'undefined' && document.hidden ? 450 : 800;
+          await new Promise((resolve) => setTimeout(resolve, gapMs));
         }
-
-        // 원어민 음성으로 읽기
-        await speakSentenceTTS(textToRead, ttsVoice, ttsRate);
-
-        if (cancelSentencePlayRef.current) break;
-
-        // 다음 문장 넘어가기 전 0.8초의 편안한 쉼
-        await new Promise((resolve) => setTimeout(resolve, 800));
       }
+    } finally {
+      stopBackgroundAudioKeepAlive();
+      clearMediaSession();
+      setIsListeningSentences(false);
+      setCurrentSentencePlayIdx(-1);
     }
-
-    setIsListeningSentences(false);
-    setCurrentSentencePlayIdx(-1);
   }, [isListeningSentences, sentencePlayList, listCardSentenceIdx, ttsVoice, ttsRate]);
 
-  // 탭 변경 시 문장 연속 낭독 즉시 중지
+  // 브라우저 다른 탭으로 이동 시: 백그라운드 계속 듣기 OFF일 때만 중지 (ON이면 계속 재생)
+  useEffect(() => {
+    if (typeof document === 'undefined') return;
+    const handleVisibilityChange = () => {
+      if (document.hidden && isListeningSentences && !ttsBackgroundPlayRef.current) {
+        cancelSentencePlayRef.current = true;
+        stopTTS();
+        stopBackgroundAudioKeepAlive();
+        clearMediaSession();
+        setIsListeningSentences(false);
+        setCurrentSentencePlayIdx(-1);
+      }
+    };
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
+  }, [isListeningSentences]);
+
+  // 앱 내부 탭 변경 시 문장 연속 낭독 중지 (퀴즈 탭 등 다른 오디오와 충돌 방지)
   useEffect(() => {
     if (activeTab !== 'list' && isListeningSentences) {
       cancelSentencePlayRef.current = true;
       stopTTS();
+      stopBackgroundAudioKeepAlive();
+      clearMediaSession();
       setIsListeningSentences(false);
       setCurrentSentencePlayIdx(-1);
     }
@@ -6196,6 +6265,27 @@ export default function Home() {
                   </span>
                 </button>
               </div>
+
+              {/* 백그라운드 계속 듣기 빠른 토글 (연속 낭독 중 표시) */}
+              {isListeningSentences && (
+                <div className="flex items-center justify-between gap-2 px-3 py-2 bg-amber-50/90 border border-amber-200/80 rounded-xl text-[11.5px]">
+                  <span className="font-bold text-amber-950 flex items-center gap-1.5 min-w-0">
+                    <span>🎧</span>
+                    <span className="truncate">다른 탭·백그라운드에서도 계속 듣기</span>
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => handleToggleBackgroundPlay(!ttsBackgroundPlay)}
+                    className={`px-2.5 py-1 rounded-full text-[11px] font-black transition cursor-pointer shrink-0 active:scale-95 ${
+                      ttsBackgroundPlay
+                        ? 'bg-emerald-600 text-white shadow-2xs'
+                        : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                    }`}
+                  >
+                    {ttsBackgroundPlay ? 'ON' : 'OFF'}
+                  </button>
+                </div>
+              )}
             </div>
 
             {/* 3. 선택된 단어장의 상세 정보 카드 */}
@@ -9242,6 +9332,34 @@ export default function Home() {
                           </button>
                         ))}
                       </div>
+                    </div>
+
+                    {/* 백그라운드 연속 듣기 옵션 */}
+                    <div className="pt-2.5 border-t border-slate-200/80 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                          <span>🎧</span>
+                          <span>다른 탭·백그라운드에서도 계속 듣기</span>
+                        </div>
+                        <p className="text-[10.5px] text-slate-500 mt-0.5 leading-snug">
+                          문장 연속 듣기 중 다른 웹 탭으로 이동해도 끊기지 않고 계속 낭독합니다.
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={ttsBackgroundPlay}
+                        onClick={() => handleToggleBackgroundPlay(!ttsBackgroundPlay)}
+                        className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
+                          ttsBackgroundPlay ? 'bg-indigo-600' : 'bg-slate-300'
+                        }`}
+                      >
+                        <span
+                          className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition duration-200 ${
+                            ttsBackgroundPlay ? 'translate-x-5' : 'translate-x-0'
+                          }`}
+                        />
+                      </button>
                     </div>
                   </div>
 
