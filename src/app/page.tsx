@@ -3909,7 +3909,7 @@ export default function Home() {
             <div>
               <div className="flex items-center gap-1.5">
                 <h1 className="font-extrabold text-base text-slate-900 tracking-tight leading-none">
-                  원서. 문장. 단어
+                  원서. 문장. 단어.
                 </h1>
                 <span className="hidden sm:inline-block text-[10px] bg-slate-100 text-slate-700 border border-slate-200 px-1.5 py-0.5 rounded font-bold">
                   divivid
