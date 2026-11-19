@@ -1,2 +1,2 @@
-export const APP_BUILD_VERSION = 'v2026.11.19-20 (11/19 11:49 KST)';
-export const APP_BUILD_SUMMARY = '5지선다 원문 문맥 카드 단순화 및 문장/단어 듣기 나란히 배치';
+export const APP_BUILD_VERSION = 'v2026.11.19-21 (11/19 11:51 KST)';
+export const APP_BUILD_SUMMARY = '일일 AI 사용 한도 안내 표기(20회/일, 50회/일, 1,500회/일 + 서버 AI 100회/일) 정리';

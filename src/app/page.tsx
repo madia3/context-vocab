@@ -7372,7 +7372,7 @@ export default function Home() {
                               <span className="text-[9.5px] px-1.5 py-0.5 rounded-full bg-indigo-600 text-white font-bold">현재 적용</span>
                             )}
                           </span>
-                          <span className="font-bold text-slate-800">서버 AI 일 20회</span>
+                          <span className="font-bold text-slate-800 whitespace-nowrap">서버 AI 20회/일</span>
                         </div>
                         <div className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg border ${currentUser && !geminiApiKey ? 'bg-white border-indigo-400 shadow-2xs font-bold text-indigo-950' : 'bg-white/70 border-indigo-100 text-slate-700'}`}>
                           <span className="flex items-center gap-1.5">
@@ -7381,7 +7381,7 @@ export default function Home() {
                               <span className="text-[9.5px] px-1.5 py-0.5 rounded-full bg-indigo-600 text-white font-bold">현재 적용</span>
                             )}
                           </span>
-                          <span className="font-bold text-slate-800">서버 AI 일 50회</span>
+                          <span className="font-bold text-slate-800 whitespace-nowrap">서버 AI 50회/일</span>
                         </div>
                         <div className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg border ${geminiApiKey ? 'bg-emerald-50 border-emerald-400 shadow-2xs font-bold text-emerald-950' : 'bg-white/70 border-indigo-100 text-slate-700'}`}>
                           <span className="flex items-center gap-1.5">
@@ -7390,7 +7390,9 @@ export default function Home() {
                               <span className="text-[9.5px] px-1.5 py-0.5 rounded-full bg-emerald-600 text-white font-bold">현재 적용</span>
                             )}
                           </span>
-                          <span className="font-bold text-emerald-700">본인 키 1,500회 + 비상 서버 100회</span>
+                          <span className="font-bold text-emerald-700 text-right leading-snug whitespace-nowrap">
+                            본인 키 1,500회/일<br />+ 서버 AI 100회/일
+                          </span>
                         </div>
                       </div>
                       <p className="text-[10px] text-indigo-900/75 leading-relaxed">
