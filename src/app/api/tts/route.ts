@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { MsEdgeTTS, OUTPUT_FORMAT } from 'msedge-tts';
 import { checkRateLimit } from '@/lib/geminiServer';
 
 export const runtime = 'nodejs';
@@ -8,6 +9,64 @@ export const dynamic = 'force-dynamic';
 const ttsCache = new Map<string, { buffer: Buffer; timestamp: number }>();
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24시간
 const MAX_CACHE_ITEMS = 1000;
+
+function escapeXmlForSsml(input: string): string {
+  return input
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function getEdgeNeuralVoice(lang: string): string {
+  if (lang.startsWith('en-GB')) return 'en-GB-SoniaNeural';
+  return 'en-US-AvaMultilingualNeural';
+}
+
+async function synthesizeEdgeNeuralTTS(text: string, lang: string): Promise<Buffer | null> {
+  const tts = new MsEdgeTTS({
+    connectionTimeoutMs: 3500,
+    synthesisTimeoutMs: 6000,
+  });
+
+  try {
+    const voiceName = getEdgeNeuralVoice(lang);
+    await tts.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
+
+    const safeText = escapeXmlForSsml(text);
+    const { audioStream } = tts.toStream(safeText);
+
+    const buffer = await new Promise<Buffer>((resolve, reject) => {
+      const chunks: Buffer[] = [];
+      const timer = setTimeout(() => {
+        audioStream.destroy();
+        reject(new Error('Edge TTS stream timeout'));
+      }, 6500);
+
+      audioStream.on('data', (chunk: Buffer | Uint8Array) => {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      });
+      audioStream.on('end', () => {
+        clearTimeout(timer);
+        resolve(Buffer.concat(chunks));
+      });
+      audioStream.on('error', (err: Error) => {
+        clearTimeout(timer);
+        reject(err);
+      });
+    });
+
+    return buffer.length > 0 ? buffer : null;
+  } catch (err) {
+    console.warn('Edge Neural TTS failed, will fallback:', err);
+    return null;
+  } finally {
+    try {
+      tts.close();
+    } catch {}
+  }
+}
 
 export async function GET(req: NextRequest) {
   try {
@@ -89,7 +148,25 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // 2. 문장 및 복합 단어: 고품질 원어민 뉴럴 오디오 스트림 (Google Neural Voice)
+    // 2. 문장 및 복합 단어 1순위: Microsoft Edge Neural TTS (자연스러운 원어민 오디오북 억양)
+    const edgeBuffer = await synthesizeEdgeNeuralTTS(text, lang);
+    if (edgeBuffer && edgeBuffer.length > 0) {
+      if (ttsCache.size >= MAX_CACHE_ITEMS) {
+        const firstKey = ttsCache.keys().next().value;
+        if (firstKey) ttsCache.delete(firstKey);
+      }
+      ttsCache.set(cacheKey, { buffer: edgeBuffer, timestamp: Date.now() });
+
+      return new NextResponse(new Uint8Array(edgeBuffer), {
+        headers: {
+          'Content-Type': 'audio/mpeg',
+          'Cache-Control': 'public, s-maxage=86400, max-age=86400, stale-while-revalidate=604800',
+          'X-TTS-Source': 'edge-neural',
+        },
+      });
+    }
+
+    // 3. 비상 폴백: Google Translate TTS (Edge Neural 일시 장애 시 자동 전환)
     const targetLang = lang.startsWith('en-GB') ? 'en-GB' : 'en-US';
     const googleTtsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${targetLang}&client=gtx&q=${encodeURIComponent(
       text
@@ -121,7 +198,7 @@ export async function GET(req: NextRequest) {
       headers: {
         'Content-Type': 'audio/mpeg',
         'Cache-Control': 'public, s-maxage=86400, max-age=86400, stale-while-revalidate=604800',
-        'X-TTS-Source': 'google-neural',
+        'X-TTS-Source': 'google-fallback',
       },
     });
   } catch (err: any) {
