@@ -949,6 +949,25 @@ export async function callGeminiWithFallback(options: {
             const finishReason = data?.candidates?.[0]?.finishReason || data?.promptFeedback?.blockReason || 'EMPTY';
             latestError = `${candidate.model} 빈 응답 (${finishReason})`;
             attemptLogs.push(`${candidate.model}: 빈 응답[${finishReason}] (${((Date.now() - callStart) / 1000).toFixed(2)}s)`);
+
+            // RECITATION(저작권 원문 복제 필터) / SAFETY 등은 모든 Gemini 모델이 동일 필터를 공유하므로
+            // 추가 모델 재시도(약 8초 낭비) 없이 즉시 중단하고 로컬 OCR/텍스트 복원으로 빠르게 전환
+            if (
+              finishReason === 'RECITATION' ||
+              finishReason === 'PROHIBITED_CONTENT' ||
+              finishReason === 'SAFETY' ||
+              finishReason === 'BLOCKLIST' ||
+              finishReason === 'SPII'
+            ) {
+              fatalAuthError = true;
+              if (!resolved) {
+                resolved = true;
+                attemptLogs.push(`${finishReason} 감지 ➔ 추가 모델 재시도 즉시 중단`);
+                cleanupAll();
+                resolveRace({ ok: false, text: '', lastError: latestError });
+              }
+              return;
+            }
           }
         } else {
           const errText = await res.text();

@@ -18,6 +18,9 @@ function extractGeminiErrorMessage(rawError?: string): string {
   if (rawError.includes('RESOURCE_EXHAUSTED')) {
     return 'Gemini API 요청 한도 초과 (RESOURCE_EXHAUSTED)';
   }
+  if (rawError.includes('RECITATION')) {
+    return '저작권 원문 필터(RECITATION) 감지 ➔ 로컬 복원 전환';
+  }
   if (rawError.includes('Timeout') || rawError.includes('aborted') || rawError.includes('abort')) {
     return '분석 시간 초과 (Vercel 타임아웃)';
   }
@@ -96,18 +99,18 @@ Strict Rules:
    - Identify any English words marked with handwritten underlines or circles in either image.
    - Accurately restore the clean original English word without pen marks into the "markedWords" array (e.g. ["categories", "grow"]).
 
-Output strictly valid JSON:
+Output strictly valid JSON with each sentence as a separate array item:
 {
-  "text": "Clean combined transcribed article/prose text across both pages in chronological reading order...",
+  "sentences": ["First sentence in reading order.", "Second sentence..."],
   "markedWords": ["word1", "word2"]
 }`
-        : `You are an English vocabulary study assistant helping a student extract sentences from a photographed reading page for personal dictionary lookup.
+        : `You are an English vocabulary study assistant helping a student extract individual study sentences from a photographed reading page for personal dictionary lookup.
 Carefully inspect the provided image.
 
 Rules:
-1. EXTRACT READING PROSE ONLY:
+1. EXTRACT READING PROSE AS INDIVIDUAL SENTENCES:
    - Ignore charts, bar graphs, plots, diagrams, axes numbers, and footnote citations.
-   - Extract the readable English sentences and headings in order as clean study text.
+   - Split the readable English headings and sentences in order into separate items in the "sentences" array.
    - Join line-broken hyphenated words (e.g. "con- / dition" -> "condition").
 
 2. DETECT CIRCLED OR UNDERLINED WORDS:
@@ -117,7 +120,7 @@ Rules:
 
 Output strictly valid JSON:
 {
-  "text": "Clean extracted English study sentences...",
+  "sentences": ["First sentence or heading.", "Second sentence..."],
   "markedWords": ["word1", "word2"]
 }`;
 
@@ -152,7 +155,12 @@ Output strictly valid JSON:
         try {
           const cleanJson = visionRes.text.replace(/```json/gi, '').replace(/```/g, '').trim();
           const parsed = JSON.parse(cleanJson);
-          if (typeof parsed.text === 'string' && parsed.text.trim()) {
+          if (Array.isArray(parsed.sentences) && parsed.sentences.length > 0) {
+            text = parsed.sentences
+              .map((s: any) => String(s || '').trim())
+              .filter(Boolean)
+              .join(' ');
+          } else if (typeof parsed.text === 'string' && parsed.text.trim()) {
             text = parsed.text.trim();
           }
           const detected = parsed.markedWords || parsed.underlinedWords;

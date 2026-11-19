@@ -1,2 +1,2 @@
-export const APP_BUILD_VERSION = 'v2026.11.19-22 (11/19 11:59 KST)';
-export const APP_BUILD_SUMMARY = '5지선다 정답 확인 시 상단 컴팩트화 및 모바일 하단 고정 다음 문제 버튼 적용';
+export const APP_BUILD_VERSION = 'v2026.11.19-23 (11/19 12:20 KST)';
+export const APP_BUILD_SUMMARY = 'Vision OCR sentences 배열 출력(RECITATION 우회) 및 RECITATION 감지 시 재시도 즉시 중단';
