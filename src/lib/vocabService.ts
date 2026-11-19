@@ -645,12 +645,15 @@ export async function fetchVocabulary(targetUser?: User | null): Promise<VocabIt
         const localById = new Map<string, VocabItem>(localItems.map((l) => [l.id, l]));
         const localByWord = new Map<string, VocabItem>(localItems.map((l) => [String(l.word || '').toLowerCase(), l]));
 
+        const itemsNeedingTranslationBackfill: VocabItem[] = [];
+
         const formatted: VocabItem[] = data.map((row: any) => {
           const localMatch = localById.get(row.id) || localByWord.get(String(row.word || '').toLowerCase());
-          const directTranslation =
-            typeof row.sentence_translation === 'string' && row.sentence_translation.trim()
-              ? row.sentence_translation.trim()
-              : (localMatch?.sentenceTranslation?.trim() || '');
+          const hasServerTranslation =
+            typeof row.sentence_translation === 'string' && row.sentence_translation.trim().length > 0;
+          const directTranslation = hasServerTranslation
+            ? row.sentence_translation.trim()
+            : (localMatch?.sentenceTranslation?.trim() || '');
 
           const finalTranslation =
             directTranslation ||
@@ -660,7 +663,7 @@ export async function fetchVocabulary(targetUser?: User | null): Promise<VocabIt
               sentenceTranslation: directTranslation,
             });
 
-          return {
+          const formattedItem: VocabItem = {
             id: row.id,
             word: row.word,
             phonetic: row.phonetic || '',
@@ -681,6 +684,12 @@ export async function fetchVocabulary(targetUser?: User | null): Promise<VocabIt
             created_at: row.created_at,
             user_id: row.user_id,
           };
+
+          if (!hasServerTranslation && finalTranslation) {
+            itemsNeedingTranslationBackfill.push(formattedItem);
+          }
+
+          return formattedItem;
         });
 
         if (typeof window !== 'undefined') {
@@ -692,11 +701,12 @@ export async function fetchVocabulary(targetUser?: User | null): Promise<VocabIt
           const merged = [...unsynced, ...formatted];
           localStorage.setItem(storageKey, JSON.stringify(merged));
 
-          // 이 기기에만 남아 있는 미동기화 사용자 단어(예: 타 기기 접속 전/오프라인 저장분)를 클라우드로 자동 백업
+          // 이 기기에만 남아 있는 미동기화 사용자 단어 + 서버에 한글 해석이 비어 있는 단어를 클라우드로 자동 백필
           const unsyncedUserWords = unsynced.filter((l) => !String(l.id).startsWith('seed_'));
-          if (unsyncedUserWords.length > 0 && user?.id) {
-            upsertVocabRowsWithFallback(unsyncedUserWords, user.id).catch((err) => {
-              console.warn('Auto-upload unsynced local words failed:', err);
+          const toBackfill = [...unsyncedUserWords, ...itemsNeedingTranslationBackfill];
+          if (toBackfill.length > 0 && user?.id) {
+            upsertVocabRowsWithFallback(toBackfill, user.id).catch((err) => {
+              console.warn('Auto-upload unsynced local words/translations failed:', err);
             });
           }
 

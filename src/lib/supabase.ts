@@ -266,6 +266,7 @@ CREATE TABLE IF NOT EXISTS public.vocab_words (
     selected_meaning TEXT NOT NULL,
     all_meanings JSONB DEFAULT '[]'::jsonb,
     context_sentence TEXT,
+    sentence_translation TEXT,
     candidate_sentences JSONB DEFAULT '[]'::jsonb,
     source_memo TEXT,
     book_title TEXT,
@@ -283,6 +284,7 @@ ALTER TABLE public.vocab_words ADD COLUMN IF NOT EXISTS wrong_count INT DEFAULT 
 ALTER TABLE public.vocab_words ADD COLUMN IF NOT EXISTS consecutive_correct INT DEFAULT 0;
 ALTER TABLE public.vocab_words ADD COLUMN IF NOT EXISTS last_quiz_date TEXT;
 ALTER TABLE public.vocab_words ADD COLUMN IF NOT EXISTS candidate_sentences JSONB DEFAULT '[]'::jsonb;
+ALTER TABLE public.vocab_words ADD COLUMN IF NOT EXISTS sentence_translation TEXT;
 ALTER TABLE public.vocab_words ADD COLUMN IF NOT EXISTS book_title TEXT;
 
 -- 3. Row Level Security (RLS) 활성화: 다른 사용자가 내 단어를 볼 수 없도록 격리
