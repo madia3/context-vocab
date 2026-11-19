@@ -6,6 +6,7 @@ import {
   fetchVocabulary,
   addVocabularyItem,
   saveOrMergeVocabularyItem,
+  saveOrMergeVocabularyItemsBatch,
   deleteVocabularyItem,
   moveWordsToAnotherBook,
   deleteWordsByBook,
@@ -17,6 +18,12 @@ import {
   syncGuestWordsToUser,
   loadSamplesForUser,
 } from '@/lib/vocabService';
+import {
+  RECOMMENDED_WORDBOOKS,
+  RECOMMENDED_CATEGORIES,
+  type RecommendedWordbook,
+  type RecommendedCategory,
+} from '@/lib/recommendedWordbooks';
 import {
   lookupDictionary,
   speakWordTTS,
@@ -437,6 +444,9 @@ export default function Home() {
   const [selectedBookFilters, setSelectedBookFilters] = useState<string[]>(['all']);
   const [isBookSelectorOpen, setIsBookSelectorOpen] = useState<boolean>(false);
   const bookSelectorRef = useRef<HTMLDivElement>(null);
+  const [isQuizBookSelectorOpen, setIsQuizBookSelectorOpen] = useState<boolean>(false);
+  const quizBookSelectorRef = useRef<HTMLDivElement>(null);
+  const quizBookSelectionDirtyRef = useRef<boolean>(false);
 
   // Interactive Touch Swipe Gesture between 3 Main Tabs (단어등록 <-> 단어장 <-> 5지선다)
   const TAB_ORDER: ('add' | 'list' | 'quiz')[] = ['add', 'list', 'quiz'];
@@ -612,6 +622,12 @@ export default function Home() {
   }, [currentUser]);
   const [isSupabaseReady, setIsSupabaseReady] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
+  const [isRecommendedModalOpen, setIsRecommendedModalOpen] = useState(false);
+  const [importingBookId, setImportingBookId] = useState<string | null>(null);
+  const [expandedRecommendedId, setExpandedRecommendedId] = useState<string | null>(null);
+  const [recommendedCategoryFilter, setRecommendedCategoryFilter] = useState<
+    '전체' | RecommendedCategory
+  >('전체');
   const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
   const [inputSupabaseUrl, setInputSupabaseUrl] = useState('https://mkclocmrpxjrowldfryd.supabase.co');
   const [inputSupabaseAnonKey, setInputSupabaseAnonKey] = useState('sb_publishable_J9jsy23QWH9yXeVE5pMxFg_GbC7MlFE');
@@ -892,6 +908,53 @@ export default function Home() {
     } finally {
       setIsAdminActionRunning(false);
     }
+  }
+
+  async function handleAddRecommendedWordbook(book: RecommendedWordbook) {
+    if (importingBookId) return;
+    setImportingBookId(book.id);
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      const userPrefix = currentUser?.id ? currentUser.id.slice(0, 8) : 'guest';
+      const itemsToImport: VocabItem[] = book.words.map((w, idx) => ({
+        ...w,
+        id: `rec_${userPrefix}_${book.id}_${w.word}_${idx}`,
+        date: today,
+        candidateSentences: [w.contextSentence],
+        user_id: currentUser?.id,
+      }));
+
+      const { addedCount, mergedCount } = await saveOrMergeVocabularyItemsBatch(
+        itemsToImport,
+        currentUser?.id
+      );
+
+      const refreshed = await fetchVocabulary(currentUser);
+      setVocabulary(refreshed);
+
+      if (addedCount > 0) {
+        triggerToast(
+          `${book.emoji} '${book.bookTitle}' 추가 완료!`,
+          `${addedCount}개 단어가 원문 문장·한글 해석과 함께 내 단어장에 담겼습니다.`
+        );
+      } else if (mergedCount > 0) {
+        triggerToast(
+          `이미 담긴 단어장이에요 ✓`,
+          `'${book.bookTitle}' 단어장의 ${mergedCount}개 단어가 최신 내용으로 동기화되었습니다.`
+        );
+      }
+    } catch (err: any) {
+      console.error('추천 단어장 추가 실패:', err);
+      triggerToast('추천 단어장 추가 실패', err?.message || '잠시 후 다시 시도해 주세요.');
+    } finally {
+      setImportingBookId(null);
+    }
+  }
+
+  function handleStudyRecommendedBook(bookTitle: string, targetTab: 'list' | 'quiz' = 'list') {
+    setSelectedBookFilters([bookTitle]);
+    setIsRecommendedModalOpen(false);
+    setActiveTab(targetTab);
   }
 
   useEffect(() => {
@@ -3708,20 +3771,32 @@ export default function Home() {
     }
   }, [activeTab, isListeningSentences]);
 
-  // 바깥 클릭 시 단어장 다중 선택 팝오버 닫기
+  // 바깥 클릭 시 단어장 다중 선택 팝오버 닫기 (단어장 탭 & 5지선다 탭)
   useEffect(() => {
     const handleClickOutside = (e: MouseEvent) => {
-      if (bookSelectorRef.current && !bookSelectorRef.current.contains(e.target as Node)) {
+      if (isBookSelectorOpen && bookSelectorRef.current && !bookSelectorRef.current.contains(e.target as Node)) {
         setIsBookSelectorOpen(false);
       }
+      if (
+        isQuizBookSelectorOpen &&
+        quizBookSelectorRef.current &&
+        !quizBookSelectorRef.current.contains(e.target as Node)
+      ) {
+        setIsQuizBookSelectorOpen(false);
+        if (quizBookSelectionDirtyRef.current) {
+          quizBookSelectionDirtyRef.current = false;
+          startQuiz(selectedBookFilters);
+        }
+      }
     };
-    if (isBookSelectorOpen) {
+    if (isBookSelectorOpen || isQuizBookSelectorOpen) {
       document.addEventListener('mousedown', handleClickOutside);
     }
     return () => {
       document.removeEventListener('mousedown', handleClickOutside);
     };
-  }, [isBookSelectorOpen]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isBookSelectorOpen, isQuizBookSelectorOpen, selectedBookFilters]);
 
   // 바깥 클릭 시 단어 등록 탭 단어장 드롭다운 닫기
   useEffect(() => {
@@ -4006,6 +4081,18 @@ export default function Home() {
                     )}
 
                     {/* Reorganized Clean Menu Items */}
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsRecommendedModalOpen(true);
+                        setIsUserMenuOpen(false);
+                      }}
+                      className="w-full text-left px-3 py-2 bg-gradient-to-r from-amber-50 to-indigo-50/70 hover:from-amber-100/80 hover:to-indigo-100/70 text-slate-900 font-bold rounded-xl flex items-center gap-2 transition cursor-pointer border border-amber-200/70"
+                    >
+                      <BookMarked className="w-3.5 h-3.5 text-amber-600" />
+                      <span>추천 단어장</span>
+                    </button>
+
                     <button
                       type="button"
                       onClick={() => {
@@ -6344,6 +6431,205 @@ export default function Home() {
           }`}
         >
           <section className="max-w-2xl mx-auto w-full min-w-0 space-y-3.5">
+            {/* 5지선다 상단 단어장 다중 선택기 (단어장 탭과 동일한 UI/동작) */}
+            <div className="space-y-2 relative" ref={quizBookSelectorRef}>
+              <button
+                type="button"
+                onClick={() => {
+                  setIsQuizBookSelectorOpen((prev) => {
+                    const next = !prev;
+                    if (!next && quizBookSelectionDirtyRef.current) {
+                      quizBookSelectionDirtyRef.current = false;
+                      startQuiz(selectedBookFilters);
+                    }
+                    return next;
+                  });
+                }}
+                className="w-full px-4 py-3 bg-white hover:bg-slate-50 text-slate-900 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-xs cursor-pointer transition flex items-center justify-between gap-2"
+              >
+                <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                  <BookOpen className="w-4 h-4 text-indigo-600 shrink-0" />
+                  <span className="font-bold text-sm truncate text-left">
+                    {isAllBooksSelected
+                      ? `전체 단어장 보기 (총 ${vocabulary.length}단어)`
+                      : selectedBookFilters.length === 1
+                      ? `[${selectedBookFilters[0]}] (${filteredVocabulary.length}단어)`
+                      : `[${selectedBookFilters[0]} 외 ${selectedBookFilters.length - 1}개] (${filteredVocabulary.length}단어)`}
+                  </span>
+                </div>
+
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-[11px] font-bold px-2.5 py-0.5 rounded-full bg-indigo-100 text-indigo-700">
+                    {isAllBooksSelected ? '전체' : `${selectedBookFilters.length}개 선택`}
+                  </span>
+                  <ChevronDown
+                    className={`w-4 h-4 text-slate-400 transition-transform duration-200 ${
+                      isQuizBookSelectorOpen ? 'rotate-180' : ''
+                    }`}
+                  />
+                </div>
+              </button>
+
+              {/* 다중 선택 드롭다운 팝오버 */}
+              {isQuizBookSelectorOpen && (
+                <div className="absolute left-0 right-0 top-full mt-1.5 z-40 bg-white border border-slate-200 rounded-2xl shadow-xl overflow-hidden divide-y divide-slate-100 animate-in fade-in duration-150">
+                  {/* 드롭다운 상단 바 */}
+                  <div className="px-3.5 py-2.5 bg-slate-50 flex items-center justify-between text-xs">
+                    <span className="font-bold text-slate-700 flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5 text-indigo-600" />
+                      <span>단어장 다중 선택 ({availableBookTitles.length}개)</span>
+                    </span>
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (isAllBooksSelected) {
+                            if (availableBookTitles.length > 0) {
+                              quizBookSelectionDirtyRef.current = true;
+                              setSelectedBookFilters([availableBookTitles[0]]);
+                            }
+                          } else {
+                            quizBookSelectionDirtyRef.current = false;
+                            setIsQuizBookSelectorOpen(false);
+                            startQuiz(['all']);
+                          }
+                        }}
+                        className="text-[11px] font-bold text-indigo-600 hover:text-indigo-800 transition cursor-pointer"
+                      >
+                        {isAllBooksSelected ? '단일 선택 모드' : '전체 선택'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsQuizBookSelectorOpen(false);
+                          if (quizBookSelectionDirtyRef.current) {
+                            quizBookSelectionDirtyRef.current = false;
+                            startQuiz(selectedBookFilters);
+                          }
+                        }}
+                        className="text-[11px] text-slate-400 hover:text-slate-600 px-1 py-0.5 cursor-pointer font-bold"
+                      >
+                        ✕
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* 단어장 체크박스 목록 */}
+                  <div className="max-h-64 overflow-y-auto p-1.5 space-y-0.5">
+                    {/* 전체 단어장 선택 옵션 */}
+                    <div
+                      onClick={() => {
+                        quizBookSelectionDirtyRef.current = false;
+                        setIsQuizBookSelectorOpen(false);
+                        startQuiz(['all']);
+                      }}
+                      className={`w-full flex items-center justify-between px-3 py-2.5 rounded-xl text-xs font-bold transition cursor-pointer ${
+                        isAllBooksSelected
+                          ? 'bg-indigo-50 text-indigo-900 font-black'
+                          : 'hover:bg-slate-50 text-slate-700'
+                      }`}
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <input
+                          type="checkbox"
+                          checked={isAllBooksSelected}
+                          onChange={() => {}}
+                          className="w-4 h-4 rounded text-indigo-600 border-slate-300 focus:ring-indigo-500 cursor-pointer pointer-events-none"
+                        />
+                        <span>전체 단어장 보기</span>
+                      </div>
+                      <span className="text-[11px] px-2 py-0.5 rounded-full font-bold bg-slate-100 text-slate-600">
+                        {vocabulary.length}단어
+                      </span>
+                    </div>
+
+                    {/* 개별 단어장 체크박스 목록 */}
+                    {availableBookTitles.map((title) => {
+                      const count = vocabulary.filter((v) => (v.bookTitle || '기본 단어장') === title).length;
+                      const isChecked = isBookSelected(title);
+
+                      return (
+                        <div
+                          key={title}
+                          className={`w-full flex items-center justify-between px-3 py-2 rounded-xl text-xs transition ${
+                            isChecked && !isAllBooksSelected
+                              ? 'bg-indigo-50/80 text-indigo-900 font-bold'
+                              : 'hover:bg-slate-50 text-slate-700'
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0 flex-1 pr-2">
+                            <div
+                              onClick={() => {
+                                quizBookSelectionDirtyRef.current = true;
+                                toggleBookCheckbox(title);
+                              }}
+                              className="flex items-center cursor-pointer shrink-0"
+                            >
+                              <input
+                                type="checkbox"
+                                checked={isChecked}
+                                onChange={() => {}}
+                                className="w-4 h-4 rounded text-indigo-600 border-slate-300 focus:ring-indigo-500 cursor-pointer pointer-events-none shrink-0"
+                              />
+                            </div>
+                            <button
+                              type="button"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                quizBookSelectionDirtyRef.current = false;
+                                selectOnlyBook(title);
+                                setIsQuizBookSelectorOpen(false);
+                                startQuiz([title]);
+                              }}
+                              title="이 단어장만 단독 출제"
+                              className="text-[10px] px-1.5 py-0.5 font-bold text-slate-600 hover:text-indigo-700 bg-white border border-slate-200 hover:border-indigo-300 rounded-md transition cursor-pointer shrink-0 active:scale-95 shadow-2xs"
+                            >
+                              단독
+                            </button>
+                            <span
+                              onClick={() => {
+                                quizBookSelectionDirtyRef.current = true;
+                                toggleBookCheckbox(title);
+                              }}
+                              className="truncate cursor-pointer select-none flex-1 min-w-0"
+                            >
+                              {title}
+                            </span>
+                          </div>
+
+                          <div className="flex items-center shrink-0">
+                            <span className="text-[11px] px-2 py-0.5 rounded-full font-semibold bg-slate-100 text-slate-600">
+                              {count}단어
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* 드롭다운 하단 완료 바 */}
+                  <div className="p-2.5 bg-slate-50 flex items-center justify-between text-[11px] text-slate-600">
+                    <span>
+                      선택된 단어: <strong className="text-indigo-600">{filteredVocabulary.length}</strong>개
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsQuizBookSelectorOpen(false);
+                        if (quizBookSelectionDirtyRef.current) {
+                          quizBookSelectionDirtyRef.current = false;
+                          startQuiz(selectedBookFilters);
+                        }
+                      }}
+                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-3 py-1.5 rounded-lg transition cursor-pointer shadow-2xs"
+                    >
+                      선택 완료
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
             <div className="bg-white rounded-2xl border border-slate-200 shadow-md overflow-hidden">
               {/* Quiz Header */}
               <div className="bg-slate-900 text-white p-4 flex items-center justify-between">
@@ -9349,8 +9635,248 @@ export default function Home() {
         </div>
       )}
 
+      {/* Recommended Wordbooks Modal (고전 명작 추천 단어장 라이브러리) */}
+      {isRecommendedModalOpen && (
+        <div
+          className="fixed inset-0 z-[120] bg-slate-900/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-fade-in"
+          onClick={() => setIsRecommendedModalOpen(false)}
+        >
+          <div
+            className="bg-white w-full sm:max-w-2xl max-h-[88vh] sm:max-h-[85vh] rounded-t-3xl sm:rounded-3xl shadow-2xl border border-slate-200 flex flex-col overflow-hidden"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Modal Header */}
+            <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-amber-50/80 via-white to-indigo-50/70 shrink-0">
+              <div className="flex items-center gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-500 to-indigo-600 text-white flex items-center justify-center shadow-md shrink-0">
+                  <BookMarked className="w-5 h-5" />
+                </div>
+                <div className="min-w-0">
+                  <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight truncate">
+                    추천 단어장 라이브러리
+                  </h2>
+                  <p className="text-[11px] sm:text-xs text-slate-500 font-medium truncate mt-0.5">
+                    퍼블릭 도메인 원서 명문장 + 한글 해석 풀세트 · 원클릭으로 내 단어장에 추가
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsRecommendedModalOpen(false)}
+                className="p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition cursor-pointer shrink-0"
+                aria-label="닫기"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Category Filter Pills */}
+            <div className="px-4 sm:px-5 py-2.5 bg-white border-b border-slate-100 flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
+              {RECOMMENDED_CATEGORIES.map((cat) => {
+                const isSelected = recommendedCategoryFilter === cat;
+                const count =
+                  cat === '전체'
+                    ? RECOMMENDED_WORDBOOKS.length
+                    : RECOMMENDED_WORDBOOKS.filter((b) => b.category === cat).length;
+                return (
+                  <button
+                    key={cat}
+                    type="button"
+                    onClick={() => setRecommendedCategoryFilter(cat)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 ${
+                      isSelected
+                        ? 'bg-slate-900 text-white shadow-xs'
+                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200/80'
+                    }`}
+                  >
+                    <span>{cat}</span>
+                    <span
+                      className={`text-[10px] font-black px-1.5 py-0.2 rounded-full ${
+                        isSelected ? 'bg-white/20 text-white' : 'bg-white text-slate-500'
+                      }`}
+                    >
+                      {count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+
+            {/* Modal Body */}
+            <div className="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1 bg-slate-50/60">
+              {RECOMMENDED_WORDBOOKS.filter(
+                (book) =>
+                  recommendedCategoryFilter === '전체' ||
+                  book.category === recommendedCategoryFilter
+              ).map((book) => {
+                const existingCount = vocabulary.filter(
+                  (v) => (v.bookTitle || '').trim() === book.bookTitle
+                ).length;
+                const isAlreadyAdded = existingCount >= book.words.length;
+                const isImporting = importingBookId === book.id;
+                const isExpanded = expandedRecommendedId === book.id;
+
+                return (
+                  <div
+                    key={book.id}
+                    className="bg-white rounded-2xl border border-slate-200/90 shadow-2xs overflow-hidden transition hover:border-indigo-200"
+                  >
+                    <div className="p-4 sm:p-5">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="flex items-start gap-3 min-w-0">
+                          <div
+                            className={`w-11 h-11 rounded-2xl bg-gradient-to-br ${book.accentGradient} text-white flex items-center justify-center text-xl shadow-sm shrink-0`}
+                          >
+                            {book.emoji}
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span
+                                className={`text-[10px] font-black px-2 py-0.5 rounded-full ${book.badgeColor}`}
+                              >
+                                {book.level}
+                              </span>
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                                {book.words.length}단어
+                              </span>
+                              <span className="text-[10px] font-semibold text-slate-400">
+                                {book.author} ({book.year})
+                              </span>
+                            </div>
+                            <h3 className="text-sm sm:text-base font-black text-slate-900 mt-1 leading-snug">
+                              {book.bookTitle}
+                            </h3>
+                            <p className="text-[11px] text-slate-400 font-medium italic truncate">
+                              {book.originalTitle}
+                            </p>
+                          </div>
+                        </div>
+                      </div>
+
+                      <p className="text-xs text-slate-600 font-medium mt-2.5 leading-relaxed">
+                        {book.description}
+                      </p>
+
+                      {/* Representative Quote */}
+                      <div className="mt-3 p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
+                        <p className="text-xs font-serif text-slate-800 leading-relaxed">
+                          &ldquo;{book.highlightQuote}&rdquo;
+                        </p>
+                        <p className="text-[11px] text-slate-500 font-medium leading-relaxed">
+                          {book.highlightTranslation}
+                        </p>
+                      </div>
+
+                      {/* Actions Row */}
+                      <div className="mt-3.5 flex flex-wrap items-center justify-between gap-2">
+                        <button
+                          type="button"
+                          onClick={() =>
+                            setExpandedRecommendedId(isExpanded ? null : book.id)
+                          }
+                          className="text-xs font-bold text-slate-600 hover:text-indigo-700 px-2.5 py-1.5 rounded-lg hover:bg-slate-100 transition flex items-center gap-1 cursor-pointer"
+                        >
+                          <ChevronDown
+                            className={`w-3.5 h-3.5 transition-transform ${
+                              isExpanded ? 'rotate-180' : ''
+                            }`}
+                          />
+                          <span>{isExpanded ? '미리보기 접기' : `수록 단어 ${book.words.length}개 미리보기`}</span>
+                        </button>
+
+                        <div className="flex items-center gap-2">
+                          {isAlreadyAdded ? (
+                            <>
+                              <span className="inline-flex items-center gap-1 text-[11px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1.5 rounded-xl">
+                                <CheckCircle2 className="w-3.5 h-3.5" />
+                                <span>담김 ({existingCount}단어)</span>
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleStudyRecommendedBook(book.bookTitle, 'list')}
+                                className="text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-xl transition cursor-pointer"
+                              >
+                                단어장 보기
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleStudyRecommendedBook(book.bookTitle, 'quiz')}
+                                className="text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-3 py-1.5 rounded-xl shadow-xs transition cursor-pointer"
+                              >
+                                퀴즈 풀기
+                              </button>
+                            </>
+                          ) : (
+                            <button
+                              type="button"
+                              disabled={Boolean(importingBookId)}
+                              onClick={() => handleAddRecommendedWordbook(book)}
+                              className="inline-flex items-center gap-1.5 text-xs font-black text-white bg-slate-900 hover:bg-indigo-600 disabled:opacity-50 px-3.5 py-2 rounded-xl shadow-xs transition cursor-pointer active:scale-[0.98]"
+                            >
+                              {isImporting ? (
+                                <>
+                                  <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                                  <span>담는 중...</span>
+                                </>
+                              ) : (
+                                <>
+                                  <Plus className="w-3.5 h-3.5" />
+                                  <span>
+                                    {existingCount > 0
+                                      ? `나머지 단어 추가 (${existingCount}/${book.words.length})`
+                                      : '내 단어장에 담기'}
+                                  </span>
+                                </>
+                              )}
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Expandable Word List Preview */}
+                    {isExpanded && (
+                      <div className="border-t border-slate-100 bg-slate-50/80 px-4 py-3 sm:px-5 space-y-2.5">
+                        {book.words.map((item, idx) => (
+                          <div
+                            key={item.id}
+                            className="bg-white rounded-xl p-3 border border-slate-200/70 space-y-1"
+                          >
+                            <div className="flex flex-wrap items-baseline gap-2">
+                              <span className="text-[10px] font-black text-slate-400">
+                                {String(idx + 1).padStart(2, '0')}
+                              </span>
+                              <span className="text-sm font-black text-slate-900">{item.word}</span>
+                              <span className="text-[11px] font-mono text-slate-400">
+                                {item.phonetic}
+                              </span>
+                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700">
+                                {item.partOfSpeech}
+                              </span>
+                              <span className="text-xs font-bold text-slate-700">
+                                {item.selectedMeaning}
+                              </span>
+                            </div>
+                            <p className="text-xs text-slate-700 leading-relaxed pl-5">
+                              {item.contextSentence}
+                            </p>
+                            <p className="text-[11px] text-slate-500 leading-relaxed pl-5">
+                              {item.sentenceTranslation}
+                            </p>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Mobile Fixed Bottom Next Question Bar (rendered outside swipe transform container so fixed positioning sticks to viewport) */}
-      {activeTab === 'quiz' && !isQuizFinished && currentQuizItem && quizAnswerState.answered && !isSettingsOpen && !isAuthModalOpen && (
+      {activeTab === 'quiz' && !isQuizFinished && currentQuizItem && quizAnswerState.answered && !isSettingsOpen && !isAuthModalOpen && !isRecommendedModalOpen && (
         <div className="sm:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/80 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-4px_20px_rgba(15,23,42,0.08)]">
           <button
             type="button"
