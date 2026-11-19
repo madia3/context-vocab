@@ -916,6 +916,32 @@ export default function Home() {
   // Floating Toast State
   const [toast, setToast] = useState<{ show: boolean; title: string; subtitle?: string } | null>(null);
   const [aiQuotaExceededNotice, setAiQuotaExceededNotice] = useState<AiQuotaExceededInfo | null>(null);
+  const [serverAiQuota, setServerAiQuota] = useState<{
+    tier: 'admin' | 'personal_backup' | 'member' | 'guest';
+    limit: number;
+    used: number;
+    remaining: number;
+    isAdmin?: boolean;
+  } | null>(null);
+
+  // 설정 > AI 연동 탭을 열 때마다 서버 AI 잔여 한도를 최신으로 조회
+  useEffect(() => {
+    if (!isSettingsOpen || settingsTab !== 'ai') return;
+    let cancelled = false;
+    fetch('/api/ai/test-key', {
+      headers: buildAiRequestHeaders(geminiApiKey),
+    })
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (!cancelled && data?.serverQuota) {
+          setServerAiQuota(data.serverQuota);
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isSettingsOpen, settingsTab, currentUser, geminiApiKey]);
 
   // 서버 공용 AI 일일 한도 초과 시 자동으로 개인 키 등록 화면(설정 -> AI 연동) 표시
   useEffect(() => {
@@ -7397,9 +7423,46 @@ export default function Home() {
                           </span>
                         </div>
                       </div>
-                      <p className="text-[10px] text-indigo-900/75 leading-relaxed">
-                        💡 개인 무료 키를 등록하면 본인 한도(일 1,500회)가 우선 사용되며, 초과 시에도 비상 서버 키(일 100회)로 자동 이어집니다.
-                      </p>
+                      {/* 서버 AI 일일 한도 게이지바 */}
+                      {(() => {
+                        const fallbackLimit = geminiApiKey ? 100 : currentUser ? 50 : 20;
+                        const isQuotaAdmin = Boolean(serverAiQuota?.isAdmin || isAdmin);
+                        const limit = serverAiQuota?.limit && !isQuotaAdmin ? serverAiQuota.limit : fallbackLimit;
+                        const used = serverAiQuota?.used ?? 0;
+                        const remaining = Math.max(0, limit - used);
+                        const percent = isQuotaAdmin ? 0 : Math.min(100, Math.round((used / Math.max(1, limit)) * 100));
+                        const barColor =
+                          percent >= 90
+                            ? 'bg-rose-500'
+                            : percent >= 70
+                            ? 'bg-amber-500'
+                            : 'bg-indigo-600';
+
+                        return (
+                          <div className="pt-1.5 border-t border-indigo-200/70 space-y-1.5">
+                            <div className="flex items-center justify-between text-[11px]">
+                              <span className="font-bold text-indigo-950 flex items-center gap-1">
+                                <Gauge className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                                <span>서버 AI 오늘 사용량</span>
+                              </span>
+                              {isQuotaAdmin ? (
+                                <span className="font-bold text-emerald-700">관리자 무제한 👑</span>
+                              ) : (
+                                <span className="font-bold text-slate-700">
+                                  <span className={percent >= 90 ? 'text-rose-600' : 'text-indigo-700'}>{used}</span> / {limit}회
+                                  <span className="text-[10px] font-semibold text-slate-500 ml-1">(잔여 {remaining}회)</span>
+                                </span>
+                              )}
+                            </div>
+                            <div className="w-full h-2 bg-indigo-100 rounded-full overflow-hidden">
+                              <div
+                                className={`h-full rounded-full transition-all duration-500 ${isQuotaAdmin ? 'bg-emerald-500 w-full opacity-40' : barColor}`}
+                                style={isQuotaAdmin ? undefined : { width: `${percent}%` }}
+                              />
+                            </div>
+                          </div>
+                        );
+                      })()}
                     </div>
                   </div>
 

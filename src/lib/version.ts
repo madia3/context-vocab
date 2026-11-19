@@ -1,2 +1,2 @@
-export const APP_BUILD_VERSION = 'v2026.11.19-24 (11/19 12:27 KST)';
-export const APP_BUILD_SUMMARY = 'Vision OCR 문장 역순 출력(.reverse 복원) 및 Tesseract 백그라운드 예열 1.2초로 단축';
+export const APP_BUILD_VERSION = 'v2026.11.19-25 (11/19 12:32 KST)';
+export const APP_BUILD_SUMMARY = 'AI 연동 한도 카드 하단 안내 문구 제거 및 서버 AI 실시간 사용량 게이지바 추가';

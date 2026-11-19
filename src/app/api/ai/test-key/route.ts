@@ -4,16 +4,19 @@ import {
   checkRateLimit,
   encryptGeminiKey,
   GEMINI_COOKIE_NAME,
+  getServerKeyQuotaStatus,
   maskGeminiKey,
   resolveServerGeminiKey,
 } from '@/lib/geminiServer';
 
 export const runtime = 'nodejs';
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   const serverKey = process.env.GEMINI_API_KEY?.trim() || '';
+  const serverQuota = getServerKeyQuotaStatus(req);
   return NextResponse.json({
     serverConfigured: Boolean(serverKey && serverKey.length >= 10),
+    serverQuota,
   });
 }
 

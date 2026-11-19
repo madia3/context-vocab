@@ -562,6 +562,60 @@ export function checkAndConsumeServerKeyQuota(
   }
 }
 
+export function getServerKeyQuotaStatus(req: Request): {
+  tier: 'admin' | 'personal_backup' | 'member' | 'guest';
+  limit: number;
+  used: number;
+  remaining: number;
+  isAdmin: boolean;
+  todayDate: string;
+} {
+  const todayDate = getTodayKstDate();
+  try {
+    const userEmail = (req.headers.get('x-user-email') || '').trim();
+    const userId = (req.headers.get('x-user-id') || '').trim();
+    const hasPersonalKey = req.headers.get('x-has-personal-key') === '1';
+
+    if (isUserAdmin(userEmail)) {
+      return { tier: 'admin', limit: 999999, used: 0, remaining: 999999, isAdmin: true, todayDate };
+    }
+
+    const forwarded = req.headers.get('x-forwarded-for');
+    const ip = forwarded ? forwarded.split(',')[0].trim() : req.headers.get('x-real-ip') || 'anonymous';
+    const subjectKey = userId ? `uid:${userId}` : `ip:${ip}`;
+
+    let tier: 'personal_backup' | 'member' | 'guest' = 'guest';
+    let limit: number = SERVER_KEY_DAILY_QUOTAS.guest;
+    if (hasPersonalKey) {
+      tier = 'personal_backup';
+      limit = SERVER_KEY_DAILY_QUOTAS.personalBackup;
+    } else if (userId) {
+      tier = 'member';
+      limit = SERVER_KEY_DAILY_QUOTAS.member;
+    }
+
+    const store = loadUserQuotas();
+    const used = store.counts[subjectKey] || 0;
+    return {
+      tier,
+      limit,
+      used,
+      remaining: Math.max(0, limit - used),
+      isAdmin: false,
+      todayDate,
+    };
+  } catch {
+    return {
+      tier: 'guest',
+      limit: SERVER_KEY_DAILY_QUOTAS.guest,
+      used: 0,
+      remaining: SERVER_KEY_DAILY_QUOTAS.guest,
+      isAdmin: false,
+      todayDate,
+    };
+  }
+}
+
 /**
  * Safely resolves the Gemini API key on the server (supports AES-256-GCM encrypted token, HttpOnly cookie, or server env).
  */
