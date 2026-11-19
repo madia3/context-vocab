@@ -1,2 +1,2 @@
-export const APP_BUILD_VERSION = 'v2026.11.19-16 (11/19 11:00 KST)';
-export const APP_BUILD_SUMMARY = 'AI 연동 탭 관리자 배너 제거, 무료 키 발급 줄바꿈, 연동 버튼 튀어나감 수정';
+export const APP_BUILD_VERSION = 'v2026.11.19-17 (11/19 11:25 KST)';
+export const APP_BUILD_SUMMARY = '무료 키 발급 링크 우측 정렬 및 3단계 발급 방법 안내 추가';

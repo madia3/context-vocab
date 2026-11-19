@@ -7323,7 +7323,7 @@ export default function Home() {
                         <Key className="w-3.5 h-3.5 text-brand-600 shrink-0" />
                         <span>Gemini API Key 등록 (신용카드 불필요 · 평생 무료)</span>
                       </label>
-                      <div>
+                      <div className="flex justify-end">
                         <a
                           href="https://aistudio.google.com/app/apikey"
                           target="_blank"
@@ -7333,6 +7333,14 @@ export default function Home() {
                           <span>무료 키 발급 (Google)</span>
                           <ExternalLink className="w-3 h-3 shrink-0" />
                         </a>
+                      </div>
+                      <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200/80 text-[11px] text-slate-600 space-y-1 leading-relaxed">
+                        <p className="font-bold text-slate-700">📌 무료 API 키 발급 방법 (30초 완료)</p>
+                        <ol className="list-decimal list-inside space-y-0.5 text-[10.5px]">
+                          <li>위 <strong>무료 키 발급 (Google)</strong>을 눌러 Google 계정으로 로그인합니다.</li>
+                          <li><strong>API 키 만들기 (Create API key)</strong> 버튼을 눌러 키를 생성합니다.</li>
+                          <li>생성된 키를 복사해 아래 칸에 붙여넣고 <strong>[연동 및 테스트]</strong>를 누르면 완료!</li>
+                        </ol>
                       </div>
                     </div>
 
