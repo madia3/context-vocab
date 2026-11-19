@@ -3407,13 +3407,13 @@ export default function Home() {
 
     let pool = customPool && customPool.length > 0 ? customPool : vocabulary;
 
-    const isAll =
-      targetFilters.includes('all') ||
-      targetFilters.length === 0 ||
-      (availableBookTitles.length > 0 && targetFilters.length === availableBookTitles.length);
+    const isAll = targetFilters.includes('all') || targetFilters.length === 0;
 
     if (!isAll) {
-      const filtered = pool.filter((v) => targetFilters.includes(v.bookTitle || '기본 단어장'));
+      const normalizedTargets = targetFilters.map((t) => t.trim());
+      const filtered = pool.filter((v) =>
+        normalizedTargets.includes((v.bookTitle || '기본 단어장').trim())
+      );
       if (filtered.length > 0) {
         pool = filtered;
       }
