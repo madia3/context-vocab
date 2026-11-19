@@ -1,6 +1,7 @@
 import { VocabItem } from '@/types/vocab';
 import { supabase, checkIsSupabaseConfigured, getCurrentUser } from './supabase';
 import { User } from '@supabase/supabase-js';
+import { ALL_RECOMMENDED_WORDS } from './recommendedWordbooks';
 
 export const INITIAL_SAMPLES: VocabItem[] = [
   // =========================================================================
@@ -556,14 +557,15 @@ export function ensureSentenceTranslation(item: {
   if (!cleanWord) return '';
 
   const cleanContext = (item.contextSentence || '').trim().toLowerCase();
+  const catalog = [...INITIAL_SAMPLES, ...ALL_RECOMMENDED_WORDS];
   const sample =
-    INITIAL_SAMPLES.find(
+    catalog.find(
       (s) =>
         s.word.toLowerCase() === cleanWord &&
         cleanContext &&
         s.contextSentence.trim().toLowerCase() === cleanContext
     ) ||
-    INITIAL_SAMPLES.find((s) => s.word.toLowerCase() === cleanWord);
+    catalog.find((s) => s.word.toLowerCase() === cleanWord);
 
   return sample?.sentenceTranslation || '';
 }

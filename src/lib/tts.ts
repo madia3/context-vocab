@@ -1,6 +1,8 @@
 // 고음질 자연스러운 원어민 TTS (Studio Human Audio + Neural TTS + 프리미엄 브라우저 음성)
 
 let currentAudio: HTMLAudioElement | null = null;
+let cancelCurrentPlayback: (() => void) | null = null;
+let activeSpeechId = 0;
 let cachedVoices: SpeechSynthesisVoice[] = [];
 let currentTtsRate: number = 1.25;
 
@@ -176,22 +178,38 @@ export async function preloadNaturalAudioTTS(text: string, lang: string = 'en-US
 }
 
 // 1. 고음질 원어민 오디오 스트림 (/api/tts: 실제 스튜디오 인간 녹음 및 뉴럴 발음)
-export function playNaturalAudioTTS(text: string, lang: string = 'en-US', rate?: number): Promise<boolean> {
+export function playNaturalAudioTTS(
+  text: string,
+  lang: string = 'en-US',
+  rate?: number,
+  expectedSpeechId?: number
+): Promise<boolean> {
   return new Promise(async (resolve) => {
     if (typeof window === 'undefined') {
       resolve(false);
       return;
     }
 
+    let settled = false;
+    const finish = (result: boolean) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+
     try {
       if (currentAudio) {
+        currentAudio.onended = null;
+        currentAudio.onerror = null;
+        currentAudio.onpause = null;
         currentAudio.pause();
         currentAudio.currentTime = 0;
+        currentAudio = null;
       }
 
       const cleanText = text.trim();
       if (!cleanText) {
-        resolve(true);
+        finish(true);
         return;
       }
 
@@ -216,6 +234,12 @@ export function playNaturalAudioTTS(text: string, lang: string = 'en-US', rate?:
         } catch {}
       }
 
+      // 프리로드 대기 중 다른 재생/중지 요청이 들어왔으면 중단 (폴백 실행 방지)
+      if (typeof expectedSpeechId === 'number' && expectedSpeechId !== activeSpeechId) {
+        finish(false);
+        return;
+      }
+
       if (!targetSourceUrl) {
         targetSourceUrl = `/api/tts?text=${encodeURIComponent(cleanText)}&lang=${encodeURIComponent(lang)}`;
       }
@@ -225,19 +249,51 @@ export function playNaturalAudioTTS(text: string, lang: string = 'en-US', rate?:
       audio.playbackRate = playbackSpeed;
       currentAudio = audio;
 
-      audio.onended = () => resolve(true);
-      audio.onerror = () => resolve(false);
-      audio.onpause = () => resolve(false);
+      const cleanup = () => {
+        audio.onended = null;
+        audio.onerror = null;
+        audio.onpause = null;
+        if (currentAudio === audio) {
+          currentAudio = null;
+        }
+        if (cancelCurrentPlayback === onCancel) {
+          cancelCurrentPlayback = null;
+        }
+      };
+
+      const onCancel = () => {
+        cleanup();
+        try {
+          audio.pause();
+          audio.currentTime = 0;
+        } catch {}
+        finish(false);
+      };
+
+      cancelCurrentPlayback = onCancel;
+
+      // Chrome에서는 오디오 정상 종료 시 ended 직전에 pause 이벤트가 먼저 발생하므로
+      // onpause에서 resolve(false)를 호출하면 WebSpeech 폴백이 중복 실행됨!
+      // 따라서 정상 종료(onended)와 실제 오류(onerror)만 처리합니다.
+      audio.onended = () => {
+        cleanup();
+        finish(true);
+      };
+      audio.onerror = () => {
+        cleanup();
+        finish(false);
+      };
 
       const playPromise = audio.play();
       if (playPromise !== undefined) {
         playPromise.catch((err) => {
+          cleanup();
           console.warn('Audio play auto-play blocked or failed, fallback to WebSpeech:', err);
-          resolve(false);
+          finish(false);
         });
       }
     } catch {
-      resolve(false);
+      finish(false);
     }
   });
 }
@@ -275,8 +331,21 @@ export const playGoogleNativeTTS = playNaturalAudioTTS;
 
 // 전체 TTS 음성 재생 중지 함수
 export function stopTTS() {
+  activeSpeechId += 1;
+
+  if (cancelCurrentPlayback) {
+    const cancel = cancelCurrentPlayback;
+    cancelCurrentPlayback = null;
+    try {
+      cancel();
+    } catch {}
+  }
+
   if (currentAudio) {
     try {
+      currentAudio.onended = null;
+      currentAudio.onerror = null;
+      currentAudio.onpause = null;
       currentAudio.pause();
       currentAudio.currentTime = 0;
     } catch {}
@@ -300,12 +369,16 @@ export async function speakNatural(text: string, voiceCode: string = 'en-US', ra
     setTtsPlaybackRate(rate);
   }
 
-  // 기존 재생 중지
+  // 기존 재생 중지 및 새 재생 세션 발급
   stopTTS();
+  const mySpeechId = activeSpeechId;
 
   // 1순위: 스튜디오 원어민 녹음 및 고품질 뉴럴 오디오 재생
-  const success = await playNaturalAudioTTS(clean, voiceCode, rate);
+  const success = await playNaturalAudioTTS(clean, voiceCode, rate, mySpeechId);
   if (success) return true;
+
+  // 재생 도중 다른 요청으로 취소/중지된 경우에는 WebSpeech 폴백을 실행하지 않음
+  if (mySpeechId !== activeSpeechId) return false;
 
   // 2순위: 네트워크 불가 또는 오디오 차단 시 브라우저 프리미엄 음성으로 자연스럽게 재생
   return await playWebSpeechTTS(clean, voiceCode, rate);

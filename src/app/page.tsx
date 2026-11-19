@@ -1257,14 +1257,21 @@ export default function Home() {
     setVocabulary(list);
     setIsLoaded(true);
 
-    // 오직 첫 페이지 접속 시에만 초기 퀴즈를 셋업하며,
+    // 오직 첫 페이지 접속 시에만 초기 퀴즈 및 가장 마지막에 저장한 단어장을 셋업하며,
     // 화면 포커스 복귀나 백그라운드 토큰 갱신 시에는 기존 화면(풀던 퀴즈 등)을 절대 리셋하지 않음!
     if (isInitial && !initialLoadedRef.current) {
       initialLoadedRef.current = true;
       if (list.length > 0) {
         setActiveTab('quiz');
-        const defaultBook = list[0]?.bookTitle || '원서 첫걸음: 어린 왕자';
+        const defaultBook = list[0]?.bookTitle?.trim() || '원서 첫걸음: 어린 왕자';
         setSelectedBookFilter(defaultBook);
+        // 저장할 단어장도 자동으로 가장 마지막에 저장한 단어장으로 선택 (기기 간 동기화 포함)
+        setInputBookTitle(defaultBook);
+        setSelectedTargetBooks([defaultBook]);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('context_vocab_last_saved_book_title', defaultBook);
+          localStorage.setItem('context_vocab_last_book_title', defaultBook);
+        }
         startQuiz(defaultBook, 'smart', list);
       }
     }
@@ -1279,12 +1286,17 @@ export default function Home() {
         if (storedRecency) {
           setBookUsageMap(JSON.parse(storedRecency));
         }
-        const lastBook = localStorage.getItem('context_vocab_last_book_title');
+        const lastBook =
+          localStorage.getItem('context_vocab_last_saved_book_title') ||
+          localStorage.getItem('context_vocab_last_book_title');
         if (lastBook && !lastBook.includes('햄릿')) {
           setInputBookTitle(lastBook);
+          setSelectedTargetBooks([lastBook]);
         } else if (lastBook?.includes('햄릿')) {
           localStorage.removeItem('context_vocab_last_book_title');
+          localStorage.removeItem('context_vocab_last_saved_book_title');
           setInputBookTitle('원서 첫걸음: 어린 왕자');
+          setSelectedTargetBooks(['원서 첫걸음: 어린 왕자']);
         }
       } catch (e) {
         console.error(e);
@@ -1391,8 +1403,13 @@ export default function Home() {
         setTtsPlaybackRate(1.25);
       }
 
-      const lastBook = localStorage.getItem('context_vocab_last_book_title');
-      if (lastBook) setInputBookTitle(lastBook);
+      const lastBook =
+        localStorage.getItem('context_vocab_last_saved_book_title') ||
+        localStorage.getItem('context_vocab_last_book_title');
+      if (lastBook && !lastBook.includes('햄릿')) {
+        setInputBookTitle(lastBook);
+        setSelectedTargetBooks([lastBook]);
+      }
 
       const savedPageOcr = localStorage.getItem('context_vocab_cached_page_ocr');
       if (savedPageOcr) {
@@ -2830,6 +2847,15 @@ export default function Home() {
     await loadData(currentUser);
 
     targetBooks.forEach((b) => touchBookUsage(b));
+    const lastSavedBook = (targetBooks[targetBooks.length - 1] || targetBooks[0] || '').trim();
+    if (lastSavedBook) {
+      setInputBookTitle(lastSavedBook);
+      setSelectedTargetBooks([lastSavedBook]);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('context_vocab_last_saved_book_title', lastSavedBook);
+        localStorage.setItem('context_vocab_last_book_title', lastSavedBook);
+      }
+    }
 
     // Reset Form to 1 empty entry, but keep pageOcrText and loaded sources!
     setWordEntries([createWordEntryItem()]);
@@ -2928,6 +2954,16 @@ export default function Home() {
       if (saveResult.isMerged) anyMerged = true;
       totalSentencesCount = saveResult.totalSentences;
       touchBookUsage(bookToSave);
+    }
+
+    const lastSavedBook = (targetBooks[targetBooks.length - 1] || targetBooks[0] || '').trim();
+    if (lastSavedBook) {
+      setInputBookTitle(lastSavedBook);
+      setSelectedTargetBooks([lastSavedBook]);
+      if (typeof window !== 'undefined') {
+        localStorage.setItem('context_vocab_last_saved_book_title', lastSavedBook);
+        localStorage.setItem('context_vocab_last_book_title', lastSavedBook);
+      }
     }
 
     await loadData(currentUser);
@@ -3105,12 +3141,14 @@ export default function Home() {
         if (typeof window !== 'undefined') {
           localStorage.setItem('context_vocab_book_recency', JSON.stringify(nextBookUsage));
         }
-        if (inputBookTitle === bookToDelete) {
+        if (inputBookTitle === bookToDelete || selectedTargetBooks.includes(bookToDelete)) {
           const remaining = availableBookTitles.filter((t) => t !== bookToDelete);
           const nextInput = remaining[0] || '기본 단어장';
           setInputBookTitle(nextInput);
+          setSelectedTargetBooks([nextInput]);
           if (typeof window !== 'undefined') {
             localStorage.setItem('context_vocab_last_book_title', nextInput);
+            localStorage.setItem('context_vocab_last_saved_book_title', nextInput);
           }
         }
         if (selectedBookFilter === bookToDelete) {
@@ -3140,10 +3178,12 @@ export default function Home() {
         if (typeof window !== 'undefined') {
           localStorage.setItem('context_vocab_book_recency', JSON.stringify(nextBookUsage));
           localStorage.setItem('context_vocab_last_book_title', finalTarget);
+          localStorage.setItem('context_vocab_last_saved_book_title', finalTarget);
         }
 
-        if (inputBookTitle === bookToDelete) {
+        if (inputBookTitle === bookToDelete || selectedTargetBooks.includes(bookToDelete)) {
           setInputBookTitle(finalTarget);
+          setSelectedTargetBooks([finalTarget]);
         }
 
         await loadData(currentUser);
@@ -3163,12 +3203,14 @@ export default function Home() {
           localStorage.setItem('context_vocab_book_recency', JSON.stringify(nextBookUsage));
         }
 
-        if (inputBookTitle === bookToDelete) {
+        if (inputBookTitle === bookToDelete || selectedTargetBooks.includes(bookToDelete)) {
           const remaining = availableBookTitles.filter((t) => t !== bookToDelete);
           const nextInput = remaining[0] || '기본 단어장';
           setInputBookTitle(nextInput);
+          setSelectedTargetBooks([nextInput]);
           if (typeof window !== 'undefined') {
             localStorage.setItem('context_vocab_last_book_title', nextInput);
+            localStorage.setItem('context_vocab_last_saved_book_title', nextInput);
           }
         }
 
@@ -4789,19 +4831,19 @@ export default function Home() {
                           <button
                             type="button"
                             onClick={() => galleryInputRef.current?.click()}
-                            className="w-full h-9 text-xs font-bold bg-white hover:bg-slate-50 border border-slate-200 text-slate-800 rounded-xl shadow-xs flex items-center justify-center gap-1 cursor-pointer transition active:scale-95 whitespace-nowrap px-1"
+                            className="w-full h-9 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 border border-emerald-700 text-white rounded-xl shadow-xs shadow-emerald-200 flex items-center justify-center gap-1 cursor-pointer transition active:scale-95 whitespace-nowrap px-1"
                             title="카메라 촬영 또는 사진첩 선택"
                           >
-                            <Camera className="w-3.5 h-3.5 text-brand-600 shrink-0" />
+                            <Camera className="w-3.5 h-3.5 text-white shrink-0" />
                             <span>카메라</span>
                           </button>
                           <button
                             type="button"
                             onClick={handleClipboardPasteSmart}
-                            className="w-full h-9 text-xs font-bold bg-white hover:bg-indigo-50 border border-indigo-200 text-indigo-700 rounded-xl shadow-xs flex items-center justify-center gap-1 cursor-pointer transition active:scale-95 whitespace-nowrap px-1"
+                            className="w-full h-9 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 border border-emerald-700 text-white rounded-xl shadow-xs shadow-emerald-200 flex items-center justify-center gap-1 cursor-pointer transition active:scale-95 whitespace-nowrap px-1"
                             title="클립보드 내용 새로 붙여넣기 (URL 또는 글 자동 판별)"
                           >
-                            <ClipboardPaste className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                            <ClipboardPaste className="w-3.5 h-3.5 text-white shrink-0" />
                             <span>붙여넣기</span>
                           </button>
                           <button
@@ -4845,19 +4887,19 @@ export default function Home() {
                           <button
                             type="button"
                             onClick={() => galleryInputRef.current?.click()}
-                            className="w-full h-9 bg-white hover:bg-brand-50 border border-brand-200 text-brand-700 text-xs font-bold px-3.5 rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 whitespace-nowrap"
+                            className="w-full h-9 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 border border-emerald-700 text-white text-xs font-bold px-3.5 rounded-xl shadow-xs shadow-emerald-200 transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 whitespace-nowrap"
                             title="카메라 촬영 또는 사진첩 선택"
                           >
-                            <Camera className="w-4 h-4 text-brand-600 shrink-0" />
+                            <Camera className="w-4 h-4 text-white shrink-0" />
                             <span>카메라</span>
                           </button>
                           <button
                             type="button"
                             onClick={handleClipboardPasteSmart}
-                            className="w-full h-9 bg-white hover:bg-indigo-50 border border-indigo-200 text-indigo-700 text-xs font-bold px-3.5 rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 whitespace-nowrap"
+                            className="w-full h-9 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 border border-emerald-700 text-white text-xs font-bold px-3.5 rounded-xl shadow-xs shadow-emerald-200 transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 whitespace-nowrap"
                             title="클립보드에서 바로 붙여넣기 (URL 또는 기사 글 자동 판별)"
                           >
-                            <ClipboardPaste className="w-4 h-4 text-indigo-600 shrink-0" />
+                            <ClipboardPaste className="w-4 h-4 text-white shrink-0" />
                             <span>클립보드 붙여넣기</span>
                           </button>
                         </div>
@@ -4866,6 +4908,63 @@ export default function Home() {
                   )}
                 </div>
 
+                {/* Top Quick Save Button (단어 등록칸 바로 위) */}
+                {(() => {
+                  const isAnyAnalyzing =
+                    wordEntries.some(
+                      (e) => e.isSearchingDict || e.isAnalyzingContext || translatingSentenceId === e.id
+                    ) || isSourceProcessing;
+
+                  const readyEntries = wordEntries.filter(
+                    (e) =>
+                      Boolean(e.dictResult?.word || e.word.trim()) &&
+                      isValidMeaningDef(e.selectedMeaning) &&
+                      !e.isSearchingDict &&
+                      !e.isAnalyzingContext &&
+                      translatingSentenceId !== e.id &&
+                      !isSourceProcessing
+                  );
+                  const readyCount = readyEntries.length;
+
+                  return (
+                    <div className="pt-1 flex flex-col sm:flex-row items-center justify-between gap-2.5 sm:gap-3">
+                      <div className="text-xs text-slate-500 text-center sm:text-left">
+                        {isAnyAnalyzing ? (
+                          <span className="text-indigo-600 font-medium flex items-center justify-center sm:justify-start gap-1.5">
+                            <RotateCw className="w-3.5 h-3.5 animate-spin text-indigo-600" />
+                            <span>AI가 단어 뜻, 원문 문맥 및 한글 해석을 분석 중입니다...</span>
+                          </span>
+                        ) : (
+                          <span>
+                            작성 중인 <span className="font-bold text-indigo-600">{wordEntries.length}개</span> 등록칸 중{' '}
+                            <span className="font-bold text-emerald-600">{readyCount}개</span> 단어 저장 준비 완료
+                          </span>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleSaveAllWords}
+                        disabled={readyCount === 0 || isAnyAnalyzing || isSavingAwaitingSource}
+                        className={`w-full sm:w-auto font-bold px-6 py-2.5 text-xs rounded-xl shadow-md transition flex items-center justify-center gap-1.5 ${
+                          readyCount > 0 && !isAnyAnalyzing
+                            ? 'bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer active:scale-[0.99]'
+                            : 'bg-slate-300 text-slate-500 cursor-not-allowed'
+                        }`}
+                      >
+                        {isAnyAnalyzing || isSavingAwaitingSource ? (
+                          <>
+                            <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                            <span>AI 분석 중...</span>
+                          </>
+                        ) : (
+                          <span>
+                            ⭐ [{selectedTargetBooks.length > 1 ? `${selectedTargetBooks[0]} 외 ${selectedTargetBooks.length - 1}개 (${selectedTargetBooks.length}개 단어장 동시 저장)` : (selectedTargetBooks[0] || inputBookTitle || '기본 단어장')}]에 {readyCount > 1 ? `${readyCount}개 단어 일괄 ` : '단어 '}저장하기
+                          </span>
+                        )}
+                      </button>
+                    </div>
+                  );
+                })()}
 
                 {/* Multi-Word Form Cards List */}
                 <div className="space-y-4">
@@ -6951,10 +7050,10 @@ export default function Home() {
               <button
                 type="button"
                 onClick={handleClipboardPasteSmart}
-                className="w-full py-3 px-4 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs sm:text-sm rounded-2xl shadow-sm transition flex items-center justify-center gap-2 cursor-pointer active:scale-98"
+                className="w-full py-3 px-4 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 border border-emerald-700 text-white font-bold text-xs sm:text-sm rounded-2xl shadow-sm shadow-emerald-200 transition flex items-center justify-center gap-2 cursor-pointer active:scale-98"
                 title="복사한 내용이 URL이면 기사를 불러오고, 글이면 본문으로 자동 등록합니다"
               >
-                <ClipboardPaste className="w-4 h-4 text-amber-300 shrink-0" />
+                <ClipboardPaste className="w-4 h-4 text-white shrink-0" />
                 <span>📋 클립보드에서 바로 붙여넣기 (원터치 자동 판별)</span>
               </button>
             </div>
