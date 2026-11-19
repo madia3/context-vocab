@@ -1934,6 +1934,10 @@ export default function Home() {
     if (cameraInputRef.current) cameraInputRef.current.value = '';
     if (galleryInputRef.current) galleryInputRef.current.value = '';
 
+    await processPagePhotoFile(file);
+  }
+
+  async function processPagePhotoFile(file: File) {
     const isAppend = isAppendModeRef.current;
     isAppendModeRef.current = false; // Reset
 
@@ -2195,19 +2199,52 @@ export default function Home() {
     }
   }
 
-  // 클립보드 원터치 붙여넣기: URL이면 기사 스크래핑, 본문이면 기사 본문으로 스마트 자동 실행
+  // 클립보드 원터치 붙여넣기: 이미지(스크린샷/사진)면 바로 OCR, URL이면 기사 스크래핑, 텍스트면 본문으로 스마트 자동 실행
   async function handleClipboardPasteSmart() {
     try {
-      if (!navigator.clipboard || !navigator.clipboard.readText) {
+      if (!navigator.clipboard) {
         triggerToast('클립보드 안내 📋', '브라우저 보안으로 인해 입력창에 직접 붙여넣어 주세요.');
         return;
       }
 
-      const clipText = await navigator.clipboard.readText();
+      // 1순위: 클립보드에 복사된 사진/스크린샷(image/*) 감지 (Chrome, Safari, iOS Safari 지원)
+      let extractedTextFromItems = '';
+      if (typeof navigator.clipboard.read === 'function') {
+        try {
+          const clipboardItems = await navigator.clipboard.read();
+          for (const item of clipboardItems) {
+            const imageType = item.types.find((t) => t.startsWith('image/'));
+            if (imageType) {
+              const blob = await item.getType(imageType);
+              const ext = imageType.split('/')[1]?.split(';')[0] || 'png';
+              const imageFile = new File([blob], `clipboard_${Date.now()}.${ext}`, {
+                type: imageType,
+              });
+              setIsUrlModalOpen(false);
+              triggerToast('🖼️ 클립보드 사진 감지됨!', '복사한 이미지를 바로 AI 문맥 분석합니다.');
+              await processPagePhotoFile(imageFile);
+              return;
+            }
+            if (!extractedTextFromItems && item.types.includes('text/plain')) {
+              const textBlob = await item.getType('text/plain');
+              extractedTextFromItems = await textBlob.text();
+            }
+          }
+        } catch (readErr) {
+          // 일부 브라우저에서 clipboard.read()가 제한되면 readText()로 안전 폴백
+          console.warn('navigator.clipboard.read fallback to readText:', readErr);
+        }
+      }
+
+      // 2순위: 클립보드 텍스트(URL 또는 기사/원서 본문) 읽기
+      let clipText = extractedTextFromItems;
+      if (!clipText && typeof navigator.clipboard.readText === 'function') {
+        clipText = await navigator.clipboard.readText();
+      }
       const trimmed = clipText ? clipText.trim() : '';
 
       if (!trimmed) {
-        triggerToast('클립보드가 비어 있습니다', '웹 주소(URL)나 기사 본문을 복사한 후 다시 눌러주세요!');
+        triggerToast('클립보드가 비어 있습니다', '사진·스크린샷, 웹 주소(URL) 또는 기사 본문을 복사한 후 다시 눌러주세요!');
         return;
       }
 
@@ -2222,9 +2259,36 @@ export default function Home() {
       setInputSourceText('');
     } catch (err: any) {
       console.warn('Clipboard read error:', err);
-      triggerToast('클립보드 권한 필요', '붙여넣기 허용을 누르시거나 아래 입력창에 직접 붙여넣어 주세요.');
+      triggerToast('클립보드 권한 필요', '붙여넣기 허용을 누르시거나 화면에서 Ctrl+V / Cmd+V로 직접 붙여넣어 주세요.');
     }
   }
+
+  // Mac/PC에서 단어 등록 탭일 때 Cmd+V / Ctrl+V로 스크린샷·사진을 바로 붙여넣어 OCR 실행
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const handleWindowPaste = (e: ClipboardEvent) => {
+      if (activeTab !== 'add') return;
+      if (isSettingsOpen || isAuthModalOpen || isRecommendedModalOpen) return;
+      const items = e.clipboardData?.items;
+      if (!items || items.length === 0) return;
+
+      for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+        if (item.type && item.type.startsWith('image/')) {
+          const file = item.getAsFile();
+          if (file) {
+            e.preventDefault();
+            setIsUrlModalOpen(false);
+            triggerToast('🖼️ 클립보드 사진 감지됨!', '붙여넣은 이미지를 바로 AI 문맥 분석합니다.');
+            processPagePhotoFile(file);
+            return;
+          }
+        }
+      }
+    };
+    window.addEventListener('paste', handleWindowPaste);
+    return () => window.removeEventListener('paste', handleWindowPaste);
+  });
 
   // URL 및 기사 본문 통합 제출 처리
   async function handleUnifiedSubmit() {
@@ -4879,7 +4943,7 @@ export default function Home() {
                             type="button"
                             onClick={handleClipboardPasteSmart}
                             className="w-full h-9 text-xs font-bold bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 border border-emerald-700 text-white rounded-xl shadow-xs shadow-emerald-200 flex items-center justify-center gap-1 cursor-pointer transition active:scale-95 whitespace-nowrap px-1"
-                            title="클립보드 내용 새로 붙여넣기 (URL 또는 글 자동 판별)"
+                            title="클립보드 내용 새로 붙여넣기 (사진·URL·글 자동 판별)"
                           >
                             <ClipboardPaste className="w-3.5 h-3.5 text-white shrink-0" />
                             <span>붙여넣기</span>
@@ -4935,7 +4999,7 @@ export default function Home() {
                             type="button"
                             onClick={handleClipboardPasteSmart}
                             className="w-full h-9 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 border border-emerald-700 text-white text-xs font-bold px-3.5 rounded-xl shadow-xs shadow-emerald-200 transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-95 whitespace-nowrap"
-                            title="클립보드에서 바로 붙여넣기 (URL 또는 기사 글 자동 판별)"
+                            title="클립보드에서 바로 붙여넣기 (사진·URL·글 자동 판별)"
                           >
                             <ClipboardPaste className="w-4 h-4 text-white shrink-0" />
                             <span>클립보드 붙여넣기</span>
