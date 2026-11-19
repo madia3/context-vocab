@@ -7963,7 +7963,7 @@ export default function Home() {
                         <p className="text-[11px] text-amber-900/90 leading-relaxed pl-5.5">
                           {currentUser
                             ? '아래 안내를 따라 본인 무료 Google API 키를 계정에 등록(30초 완료)하시면 일 1,500회 + 비상 서버 100회로 바로 이어서 사용하실 수 있습니다.'
-                            : '로그인하시면 기본 서버 AI 한도가 일 50회로 늘어나고, 본인 무료 Google API 키를 계정에 암호화 등록해 일 1,500회 + 비상 서버 100회까지 모든 기기에서 이용하실 수 있습니다.'}
+                            : '로그인하시면 기본 서버 AI 한도가 일 50회 + 200회(총 250회)로 늘어나고, 본인 무료 Google API 키를 계정에 암호화 등록해 일 1,500회 + 비상 서버 100회까지 모든 기기에서 이용하실 수 있습니다.'}
                         </p>
                       </div>
                     )}
@@ -7997,7 +7997,7 @@ export default function Home() {
                               <span className="text-[9.5px] px-1.5 py-0.5 rounded-full bg-indigo-600 text-white font-bold">현재 적용</span>
                             )}
                           </span>
-                          <span className="font-bold text-slate-800 whitespace-nowrap">서버 AI 20회/일</span>
+                          <span className="font-bold text-slate-800 whitespace-nowrap">서버 AI 50회/일</span>
                         </div>
                         <div className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg border ${currentUser && !hasPersonalGeminiKey ? 'bg-white border-indigo-400 shadow-2xs font-bold text-indigo-950' : 'bg-white/70 border-indigo-100 text-slate-700'}`}>
                           <span className="flex items-center gap-1.5">
@@ -8006,7 +8006,7 @@ export default function Home() {
                               <span className="text-[9.5px] px-1.5 py-0.5 rounded-full bg-indigo-600 text-white font-bold">현재 적용</span>
                             )}
                           </span>
-                          <span className="font-bold text-slate-800 whitespace-nowrap">서버 AI 50회/일</span>
+                          <span className="font-bold text-slate-800 whitespace-nowrap">서버 AI 50회/일 + 200회</span>
                         </div>
                         <div className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg border ${hasPersonalGeminiKey ? 'bg-emerald-50 border-emerald-400 shadow-2xs font-bold text-emerald-950' : 'bg-white/70 border-indigo-100 text-slate-700'}`}>
                           <span className="flex items-center gap-1.5">
@@ -8022,7 +8022,7 @@ export default function Home() {
                       </div>
                       {/* 통합 AI 잔여 한도 게이지바 (개인 키: 초록 / 서버 AI: 하늘 · 잔여 많으면 가득, 다 쓰면 비움) */}
                       {(() => {
-                        const fallbackLimit = hasPersonalGeminiKey ? 100 : currentUser ? 50 : 20;
+                        const fallbackLimit = hasPersonalGeminiKey ? 100 : currentUser ? 250 : 50;
                         const isQuotaAdmin = Boolean(serverAiQuota?.isAdmin || isAdmin);
                         const serverLimit = serverAiQuota?.limit && !isQuotaAdmin ? serverAiQuota.limit : fallbackLimit;
                         const serverUsed = serverAiQuota?.used ?? 0;

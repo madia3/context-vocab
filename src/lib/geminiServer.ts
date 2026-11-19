@@ -7,8 +7,8 @@ import { isUserAdmin } from '@/lib/admin';
 // Optimized to remember the fastest working model and avoid sequential timeout cascades
 
 export const SERVER_KEY_DAILY_QUOTAS = {
-  guest: 20,           // 비로그인(게스트): 일 20회
-  member: 50,          // 로그인 회원(개인 키 미등록): 일 50회
+  guest: 50,           // 비로그인(게스트): 일 50회
+  member: 250,         // 로그인 회원(개인 키 미등록): 일 50회 + 200회 (총 250회)
   personalBackup: 100, // 개인 키 등록 회원(본인 키 1,500회 소진 시 비상 서버 키): +100회
   personalOwn: 1500,   // 개인 무료 키 일일 한도(Google 무료 티어 기준): 1,500회
 } as const;
@@ -1443,7 +1443,7 @@ export async function callGeminiWithFallback(options: {
     return { ok: false, text: '', lastError: 'API 키가 비어있습니다.', attemptLogs };
   }
 
-  // 서버 공용 키를 사용할 때는 사용자 등급별 일일 한도 검사 (비로그인 20회 / 로그인 50회 / 개인키 비상 +100회 / 관리자 무제한)
+  // 서버 공용 키를 사용할 때는 사용자 등급별 일일 한도 검사 (비로그인 50회 / 로그인 50+200회 / 개인키 비상 +100회 / 관리자 무제한)
   if (isServerKey && req) {
     const quota = await checkAndConsumeServerKeyQuotaAsync(req, {
       isPersonalKeyFallback: endpoint.endsWith('-fallback'),
