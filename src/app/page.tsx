@@ -17,12 +17,11 @@ import {
   clearAllVocab,
   syncGuestWordsToUser,
   loadSamplesForUser,
+  registerSampleTranslations,
 } from '@/lib/vocabService';
-import {
-  RECOMMENDED_WORDBOOKS,
-  RECOMMENDED_CATEGORIES,
-  type RecommendedWordbook,
-  type RecommendedCategory,
+import type {
+  RecommendedWordbook,
+  RecommendedCategory,
 } from '@/lib/recommendedWordbooks';
 import {
   setTtsVoiceGender,
@@ -275,6 +274,28 @@ function createWordEntryItem(init?: Partial<WordEntryItem>): WordEntryItem {
   };
 }
 
+function OcrElapsedTimer({ active }: { active: boolean }) {
+  const [elapsedMs, setElapsedMs] = useState(0);
+  useEffect(() => {
+    if (!active) {
+      setElapsedMs(0);
+      return;
+    }
+    const start = performance.now();
+    const timer = setInterval(() => {
+      setElapsedMs(Math.round(performance.now() - start));
+    }, 100);
+    return () => clearInterval(timer);
+  }, [active]);
+
+  if (!active) return null;
+  return (
+    <span className="font-mono text-indigo-600 font-black text-xs shrink-0">
+      ⏱️ {(elapsedMs / 1000).toFixed(1)}초
+    </span>
+  );
+}
+
 export default function Home() {
   const [activeTab, setActiveTab] = useState<'add' | 'list' | 'quiz'>('quiz');
   const [vocabulary, setVocabulary] = useState<VocabItem[]>([]);
@@ -289,6 +310,18 @@ export default function Home() {
       }
     }
     return 20;
+  });
+
+  // 5지선다 보기 글자 서서히 진해지기 시간(초) 설정 (기본값 3초, 0은 즉시 표시)
+  const [quizOptionFadeSec, setQuizOptionFadeSec] = useState<number>(() => {
+    if (typeof window !== 'undefined') {
+      const saved = localStorage.getItem('context_vocab_quiz_option_fade_sec');
+      if (saved !== null) {
+        const p = parseFloat(saved);
+        if (!isNaN(p) && p >= 0 && p <= 10) return p;
+      }
+    }
+    return 3;
   });
 
   // Multi-Word Form State: 한 번에 여러 단어를 추가/등록할 수 있는 단어 등록칸 목록
@@ -399,19 +432,6 @@ export default function Home() {
   const [ocrDetectedNotice, setOcrDetectedNotice] = useState<string | null>(null);
   const [ocrTimingStats, setOcrTimingStats] = useState<OcrTimingStats | null>(null);
   const [isOcrTimingExpanded, setIsOcrTimingExpanded] = useState<boolean>(false);
-  const [ocrElapsedMs, setOcrElapsedMs] = useState<number>(0);
-
-  useEffect(() => {
-    if (!isOcrProcessing) {
-      setOcrElapsedMs(0);
-      return;
-    }
-    const start = performance.now();
-    const timer = setInterval(() => {
-      setOcrElapsedMs(Math.round(performance.now() - start));
-    }, 100);
-    return () => clearInterval(timer);
-  }, [isOcrProcessing]);
   const [detectedCandidateSentences, setDetectedCandidateSentences] = useState<string[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const cameraInputRef = useRef<HTMLInputElement>(null);
@@ -643,11 +663,26 @@ export default function Home() {
   const [isSupabaseReady, setIsSupabaseReady] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isRecommendedModalOpen, setIsRecommendedModalOpen] = useState(false);
+  const [recommendedWordbooks, setRecommendedWordbooks] = useState<RecommendedWordbook[]>([]);
+  const [recommendedCategories, setRecommendedCategories] = useState<readonly ('전체' | RecommendedCategory)[]>(['전체']);
   const [importingBookId, setImportingBookId] = useState<string | null>(null);
   const [expandedRecommendedId, setExpandedRecommendedId] = useState<string | null>(null);
   const [recommendedCategoryFilter, setRecommendedCategoryFilter] = useState<
     '전체' | RecommendedCategory
   >('전체');
+
+  useEffect(() => {
+    if (!isRecommendedModalOpen || recommendedWordbooks.length > 0) return;
+    import('@/lib/recommendedWordbooks')
+      .then((mod) => {
+        setRecommendedWordbooks(mod.RECOMMENDED_WORDBOOKS);
+        setRecommendedCategories(mod.RECOMMENDED_CATEGORIES);
+        if (mod.ALL_RECOMMENDED_WORDS) {
+          registerSampleTranslations(mod.ALL_RECOMMENDED_WORDS);
+        }
+      })
+      .catch((err) => console.error('Failed to lazy-load recommendedWordbooks:', err));
+  }, [isRecommendedModalOpen, recommendedWordbooks.length]);
   const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
   const [inputSupabaseUrl, setInputSupabaseUrl] = useState('https://mkclocmrpxjrowldfryd.supabase.co');
   const [inputSupabaseAnonKey, setInputSupabaseAnonKey] = useState('sb_publishable_J9jsy23QWH9yXeVE5pMxFg_GbC7MlFE');
@@ -750,14 +785,26 @@ export default function Home() {
   // Admin identity check (case-insensitive)
   const isAdmin = Boolean(currentUser?.email && isUserAdmin(currentUser.email));
 
+  async function getAdminAuthHeaders(): Promise<Record<string, string>> {
+    const client = getSupabaseClient();
+    if (client) {
+      const {
+        data: { session },
+      } = await client.auth.getSession();
+      if (session?.access_token) {
+        setCurrentAiAccessToken(session.access_token);
+      }
+    }
+    return buildAiRequestHeaders();
+  }
+
   const fetchServerUsage = useCallback(async () => {
     if (!currentUser?.email || !isUserAdmin(currentUser.email)) return;
     setIsLoadingServerUsage(true);
     try {
-      const res = await fetch(`/api/admin/usage?email=${encodeURIComponent(currentUser.email)}`, {
-        headers: {
-          'x-user-email': currentUser.email,
-        },
+      const headers = await getAdminAuthHeaders();
+      const res = await fetch('/api/admin/usage', {
+        headers,
         cache: 'no-store',
       });
       if (res.ok) {
@@ -779,13 +826,11 @@ export default function Home() {
     setIsPingTesting(true);
     setPingResult(null);
     try {
+      const headers = await getAdminAuthHeaders();
       const res = await fetch('/api/admin/usage', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-user-email': currentUser.email,
-        },
-        body: JSON.stringify({ action: 'ping', email: currentUser.email }),
+        headers,
+        body: JSON.stringify({ action: 'ping' }),
       });
       const data = await res.json();
       setPingResult(data);
@@ -801,10 +846,11 @@ export default function Home() {
     if (!confirm('오늘의 서버 API 호출 카운터를 0회로 초기화하시겠습니까?')) return;
     setIsAdminActionRunning(true);
     try {
+      const headers = await getAdminAuthHeaders();
       const res = await fetch('/api/admin/usage', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-user-email': currentUser!.email! },
-        body: JSON.stringify({ action: 'reset_counter', email: currentUser!.email }),
+        headers,
+        body: JSON.stringify({ action: 'reset_counter' }),
       });
       const data = await res.json();
       if (data.ok && data.report) {
@@ -821,10 +867,11 @@ export default function Home() {
   async function handleClearRateLimits() {
     setIsAdminActionRunning(true);
     try {
+      const headers = await getAdminAuthHeaders();
       const res = await fetch('/api/admin/usage', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-user-email': currentUser!.email! },
-        body: JSON.stringify({ action: 'clear_rate_limits', email: currentUser!.email }),
+        headers,
+        body: JSON.stringify({ action: 'clear_rate_limits' }),
       });
       const data = await res.json();
       if (data.ok) {
@@ -842,10 +889,11 @@ export default function Home() {
     if (!confirm('최근 API 호출 기록을 모두 삭제하시겠습니까?')) return;
     setIsAdminActionRunning(true);
     try {
+      const headers = await getAdminAuthHeaders();
       const res = await fetch('/api/admin/usage', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-user-email': currentUser!.email! },
-        body: JSON.stringify({ action: 'clear_logs', email: currentUser!.email }),
+        headers,
+        body: JSON.stringify({ action: 'clear_logs' }),
       });
       const data = await res.json();
       if (data.ok && data.report) {
@@ -864,13 +912,13 @@ export default function Home() {
     setIsAdminSandboxRunning(true);
     setAdminSandboxResult(null);
     try {
+      const headers = await getAdminAuthHeaders();
       const res = await fetch('/api/admin/usage', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-user-email': currentUser!.email! },
+        headers,
         body: JSON.stringify({
           action: 'test_ai_prompt',
           prompt: adminSandboxPrompt,
-          email: currentUser!.email,
         }),
       });
       const data = await res.json();
@@ -1055,14 +1103,13 @@ export default function Home() {
     } catch {}
   }
 
-  // 로그인 상태 변경 시(다른 기기에서 로그인 포함) 계정에 저장된 개인 키 상태 자동 동기화
+  // 로그인 상태 변경 시(초기 마운트 및 다른 기기 로그인 포함) 계정에 저장된 개인 키 상태 및 서버 AI 설정 자동 동기화
   useEffect(() => {
     if (!currentUser) {
       setHasPersonalGeminiKey(false);
       setPersonalKeyMasked('');
       setPersonalKeyQuota(null);
       setCurrentAiPersonalKeyStatus(false);
-      return;
     }
     syncAccountGeminiKeyStatus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1104,10 +1151,16 @@ export default function Home() {
   const [isTargetCustom, setIsTargetCustom] = useState(false);
   const [isDeletingBook, setIsDeletingBook] = useState(false);
 
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
   function triggerToast(title: string, subtitle?: string) {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
     setToast({ show: true, title, subtitle });
-    setTimeout(() => {
+    toastTimerRef.current = setTimeout(() => {
       setToast(null);
+      toastTimerRef.current = null;
     }, 3500);
   }
 
@@ -1509,16 +1562,6 @@ export default function Home() {
 
       // 브라우저 로컬 스토리지에 남아있던 레거시 개인 Gemini 키 잔여물 즉시 삭제 (계정 서버 암호화 전환)
       clearLegacyLocalGeminiKeys();
-
-      // Vercel 서버 전역 GEMINI_API_KEY 활성화 여부 확인
-      fetch('/api/ai/test-key')
-        .then((res) => res.json())
-        .then((data) => {
-          if (data?.serverConfigured) {
-            setIsServerGeminiReady(true);
-          }
-        })
-        .catch(() => {});
     }
   }, []);
 
@@ -1902,6 +1945,7 @@ export default function Home() {
       const res = await fetch('/api/ai/complete-sentence', {
         method: 'POST',
         headers: buildAiRequestHeaders(),
+        signal: AbortSignal.timeout(15000),
         body: JSON.stringify({ sentence, word }),
       });
       if (res.ok) {
@@ -1944,6 +1988,7 @@ export default function Home() {
       const res = await fetch('/api/ai/complete-sentence', {
         method: 'POST',
         headers: buildAiRequestHeaders(),
+        signal: AbortSignal.timeout(15000),
         body: JSON.stringify({
           sentence,
           word,
@@ -2163,6 +2208,7 @@ export default function Home() {
       const res = await fetch('/api/scrape-url', {
         method: 'POST',
         headers: buildAiRequestHeaders(),
+        signal: AbortSignal.timeout(18000),
         body: JSON.stringify({ url: targetUrl }),
       });
 
@@ -2206,6 +2252,7 @@ export default function Home() {
           const res = await fetch('/api/ai/clean-text', {
             method: 'POST',
             headers: buildAiRequestHeaders(),
+            signal: AbortSignal.timeout(18000),
             body: JSON.stringify({ rawText: raw }),
           });
           if (res.ok) {
@@ -2344,7 +2391,8 @@ export default function Home() {
     };
     window.addEventListener('paste', handleWindowPaste);
     return () => window.removeEventListener('paste', handleWindowPaste);
-  });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab, isSettingsOpen, isAuthModalOpen, isRecommendedModalOpen]);
 
   // URL 및 기사 본문 통합 제출 처리
   async function handleUnifiedSubmit() {
@@ -2372,6 +2420,10 @@ export default function Home() {
   }
 
   function handleRemoveWordEntry(id: string) {
+    if (wordDebounceTimersRef.current[id]) {
+      clearTimeout(wordDebounceTimersRef.current[id]);
+      delete wordDebounceTimersRef.current[id];
+    }
     if (wordEntries.length <= 1) {
       setWordEntries([createWordEntryItem()]);
       return;
@@ -2618,9 +2670,9 @@ export default function Home() {
     executeSearchForEntry(entryId, word);
   }
 
-  // 원문(사진 OCR / 웹 기사) 텍스트를 단어 및 구두점으로 분리하여 인터랙티브 토큰 배열 생성
+  // 원문(사진 OCR / 웹 기사) 텍스트를 단어 및 구두점으로 분리하여 인터랙티브 토큰 배열 생성 (단어 선택 모달이 열려 있을 때만 연산)
   const textTokens = useMemo(() => {
-    if (!pageOcrText) return [];
+    if (!isWordSelectModalOpen || !pageOcrText) return [];
     const VALID_TWO_LETTER = new Set([
       'in', 'on', 'at', 'to', 'by', 'of', 'or', 'as', 'is', 'it', 'be', 'do', 'go',
       'up', 'so', 'no', 'if', 'we', 'he', 'me', 'my', 'us', 'an', 'am', 'ox', 'ad',
@@ -2658,7 +2710,7 @@ export default function Home() {
       }
     }
     return tokens;
-  }, [pageOcrText]);
+  }, [pageOcrText, isWordSelectModalOpen]);
 
   function handleToggleWordFromText(word: string, contextSnippet?: string) {
     const clean = word.toLowerCase().trim();
@@ -3086,6 +3138,7 @@ export default function Home() {
 
     let anyMerged = false;
     let totalSentencesCount = 1;
+    const savedOrMergedItems: VocabItem[] = [];
 
     for (const bookToSave of targetBooks) {
       const newItem: VocabItem = {
@@ -3111,6 +3164,9 @@ export default function Home() {
       const saveResult = await saveOrMergeVocabularyItem(newItem, currentUser?.id);
       if (saveResult.isMerged) anyMerged = true;
       totalSentencesCount = saveResult.totalSentences;
+      if (saveResult.item) {
+        savedOrMergedItems.push(saveResult.item);
+      }
       touchBookUsage(bookToSave);
     }
 
@@ -3124,7 +3180,13 @@ export default function Home() {
       }
     }
 
-    await loadData(currentUser);
+    if (savedOrMergedItems.length > 0) {
+      const touchedIds = new Set(savedOrMergedItems.map((it) => it.id));
+      setVocabulary((prev) => [
+        ...savedOrMergedItems,
+        ...prev.filter((existing) => !touchedIds.has(existing.id)),
+      ]);
+    }
 
     // 단어 저장 후 해당 카드 정리:
     // 여러 카드 작성 중인 경우 -> 저장된 카드는 제거
@@ -3162,8 +3224,8 @@ export default function Home() {
       return;
     }
     if (!confirm('이 단어를 단어장에서 삭제할까요?')) return;
+    setVocabulary((prev) => prev.filter((v) => v.id !== id));
     await deleteVocabularyItem(id, currentUser?.id);
-    await loadData(currentUser);
   }
 
   // 문장 한글 자동 번역 (단어 등록 탭 - 기본 자동 실행)
@@ -3175,7 +3237,8 @@ export default function Home() {
     try {
       const res = await fetch('/api/translate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildAiRequestHeaders(),
+        signal: AbortSignal.timeout(15000),
         body: JSON.stringify({ text: textToTranslate }),
       });
       if (res.ok) {
@@ -3202,7 +3265,8 @@ export default function Home() {
     try {
       const res = await fetch('/api/translate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildAiRequestHeaders(),
+        signal: AbortSignal.timeout(15000),
         body: JSON.stringify({ text: textToTranslate }),
       });
       if (res.ok) {
@@ -3230,7 +3294,8 @@ export default function Home() {
     try {
       const res = await fetch('/api/translate', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildAiRequestHeaders(),
+        signal: AbortSignal.timeout(15000),
         body: JSON.stringify({ text: textToTranslate }),
       });
       if (res.ok) {
@@ -3723,11 +3788,29 @@ export default function Home() {
     executeSearchForEntry(targetId, w);
   }
 
+  // Precompute per-book word counts and latest timestamp in a single O(N) pass
+  const { bookCountMap, bookLatestTimeMap } = useMemo(() => {
+    const counts: Record<string, number> = {};
+    const latestTimes: Record<string, number> = {};
+    for (let i = 0; i < vocabulary.length; i++) {
+      const item = vocabulary[i];
+      const title = item.bookTitle || '기본 단어장';
+      counts[title] = (counts[title] || 0) + 1;
+      const t = item.created_at
+        ? new Date(item.created_at).getTime()
+        : item.date
+        ? new Date(item.date).getTime()
+        : 0;
+      if (t > (latestTimes[title] || 0)) {
+        latestTimes[title] = t;
+      }
+    }
+    return { bookCountMap: counts, bookLatestTimeMap: latestTimes };
+  }, [vocabulary]);
+
   // Available unique book titles sorted by recency (가장 최근에 사용/등록된 단어장이 맨 위에 가깝게)
   const availableBookTitles = useMemo(() => {
-    const vocabTitles = Array.from(
-      new Set(vocabulary.map((v) => v.bookTitle || '기본 단어장').filter(Boolean))
-    );
+    const vocabTitles = Object.keys(bookCountMap);
     const rawTitles = Array.from(
       new Set(
         vocabTitles.length > 0
@@ -3736,29 +3819,15 @@ export default function Home() {
       )
     );
 
+    const nowScore = Date.now();
     const getScore = (title: string): number => {
-      // 1) 명시적으로 최근에 사용(선택/저장)된 기록
       if (bookUsageMap[title]) return bookUsageMap[title];
-
-      // 2) 현재 폼에 선택된 단어장
-      if (title === inputBookTitle) return Date.now();
-
-      // 3) 해당 단어장의 단어들 중 가장 최근 등록일자
-      const items = vocabulary.filter((v) => (v.bookTitle || '기본 단어장') === title);
-      let maxTime = 0;
-      for (const item of items) {
-        const t = item.created_at
-          ? new Date(item.created_at).getTime()
-          : item.date
-          ? new Date(item.date).getTime()
-          : 0;
-        if (t > maxTime) maxTime = t;
-      }
-      return maxTime;
+      if (title === inputBookTitle) return nowScore;
+      return bookLatestTimeMap[title] || 0;
     };
 
     return [...rawTitles].sort((a, b) => getScore(b) - getScore(a));
-  }, [vocabulary, inputBookTitle, bookUsageMap]);
+  }, [bookCountMap, bookLatestTimeMap, inputBookTitle, bookUsageMap]);
 
   // Helper for multi-book selection
   const isAllBooksSelected = useMemo(() => {
@@ -3835,19 +3904,35 @@ export default function Home() {
     touchBookUsage(book);
   }, [isListeningSentences, touchBookUsage]);
 
-  // Filtered vocabulary list in random order
+  // Stable random order per item ID: only re-randomizes when user explicitly clicks shuffle (shuffleKey changes)
+  // so translating, editing, deleting a single word, or answering a quiz never scrambles the current list!
+  const shuffledOrderMapRef = useRef<{ key: number; map: Map<string, number> }>({
+    key: -1,
+    map: new Map(),
+  });
+
+  // Filtered vocabulary list in stable random order
   const filteredVocabulary = useMemo(() => {
+    if (shuffledOrderMapRef.current.key !== shuffleKey) {
+      shuffledOrderMapRef.current = {
+        key: shuffleKey,
+        map: new Map(),
+      };
+    }
+    const orderMap = shuffledOrderMapRef.current.map;
+    for (let i = 0; i < vocabulary.length; i++) {
+      const id = vocabulary[i].id;
+      if (!orderMap.has(id)) {
+        orderMap.set(id, Math.random());
+      }
+    }
+
     const list = isAllBooksSelected
       ? [...vocabulary]
       : vocabulary.filter((v) => selectedBookFilters.includes(v.bookTitle || '기본 단어장'));
 
-    // Fisher-Yates random shuffle
-    const shuffled = [...list];
-    for (let i = shuffled.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
-    }
-    return shuffled;
+    list.sort((a, b) => (orderMap.get(a.id) ?? 0) - (orderMap.get(b.id) ?? 0));
+    return list;
   }, [vocabulary, isAllBooksSelected, selectedBookFilters, shuffleKey]);
 
   // Selected book summary stats for the info display
@@ -4896,11 +4981,7 @@ export default function Home() {
                           <RotateCw className="w-3.5 h-3.5 animate-spin text-indigo-600 shrink-0" />
                           <span className="truncate">백그라운드에서 {sourceProcessTaskName || '원문'} 분석 중...</span>
                         </div>
-                        {isOcrProcessing && (
-                          <span className="font-mono text-indigo-600 font-black text-xs shrink-0">
-                            ⏱️ {(ocrElapsedMs / 1000).toFixed(1)}초
-                          </span>
-                        )}
+                        <OcrElapsedTimer active={isOcrProcessing} />
                       </div>
                       <p className="text-[11px] text-slate-500">
                         기다리지 말고 아래 단어를 바로 입력하세요! 분석 완료 시 문장이 자동 연결됩니다.
@@ -5401,11 +5482,17 @@ export default function Home() {
                                 ocrDetectedNotice: null,
                               });
 
-                              // 실시간 자동완성 추천
+                              // 실시간 자동완성 추천 (비동기 응답 시 현재 입력값과 일치할 때만 반영)
                               const localMatches = getLiveDictCandidates(val);
                               updateWordEntry(entry.id, { liveCandidates: localMatches });
                               fetchLiveDictSuggestions(val).then((apiMatches) => {
-                                if (apiMatches && apiMatches.length > 0) {
+                                const currentEntry = wordEntriesRef.current.find((it) => it.id === entry.id);
+                                if (
+                                  currentEntry &&
+                                  currentEntry.word.trim().toLowerCase() === val.trim().toLowerCase() &&
+                                  apiMatches &&
+                                  apiMatches.length > 0
+                                ) {
                                   updateWordEntry(entry.id, { liveCandidates: apiMatches });
                                 }
                               });
@@ -6628,7 +6715,6 @@ export default function Home() {
                           setSelectedBookFilters(['all']);
                           setInputBookTitle('원서 첫걸음: 어린 왕자');
                         }
-                        await loadData(currentUser);
                         triggerToast('초기화 완료 🎉', '기본 3개 단어장(총 30단어)이 복원되었습니다.');
                       }}
                       className="bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-xs font-bold px-4 py-2 rounded-xl border border-indigo-200 transition cursor-pointer shadow-2xs"
@@ -6784,8 +6870,12 @@ export default function Home() {
                                     <button
                                       type="button"
                                       onClick={async () => {
+                                        setVocabulary((prev) =>
+                                          prev.map((v) =>
+                                            v.id === item.id ? { ...v, contextSentence: viewingSentence } : v
+                                          )
+                                        );
                                         await updateVocabularyContext(item.id, viewingSentence, currentUser?.id);
-                                        await loadData(currentUser);
                                         triggerToast(
                                           '대표 원문 문장 지정 완료! 📌',
                                           '앞으로 이 문장이 대표 문장으로 설정됩니다.'
@@ -6908,8 +6998,12 @@ export default function Home() {
                                               <button
                                                 type="button"
                                                 onClick={async () => {
+                                                  setVocabulary((prev) =>
+                                                    prev.map((v) =>
+                                                      v.id === item.id ? { ...v, contextSentence: sent } : v
+                                                    )
+                                                  );
                                                   await updateVocabularyContext(item.id, sent, currentUser?.id);
-                                                  await loadData(currentUser);
                                                   triggerToast(
                                                     '대표 원문 문장 변경 완료! 📖',
                                                     '앞으로 퀴즈 복습 시 변경된 문장이 우선 출제됩니다.'
@@ -7242,14 +7336,26 @@ export default function Home() {
                           const labels = ['①', '②', '③', '④', '⑤'];
                           return (
                             <button
-                              key={`${currentQuizIndex}-${idx}`}
+                              key={`${currentQuizItem.id}-${currentQuizIndex}-${idx}`}
                               onClick={() => handleSelectOption(opt)}
                               className="quiz-option-btn w-full min-h-[60px] sm:min-h-[64px] text-left px-3.5 py-2 rounded-xl border border-slate-200 bg-white [@media(hover:hover)]:hover:border-indigo-500 [@media(hover:hover)]:hover:bg-indigo-50/40 active:border-indigo-500 active:bg-indigo-50/50 focus:outline-none text-[15px] sm:text-base leading-snug font-bold text-slate-900 transition flex items-center gap-3 shadow-sm active:scale-[0.99]"
                             >
                               <span className="w-7 h-7 rounded-full bg-slate-100 text-slate-700 font-black flex items-center justify-center text-sm border border-slate-200 shrink-0">
                                 {labels[idx]}
                               </span>
-                              <span className="flex-1">{opt}</span>
+                              <span
+                                className="flex-1"
+                                style={
+                                  quizOptionFadeSec > 0
+                                    ? {
+                                        opacity: 0,
+                                        animation: `quizOptionReveal ${quizOptionFadeSec}s cubic-bezier(0.22, 0.61, 0.36, 1) forwards`,
+                                      }
+                                    : undefined
+                                }
+                              >
+                                {opt}
+                              </span>
                             </button>
                           );
                         })}
@@ -9363,6 +9469,48 @@ export default function Home() {
                       <option value={30}>30문제 (집중 복습)</option>
                       <option value={0}>전체 (단어장 수록 단어 모두 출제)</option>
                     </select>
+
+                    {/* 보기 글자 서서히 진해지기 (연상 학습 효과) */}
+                    <div className="pt-2.5 mt-2 border-t border-slate-200/80 space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <label className="font-bold text-slate-800 text-xs flex items-center gap-1.5">
+                          <span>✨</span>
+                          <span>보기 글자 서서히 진해지기</span>
+                        </label>
+                        <span className="text-[10.5px] font-bold text-indigo-700">
+                          {quizOptionFadeSec === 0 ? '즉시 표시' : `${quizOptionFadeSec}초 동안 진해짐`}
+                        </span>
+                      </div>
+                      <p className="text-[10.5px] text-slate-500 leading-snug">
+                        처음엔 보기가 희미하게 숨겨져 먼저 단어 뜻을 떠올린 뒤 점점 진해집니다.
+                      </p>
+                      <div className="grid grid-cols-4 gap-1.5 pt-0.5">
+                        {[
+                          { label: '끄기', sec: 0 },
+                          { label: '1.5초', sec: 1.5 },
+                          { label: '3초 (추천)', sec: 3 },
+                          { label: '5초', sec: 5 },
+                        ].map((opt) => (
+                          <button
+                            key={opt.sec}
+                            type="button"
+                            onClick={() => {
+                              setQuizOptionFadeSec(opt.sec);
+                              if (typeof window !== 'undefined') {
+                                localStorage.setItem('context_vocab_quiz_option_fade_sec', String(opt.sec));
+                              }
+                            }}
+                            className={`py-1.5 px-2 rounded-xl text-[11px] font-bold border transition cursor-pointer active:scale-95 ${
+                              quizOptionFadeSec === opt.sec
+                                ? 'bg-indigo-600 text-white border-indigo-700 shadow-2xs'
+                                : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                            }`}
+                          >
+                            {opt.label}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
                   </div>
 
                   {/* TTS Voice Select & Speed Slider */}
@@ -9609,7 +9757,6 @@ export default function Home() {
                             setSelectedBookFilters(['all']);
                             setInputBookTitle('원서 첫걸음: 어린 왕자');
                           }
-                          await loadData(currentUser);
                           setIsSettingsOpen(false);
                           triggerToast('초기화 완료 🎉', '기본 3개 단어장(총 30단어)이 복원되었습니다.');
                         }}
@@ -9624,7 +9771,6 @@ export default function Home() {
                           await clearAllVocab(currentUser?.id);
                           setVocabulary([]);
                           setSelectedBookFilters(['all']);
-                          await loadData(currentUser);
                           setIsSettingsOpen(false);
                           triggerToast('전체 삭제 완료 🗑️', '단어장의 모든 단어가 비워졌습니다.');
                         }}
@@ -10364,12 +10510,12 @@ export default function Home() {
 
             {/* Category Filter Pills */}
             <div className="px-4 sm:px-5 py-3 bg-white border-b border-slate-100 flex items-center gap-2 overflow-x-auto no-scrollbar shrink-0">
-              {RECOMMENDED_CATEGORIES.map((cat) => {
+              {recommendedCategories.map((cat) => {
                 const isSelected = recommendedCategoryFilter === cat;
                 const count =
                   cat === '전체'
-                    ? RECOMMENDED_WORDBOOKS.length
-                    : RECOMMENDED_WORDBOOKS.filter((b) => b.category === cat).length;
+                    ? recommendedWordbooks.length
+                    : recommendedWordbooks.filter((b) => b.category === cat).length;
                 return (
                   <button
                     key={cat}
@@ -10396,7 +10542,7 @@ export default function Home() {
 
             {/* Modal Body */}
             <div className="p-4 sm:p-5 overflow-y-auto space-y-4 flex-1 bg-slate-50/60">
-              {RECOMMENDED_WORDBOOKS.filter(
+              {recommendedWordbooks.filter(
                 (book) =>
                   recommendedCategoryFilter === '전체' ||
                   book.category === recommendedCategoryFilter

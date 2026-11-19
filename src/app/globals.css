@@ -41,3 +41,19 @@ input, textarea, select {
 .animate-toast {
   animation: fadeIn 0.25s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+
+/* 5지선다 보기 텍스트: 처음엔 안 보이다가 서서히 진해지는 연상 학습 애니메이션 */
+@keyframes quizOptionReveal {
+  0% {
+    opacity: 0;
+    filter: blur(4px);
+  }
+  18% {
+    opacity: 0.03;
+    filter: blur(3px);
+  }
+  100% {
+    opacity: 1;
+    filter: blur(0px);
+  }
+}
