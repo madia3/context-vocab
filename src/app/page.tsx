@@ -658,9 +658,9 @@ export default function Home() {
   const [isTestingKey, setIsTestingKey] = useState(false);
   const [isDeletingKey, setIsDeletingKey] = useState(false);
   const [keyTestStatus, setKeyTestStatus] = useState<{ ok: boolean; message: string } | null>(null);
-  const [ttsVoice, setTtsVoice] = useState('en-US');
-  const [ttsGender, setTtsGender] = useState<TtsGender>('female');
-  const [ttsRate, setTtsRate] = useState<number>(1.25);
+  const [ttsVoice, setTtsVoice] = useState('random');
+  const [ttsGender, setTtsGender] = useState<TtsGender>('random');
+  const [ttsRate, setTtsRate] = useState<number>(1.0);
   const [hasPersonalGeminiKey, setHasPersonalGeminiKey] = useState(false);
   const [personalKeyMasked, setPersonalKeyMasked] = useState('');
   const [personalKeyQuota, setPersonalKeyQuota] = useState<{
@@ -1444,8 +1444,8 @@ export default function Home() {
           setTtsPlaybackRate(parsed);
         }
       } else {
-        setTtsRate(1.25);
-        setTtsPlaybackRate(1.25);
+        setTtsRate(1.0);
+        setTtsPlaybackRate(1.0);
       }
 
       const lastBook =
@@ -9191,7 +9191,7 @@ export default function Home() {
                           <span>읽기 속도 조절</span>
                           <span className="text-[11px] font-black px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-mono">
                             {ttsRate.toFixed(2)}x
-                            {ttsRate === 1.25 ? '' : ttsRate === 1.0 ? ' (보통)' : ttsRate < 1.0 ? ' (느리게)' : ' (빠르게)'}
+                            {ttsRate === 1.0 ? ' (보통)' : ttsRate < 1.0 ? ' (느리게)' : ' (빠르게)'}
                           </span>
                         </label>
                         <button

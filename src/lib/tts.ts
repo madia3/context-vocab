@@ -8,8 +8,8 @@ let currentAudio: HTMLAudioElement | null = null;
 let cancelCurrentPlayback: (() => void) | null = null;
 let activeSpeechId = 0;
 let cachedVoices: SpeechSynthesisVoice[] = [];
-let currentTtsRate: number = 1.25;
-let currentTtsGender: TtsGender = 'female';
+let currentTtsRate: number = 1.0;
+let currentTtsGender: TtsGender = 'random';
 let lastRandomVariantKey: string = '';
 
 export function setTtsVoiceGender(gender: TtsGender) {
@@ -31,7 +31,7 @@ export function getTtsVoiceGender(): TtsGender {
 }
 
 export function setTtsPlaybackRate(rate: number) {
-  const clamped = Math.max(0.5, Math.min(2.0, Number(rate) || 1.25));
+  const clamped = Math.max(0.5, Math.min(2.0, Number(rate) || 1.0));
   currentTtsRate = Math.round(clamped * 100) / 100;
   if (typeof window !== 'undefined') {
     localStorage.setItem('context_vocab_tts_rate', String(currentTtsRate));

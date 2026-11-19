@@ -1,2 +1,2 @@
-export const APP_BUILD_VERSION = 'v2026.11.19-44 (11/19 22:55 KST)';
-export const APP_BUILD_SUMMARY = 'TTS 목소리 랜덤 재생 지원 (미국/영국 악센트 랜덤 + 남/여 성별 랜덤 + 원클릭 전체 4종 랜덤 버튼)';
+export const APP_BUILD_VERSION = 'v2026.11.19-45 (11/19 22:58 KST)';
+export const APP_BUILD_SUMMARY = '최초 기본 TTS 옵션을 목소리 전체 랜덤(미국/영국/남/여), 읽기 속도 1.0배로 변경';
