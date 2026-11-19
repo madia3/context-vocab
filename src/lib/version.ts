@@ -1,2 +1,2 @@
-export const APP_BUILD_VERSION = 'v2026.11.19-40 (11/19 22:30 KST)';
-export const APP_BUILD_SUMMARY = '남성 음성(Brian) 안정화·다중 백업 보이스 적용, 남성 선택 시 단일 단어도 남성 뉴럴 음성 재생 및 비상 폴백 캐시 오염 방지';
+export const APP_BUILD_VERSION = 'v2026.11.19-41 (11/19 22:34 KST)';
+export const APP_BUILD_SUMMARY = '퀴즈 카드 문장 듣기 버튼을 상단 단어 듣기 옆으로 이동, 출처 표시를 한글 해석 보기 우측 끝으로 배치 및 하단 중복 버튼 제거';

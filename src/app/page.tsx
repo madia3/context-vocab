@@ -6890,17 +6890,30 @@ export default function Home() {
                       <h3 className="font-black text-slate-900 tracking-tight text-3xl mb-2">
                         {currentQuizItem.word}
                       </h3>
-                      <div className="flex items-center justify-center gap-2">
+                      <div className="flex items-center justify-center gap-2 flex-wrap">
                         <span className="text-xs text-slate-400 font-mono">
                           {currentQuizItem.phonetic || `/${currentQuizItem.word}/`}
                         </span>
                         <button
+                          type="button"
                           onClick={() => speakWordTTS(currentQuizItem.word, ttsVoice)}
-                          className="text-xs bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-2 py-1 rounded-md flex items-center gap-1 font-semibold transition"
+                          className="text-xs bg-indigo-50 text-indigo-600 hover:bg-indigo-100 px-2.5 py-1 rounded-md flex items-center gap-1 font-semibold transition cursor-pointer active:scale-95"
                         >
                           <Volume2 className="w-3.5 h-3.5" />
                           <span>단어 듣기</span>
                         </button>
+                        {(quizActiveSentence || currentQuizItem.contextSentence) && (
+                          <button
+                            type="button"
+                            onClick={() =>
+                              speakSentenceTTS(quizActiveSentence || currentQuizItem.contextSentence, ttsVoice)
+                            }
+                            className="text-xs bg-amber-100 text-amber-900 hover:bg-amber-200/90 border border-amber-200/80 px-2.5 py-1 rounded-md flex items-center gap-1 font-semibold transition cursor-pointer active:scale-95"
+                          >
+                            <Volume2 className="w-3.5 h-3.5" />
+                            <span>문장 듣기</span>
+                          </button>
+                        )}
                       </div>
                     </div>
 
@@ -6994,10 +7007,15 @@ export default function Home() {
                                 <p className="text-base text-slate-800 leading-relaxed font-serif">
                                   {renderHighlightedContext(activeSentence, currentQuizItem.word)}
                                 </p>
-                                <div className="mt-2 flex items-center gap-1.5 text-xs text-amber-800 font-semibold select-none">
-                                  <Languages className="w-3.5 h-3.5" />
-                                  <span>
-                                    {showQuizSentenceTranslation ? '한글 해석 접기 ▴' : '한글 해석 보기 ▾'}
+                                <div className="mt-2.5 flex items-center justify-between gap-2 text-xs select-none">
+                                  <div className="flex items-center gap-1.5 text-amber-800 font-semibold shrink-0">
+                                    <Languages className="w-3.5 h-3.5" />
+                                    <span>
+                                      {showQuizSentenceTranslation ? '한글 해석 접기 ▴' : '한글 해석 보기 ▾'}
+                                    </span>
+                                  </div>
+                                  <span className="truncate min-w-0 text-slate-500 font-normal">
+                                    출처: {currentQuizItem.sourceMemo || '원서'}
                                   </span>
                                 </div>
                               </div>
@@ -7034,27 +7052,6 @@ export default function Home() {
                                   )}
                                 </div>
                               )}
-                              <div className="flex items-center justify-between gap-2 flex-wrap pt-2 border-t border-amber-200/60 text-xs text-slate-500">
-                                <span className="truncate min-w-0">출처: {currentQuizItem.sourceMemo || '원서'}</span>
-                                <div className="flex items-center gap-1.5 shrink-0">
-                                  <button
-                                    type="button"
-                                    onClick={() => speakSentenceTTS(activeSentence, ttsVoice)}
-                                    className="text-xs bg-amber-200/80 hover:bg-amber-300 text-amber-900 font-bold px-2.5 py-1 rounded-lg flex items-center gap-1 transition active:scale-95 cursor-pointer whitespace-nowrap"
-                                  >
-                                    <Volume2 className="w-3 h-3 shrink-0" />
-                                    <span>문장 듣기</span>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => speakWordTTS(currentQuizItem.word, ttsVoice)}
-                                    className="text-xs bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/80 font-bold px-2.5 py-1 rounded-lg flex items-center gap-1 transition active:scale-95 cursor-pointer whitespace-nowrap"
-                                  >
-                                    <Volume2 className="w-3 h-3 shrink-0" />
-                                    <span>단어 듣기</span>
-                                  </button>
-                                </div>
-                              </div>
                             </div>
                           );
                         })()}
