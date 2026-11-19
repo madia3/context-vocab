@@ -1,2 +1,2 @@
-export const APP_BUILD_VERSION = 'v2026.11.19-23 (11/19 12:20 KST)';
-export const APP_BUILD_SUMMARY = 'Vision OCR sentences 배열 출력(RECITATION 우회) 및 RECITATION 감지 시 재시도 즉시 중단';
+export const APP_BUILD_VERSION = 'v2026.11.19-24 (11/19 12:27 KST)';
+export const APP_BUILD_SUMMARY = 'Vision OCR 문장 역순 출력(.reverse 복원) 및 Tesseract 백그라운드 예열 1.2초로 단축';

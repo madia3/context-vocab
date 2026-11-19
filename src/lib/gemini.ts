@@ -367,7 +367,7 @@ export async function extractTextWithAI(
   let modelUsed: string | undefined;
   let visionAttemptLogs: string[] = [];
 
-  // 4.0초 지연 백그라운드 예열: Vision이 4초 안에 안 끝나면 장애/지연 대비로 백그라운드에서 Tesseract 미리 시동
+  // 1.2초 지연 백그라운드 예열: RECITATION 차단이나 Vision 지연 시 대기 시간을 최소화하기 위해 1.2초 시점에 Tesseract 미리 시동
   const prewarmRef: { promise: Promise<{ text: string; durationMs: number }> | null } = { promise: null };
   let tesseractPrewarmTimer: ReturnType<typeof setTimeout> | null = setTimeout(() => {
     tesseractPrewarmTimer = null;
@@ -382,7 +382,7 @@ export async function extractTextWithAI(
         text: '',
         durationMs: Math.round(performance.now() - preStart),
       }));
-  }, 4000);
+  }, 1200);
 
   const clearTesseractPrewarmTimer = () => {
     if (tesseractPrewarmTimer) {

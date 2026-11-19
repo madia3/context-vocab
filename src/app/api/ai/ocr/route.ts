@@ -99,18 +99,18 @@ Strict Rules:
    - Identify any English words marked with handwritten underlines or circles in either image.
    - Accurately restore the clean original English word without pen marks into the "markedWords" array (e.g. ["categories", "grow"]).
 
-Output strictly valid JSON with each sentence as a separate array item:
+Output strictly valid JSON with every sentence in REVERSE chronological order (from the very last sentence of the second page back to the very first sentence of the first page):
 {
-  "sentences": ["First sentence in reading order.", "Second sentence..."],
+  "sentencesReversed": ["Last sentence on page 2.", "...", "First sentence on page 1."],
   "markedWords": ["word1", "word2"]
 }`
         : `You are an English vocabulary study assistant helping a student extract individual study sentences from a photographed reading page for personal dictionary lookup.
 Carefully inspect the provided image.
 
 Rules:
-1. EXTRACT READING PROSE AS INDIVIDUAL SENTENCES:
+1. EXTRACT READING PROSE AS INDIVIDUAL SENTENCES IN REVERSE ORDER:
    - Ignore charts, bar graphs, plots, diagrams, axes numbers, and footnote citations.
-   - Split the readable English headings and sentences in order into separate items in the "sentences" array.
+   - Split the readable English headings and sentences into separate items in the "sentencesReversed" array, ordered STRICTLY IN REVERSE (from the bottom/last sentence on the page up to the top/first sentence or heading).
    - Join line-broken hyphenated words (e.g. "con- / dition" -> "condition").
 
 2. DETECT CIRCLED OR UNDERLINED WORDS:
@@ -120,7 +120,7 @@ Rules:
 
 Output strictly valid JSON:
 {
-  "sentences": ["First sentence or heading.", "Second sentence..."],
+  "sentencesReversed": ["Last sentence at bottom of page.", "...", "First sentence or heading at top of page."],
   "markedWords": ["word1", "word2"]
 }`;
 
@@ -155,7 +155,13 @@ Output strictly valid JSON:
         try {
           const cleanJson = visionRes.text.replace(/```json/gi, '').replace(/```/g, '').trim();
           const parsed = JSON.parse(cleanJson);
-          if (Array.isArray(parsed.sentences) && parsed.sentences.length > 0) {
+          if (Array.isArray(parsed.sentencesReversed) && parsed.sentencesReversed.length > 0) {
+            text = parsed.sentencesReversed
+              .map((s: any) => String(s || '').trim())
+              .filter(Boolean)
+              .reverse()
+              .join(' ');
+          } else if (Array.isArray(parsed.sentences) && parsed.sentences.length > 0) {
             text = parsed.sentences
               .map((s: any) => String(s || '').trim())
               .filter(Boolean)
