@@ -330,15 +330,11 @@ export async function lookupDictionary(rawWord: string): Promise<DictSearchResul
 
   let phonetic = `/${word}/`;
 
-  // 3. Call internal server API route (Server fetches Google Translate & Phonetics in parallel with 1.2s timeout)
   // 3. Call internal server API route (Server fetches Google Translate, Gemini AI & Phonetics)
   try {
-    const geminiKey =
-      typeof window !== 'undefined'
-        ? localStorage.getItem('context_vocab_gemini_key') || ''
-        : '';
+    const { buildAiRequestHeaders } = await import('./gemini');
     const apiRes = await fetch(`/api/dictionary?word=${encodeURIComponent(word)}`, {
-      headers: geminiKey ? { 'x-gemini-key': geminiKey } : {},
+      headers: buildAiRequestHeaders(),
       signal: AbortSignal.timeout(3500),
     });
     if (apiRes.ok) {

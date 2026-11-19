@@ -2,20 +2,50 @@ import { NextRequest, NextResponse } from 'next/server';
 import {
   callGeminiWithFallback,
   checkRateLimit,
-  encryptGeminiKey,
+  deleteUserPersonalGeminiKeyFromSupabase,
   GEMINI_COOKIE_NAME,
+  getAuthenticatedUserFromRequest,
   getServerKeyQuotaStatusAsync,
-  maskGeminiKey,
-  resolveServerGeminiKey,
+  getUserPersonalGeminiKeyFromSupabase,
+  saveUserPersonalGeminiKeyToSupabase,
 } from '@/lib/geminiServer';
 
 export const runtime = 'nodejs';
 
+function clearLegacyCookie(res: NextResponse) {
+  res.cookies.set(GEMINI_COOKIE_NAME, '', {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax',
+    path: '/',
+    maxAge: 0,
+  });
+}
+
 export async function GET(req: NextRequest) {
   const serverKey = process.env.GEMINI_API_KEY?.trim() || '';
-  const serverQuota = await getServerKeyQuotaStatusAsync(req);
+  const authUser = await getAuthenticatedUserFromRequest(req);
+
+  let hasPersonalKey = false;
+  let maskedKey = '';
+
+  if (authUser) {
+    const personal = await getUserPersonalGeminiKeyFromSupabase(authUser.accessToken, authUser.id);
+    hasPersonalKey = personal.hasKey;
+    maskedKey = personal.maskedKey;
+  }
+
+  const serverQuota = await getServerKeyQuotaStatusAsync(req, {
+    hasPersonalKey,
+    userId: authUser?.id,
+    userEmail: authUser?.email,
+  });
+
   return NextResponse.json({
     serverConfigured: Boolean(serverKey && serverKey.length >= 10),
+    isAuthenticated: Boolean(authUser),
+    hasPersonalKey,
+    maskedKey,
     serverQuota,
   });
 }
@@ -30,29 +60,52 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    const authUser = await getAuthenticatedUserFromRequest(req);
+    if (!authUser) {
+      return NextResponse.json(
+        {
+          ok: false,
+          code: 'AUTH_REQUIRED',
+          error: '개인 API 키 등록 및 관리는 로그인 후 이용할 수 있습니다.',
+        },
+        { status: 401 }
+      );
+    }
+
     const body = await req.json().catch(() => ({}));
     const { apiKey, action } = body;
 
     if (action === 'clear') {
-      const clearRes = NextResponse.json({ ok: true, cleared: true });
-      clearRes.cookies.set(GEMINI_COOKIE_NAME, '', {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        path: '/',
-        maxAge: 0,
+      const delRes = await deleteUserPersonalGeminiKeyFromSupabase(
+        authUser.accessToken,
+        authUser.id
+      );
+      if (!delRes.ok) {
+        return NextResponse.json(
+          { ok: false, error: delRes.error || '개인 API 키 삭제에 실패했습니다.' },
+          { status: 500 }
+        );
+      }
+      const clearRes = NextResponse.json({
+        ok: true,
+        cleared: true,
+        hasPersonalKey: false,
+        maskedKey: '',
       });
+      clearLegacyCookie(clearRes);
       return clearRes;
     }
 
-    const keyToTest = resolveServerGeminiKey(req, apiKey);
-
-    if (!keyToTest) {
-      return NextResponse.json({ ok: false, error: 'API 키가 전달되지 않았습니다.' }, { status: 400 });
+    const cleanKey = typeof apiKey === 'string' ? apiKey.trim() : '';
+    if (!cleanKey) {
+      return NextResponse.json(
+        { ok: false, error: '등록할 Google Gemini API 키를 입력해 주세요.' },
+        { status: 400 }
+      );
     }
 
     const res = await callGeminiWithFallback({
-      apiKey: keyToTest,
+      apiKey: cleanKey,
       parts: [{ text: 'Respond with OK.' }],
       temperature: 0.0,
       responseMimeType: 'text/plain',
@@ -61,36 +114,49 @@ export async function POST(req: NextRequest) {
     });
 
     if (res.ok) {
-      const encryptedToken = encryptGeminiKey(keyToTest);
-      const maskedKey = maskGeminiKey(keyToTest);
+      const saveRes = await saveUserPersonalGeminiKeyToSupabase(
+        authUser.accessToken,
+        authUser.id,
+        cleanKey
+      );
+      if (!saveRes.ok) {
+        return NextResponse.json(
+          { ok: false, error: saveRes.error || '계정 암호화 저장에 실패했습니다.' },
+          { status: 500 }
+        );
+      }
+
       const response = NextResponse.json({
         ok: true,
-        encryptedToken,
-        maskedKey,
-        message: `Google Gemini AI 연동 성공! (${res.modelUsed})`,
+        hasPersonalKey: true,
+        maskedKey: saveRes.maskedKey,
+        message: `Google Gemini AI 연동 및 계정 암호화 저장 완료! (${res.modelUsed})`,
       });
 
-      // 서버 AES-256-GCM 암호화 토큰을 HttpOnly 보안 쿠키에도 저장 (XSS/평문 노출 원천 차단)
-      response.cookies.set(GEMINI_COOKIE_NAME, encryptedToken, {
-        httpOnly: true,
-        secure: process.env.NODE_ENV === 'production',
-        sameSite: 'lax',
-        path: '/',
-        maxAge: 60 * 60 * 24 * 365, // 1 year
-      });
-
+      // 브라우저 로컬/쿠키 저장 제거 정책에 따라 기존 레거시 쿠키가 있다면 정리
+      clearLegacyCookie(response);
       return response;
     }
 
     let errorMessage = '유효하지 않은 API 키이거나 모델 호출에 실패했습니다.';
     if (res.lastError) {
       if (res.lastError.includes('API_KEY_INVALID')) {
-        errorMessage = '유효하지 않은 API 키입니다. Google AI Studio(aistudio.google.com)에서 발급받은 키(AQ... 또는 AIza...)를 정확히 복사했는지 확인해 주세요.';
+        errorMessage =
+          '유효하지 않은 API 키입니다. Google AI Studio(aistudio.google.com)에서 발급받은 키(AQ... 또는 AIza...)를 정확히 복사했는지 확인해 주세요.';
       } else if (res.lastError.includes('RESOURCE_EXHAUSTED')) {
         errorMessage = 'Gemini API 무료 요청 한도(RPM/RPD)가 초과되었습니다. 잠시 후 다시 시도해 주세요.';
-      } else if (res.lastError.includes('not found') || res.lastError.includes('not supported') || res.lastError.includes('404')) {
-        errorMessage = 'Google API 오류: 계정에서 지원하는 Gemini 모델을 찾지 못했습니다. Google AI Studio(aistudio.google.com)에서 새 API Key를 발급받아 교체해 주세요.';
-      } else if (res.lastError.includes('Timeout') || res.lastError.includes('abort') || res.lastError.includes('aborted')) {
+      } else if (
+        res.lastError.includes('not found') ||
+        res.lastError.includes('not supported') ||
+        res.lastError.includes('404')
+      ) {
+        errorMessage =
+          'Google API 오류: 계정에서 지원하는 Gemini 모델을 찾지 못했습니다. Google AI Studio(aistudio.google.com)에서 새 API Key를 발급받아 교체해 주세요.';
+      } else if (
+        res.lastError.includes('Timeout') ||
+        res.lastError.includes('abort') ||
+        res.lastError.includes('aborted')
+      ) {
         errorMessage = 'Google API 응답 시간 초과 (네트워크 지연). 잠시 후 다시 시도해 주세요.';
       } else {
         try {

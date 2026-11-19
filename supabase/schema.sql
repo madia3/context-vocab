@@ -48,3 +48,35 @@ create policy "Users can update own vocab words"
 create policy "Users can delete own vocab words"
   on public.vocab_words for delete
   using (auth.uid() = user_id or user_id is null);
+
+-- 5. 계정별 암호화 Gemini API 키 저장 테이블 (user_api_keys)
+create table if not exists public.user_api_keys (
+  user_id uuid primary key references auth.users(id) on delete cascade,
+  encrypted_gemini_key text not null,
+  masked_key text not null,
+  updated_at timestamp with time zone default timezone('utc'::text, now()) not null
+);
+
+alter table public.user_api_keys enable row level security;
+
+drop policy if exists "Users can view own api key" on public.user_api_keys;
+drop policy if exists "Users can insert own api key" on public.user_api_keys;
+drop policy if exists "Users can update own api key" on public.user_api_keys;
+drop policy if exists "Users can delete own api key" on public.user_api_keys;
+
+create policy "Users can view own api key"
+  on public.user_api_keys for select
+  using (auth.uid() = user_id);
+
+create policy "Users can insert own api key"
+  on public.user_api_keys for insert
+  with check (auth.uid() = user_id);
+
+create policy "Users can update own api key"
+  on public.user_api_keys for update
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+create policy "Users can delete own api key"
+  on public.user_api_keys for delete
+  using (auth.uid() = user_id);

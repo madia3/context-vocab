@@ -314,4 +314,36 @@ CREATE POLICY "Users can delete their own words"
 -- 5. 검색 및 최신순 정렬 성능 향상을 위한 복합 색인(Index) 추가
 CREATE INDEX IF NOT EXISTS idx_vocab_words_user_id ON public.vocab_words(user_id);
 CREATE INDEX IF NOT EXISTS idx_vocab_words_user_created ON public.vocab_words(user_id, created_at DESC);
+
+-- 6. 계정별 암호화 Gemini API 키 저장 테이블 (멀티 기기 동기화 + RLS 격리)
+CREATE TABLE IF NOT EXISTS public.user_api_keys (
+    user_id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+    encrypted_gemini_key TEXT NOT NULL,
+    masked_key TEXT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.user_api_keys ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "Users can view own api key" ON public.user_api_keys;
+DROP POLICY IF EXISTS "Users can insert own api key" ON public.user_api_keys;
+DROP POLICY IF EXISTS "Users can update own api key" ON public.user_api_keys;
+DROP POLICY IF EXISTS "Users can delete own api key" ON public.user_api_keys;
+
+CREATE POLICY "Users can view own api key"
+    ON public.user_api_keys FOR SELECT
+    USING (auth.uid() = user_id);
+
+CREATE POLICY "Users can insert own api key"
+    ON public.user_api_keys FOR INSERT
+    WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can update own api key"
+    ON public.user_api_keys FOR UPDATE
+    USING (auth.uid() = user_id)
+    WITH CHECK (auth.uid() = user_id);
+
+CREATE POLICY "Users can delete own api key"
+    ON public.user_api_keys FOR DELETE
+    USING (auth.uid() = user_id);
 `;

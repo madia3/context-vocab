@@ -40,6 +40,7 @@ export default function PrivacyPolicyPage() {
             <ul className="list-disc pl-5 space-y-1 text-slate-700">
               <li><strong>Google 계정 정보:</strong> 이메일 주소, 이름/닉네임, 프로필 이미지 URL (고유 사용자 식별용)</li>
               <li><strong>학습 및 단어 데이터:</strong> 사용자가 직접 등록한 단어, 문맥 문장, 출처 메모, 단어장 분류, 퀴즈 풀이 이력(정답/오답 통계)</li>
+              <li><strong>개인 Gemini API 키 (선택):</strong> 로그인 회원이 개인 AI 키를 직접 등록한 경우에만 브라우저(로컬)에 저장하지 않고 서버에 AES-256-GCM 방식으로 암호화하여 계정별로 보관하며, 멀티 기기 동기화 및 AI 호출 목적으로만 사용합니다. 설정에서 연동 해제 시 즉시 영구 삭제됩니다.</li>
             </ul>
           </div>
         </section>

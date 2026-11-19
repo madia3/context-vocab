@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { callGeminiWithFallback, checkRateLimit, resolveServerGeminiKey } from '@/lib/geminiServer';
+import { callGeminiWithFallback, checkRateLimit, resolveServerGeminiKeyAsync } from '@/lib/geminiServer';
 
 export const runtime = 'nodejs';
 
@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
     const safeWord = typeof word === 'string' ? word.trim().slice(0, 60) : '';
     const safeNextPage = typeof nextPageText === 'string' ? nextPageText.trim().slice(0, 1000) : '';
 
-    const apiKey = resolveServerGeminiKey(req);
+    const apiKey = await resolveServerGeminiKeyAsync(req);
 
     if (!apiKey) {
       return NextResponse.json({ error: 'Gemini API key is not configured' }, { status: 401 });

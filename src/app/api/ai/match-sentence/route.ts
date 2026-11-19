@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { callGeminiWithFallback, checkRateLimit, resolveServerGeminiKey } from '@/lib/geminiServer';
+import { callGeminiWithFallback, checkRateLimit, resolveServerGeminiKeyAsync } from '@/lib/geminiServer';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -24,7 +24,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Image payload too large' }, { status: 413 });
     }
 
-    const apiKey = resolveServerGeminiKey(req);
+    const apiKey = await resolveServerGeminiKeyAsync(req);
 
     if (!apiKey) {
       return NextResponse.json(

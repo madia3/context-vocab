@@ -900,7 +900,10 @@ export async function checkAndConsumeServerKeyQuotaAsync(
   }
 }
 
-export async function getServerKeyQuotaStatusAsync(req: Request): Promise<{
+export async function getServerKeyQuotaStatusAsync(
+  req: Request,
+  options?: { hasPersonalKey?: boolean; userId?: string; userEmail?: string }
+): Promise<{
   tier: 'admin' | 'personal_backup' | 'member' | 'guest';
   limit: number;
   used: number;
@@ -908,40 +911,349 @@ export async function getServerKeyQuotaStatusAsync(req: Request): Promise<{
   isAdmin: boolean;
   todayDate: string;
 }> {
+  const todayDate = getTodayServerDate();
   const base = getServerKeyQuotaStatus(req);
-  if (base.isAdmin) return base;
+  const effectiveEmail = (options?.userEmail || req.headers.get('x-user-email') || '').trim();
+  const effectiveUserId = (options?.userId || req.headers.get('x-user-id') || '').trim();
+  const effectiveHasPersonalKey =
+    typeof options?.hasPersonalKey === 'boolean'
+      ? options.hasPersonalKey
+      : req.headers.get('x-has-personal-key') === '1';
+
+  if (isUserAdmin(effectiveEmail) || base.isAdmin) {
+    return { tier: 'admin', limit: 999999, used: 0, remaining: 999999, isAdmin: true, todayDate };
+  }
+
+  let tier: 'personal_backup' | 'member' | 'guest' = 'guest';
+  let limit: number = SERVER_KEY_DAILY_QUOTAS.guest;
+  if (effectiveHasPersonalKey) {
+    tier = 'personal_backup';
+    limit = SERVER_KEY_DAILY_QUOTAS.personalBackup;
+  } else if (effectiveUserId) {
+    tier = 'member';
+    limit = SERVER_KEY_DAILY_QUOTAS.member;
+  }
+
   try {
-    const userId = (req.headers.get('x-user-id') || '').trim();
     const forwarded = req.headers.get('x-forwarded-for');
     const ip = forwarded ? forwarded.split(',')[0].trim() : req.headers.get('x-real-ip') || 'anonymous';
-    const subjectKey = userId ? `uid:${userId}` : `ip:${ip}`;
-    const today = getTodayServerDate();
-    const sbCount = await getSupabaseUsageCount(today, subjectKey);
-    if (sbCount === null) return base;
-    const used = Math.max(base.used, sbCount);
+    const subjectKey = effectiveUserId ? `uid:${effectiveUserId}` : `ip:${ip}`;
+    const sbCount = await getSupabaseUsageCount(todayDate, subjectKey);
+    const localUsed = loadUserQuotas().counts[subjectKey] || 0;
+    const used = sbCount === null ? localUsed : Math.max(localUsed, sbCount);
     return {
-      ...base,
+      tier,
+      limit,
       used,
-      remaining: Math.max(0, base.limit - used),
-      todayDate: today,
+      remaining: Math.max(0, limit - used),
+      isAdmin: false,
+      todayDate,
     };
   } catch {
-    return base;
+    return {
+      tier,
+      limit,
+      used: base.used,
+      remaining: Math.max(0, limit - base.used),
+      isAdmin: false,
+      todayDate,
+    };
+  }
+}
+
+// =========================================================================
+// Account-based Encrypted Personal Gemini Key Store (Supabase `user_api_keys` + RLS)
+// =========================================================================
+export interface AuthenticatedSupabaseUser {
+  id: string;
+  email?: string;
+  accessToken: string;
+}
+
+const authTokenCache = new Map<string, { user: AuthenticatedSupabaseUser; expiresAt: number }>();
+const AUTH_TOKEN_CACHE_TTL_MS = 60 * 1000;
+
+const userGeminiKeyCache = new Map<
+  string,
+  { decryptedKey: string; maskedKey: string; hasKey: boolean; expiresAt: number }
+>();
+const USER_GEMINI_KEY_CACHE_TTL_MS = 60 * 1000;
+
+export function invalidateUserGeminiKeyCache(userId?: string) {
+  if (!userId) return;
+  userGeminiKeyCache.delete(userId);
+}
+
+function extractBearerToken(req: Request): string {
+  const authHeader = req.headers.get('authorization') || req.headers.get('Authorization') || '';
+  if (!authHeader.toLowerCase().startsWith('bearer ')) return '';
+  return authHeader.slice(7).trim();
+}
+
+/**
+ * Verifies the Supabase access token from the Authorization header via Supabase Auth API.
+ */
+export async function getAuthenticatedUserFromRequest(
+  req: Request
+): Promise<AuthenticatedSupabaseUser | null> {
+  const accessToken = extractBearerToken(req);
+  if (!accessToken || accessToken.length < 20) return null;
+
+  const tokenHash = crypto.createHash('sha256').update(accessToken).digest('hex').slice(0, 24);
+  const now = Date.now();
+  const cached = authTokenCache.get(tokenHash);
+  if (cached && cached.expiresAt > now) {
+    return cached.user;
+  }
+
+  try {
+    const { url, anonKey } = getSupabaseRestConfig();
+    if (!url || !anonKey) return null;
+
+    const res = await fetch(`${url}/auth/v1/user`, {
+      method: 'GET',
+      headers: {
+        apikey: anonKey,
+        Authorization: `Bearer ${accessToken}`,
+      },
+      cache: 'no-store',
+      signal: AbortSignal.timeout(2500),
+    });
+
+    if (!res.ok) return null;
+    const data = await res.json();
+    if (!data?.id || typeof data.id !== 'string') return null;
+
+    const user: AuthenticatedSupabaseUser = {
+      id: data.id,
+      email: typeof data.email === 'string' ? data.email : undefined,
+      accessToken,
+    };
+
+    if (authTokenCache.size > 1000) {
+      authTokenCache.clear();
+    }
+    authTokenCache.set(tokenHash, { user, expiresAt: now + AUTH_TOKEN_CACHE_TTL_MS });
+    return user;
+  } catch {
+    return null;
   }
 }
 
 /**
- * Safely resolves the Gemini API key on the server (supports AES-256-GCM encrypted token, HttpOnly cookie, or server env).
+ * Fetches and decrypts the authenticated user's personal Gemini API key from Supabase (`public.user_api_keys` with RLS).
+ */
+export async function getUserPersonalGeminiKeyFromSupabase(
+  accessToken: string,
+  userId: string
+): Promise<{ decryptedKey: string; maskedKey: string; hasKey: boolean }> {
+  const now = Date.now();
+  const cached = userGeminiKeyCache.get(userId);
+  if (cached && cached.expiresAt > now) {
+    return {
+      decryptedKey: cached.decryptedKey,
+      maskedKey: cached.maskedKey,
+      hasKey: cached.hasKey,
+    };
+  }
+
+  try {
+    const { url, anonKey } = getSupabaseRestConfig();
+    if (!url || !anonKey) {
+      return { decryptedKey: '', maskedKey: '', hasKey: false };
+    }
+
+    const res = await fetch(
+      `${url}/rest/v1/user_api_keys?user_id=eq.${encodeURIComponent(userId)}&select=encrypted_gemini_key,masked_key&limit=1`,
+      {
+        method: 'GET',
+        headers: {
+          apikey: anonKey,
+          Authorization: `Bearer ${accessToken}`,
+        },
+        cache: 'no-store',
+        signal: AbortSignal.timeout(2500),
+      }
+    );
+
+    if (!res.ok) {
+      return { decryptedKey: '', maskedKey: '', hasKey: false };
+    }
+
+    const rows = await res.json();
+    if (!Array.isArray(rows) || rows.length === 0) {
+      userGeminiKeyCache.set(userId, {
+        decryptedKey: '',
+        maskedKey: '',
+        hasKey: false,
+        expiresAt: now + USER_GEMINI_KEY_CACHE_TTL_MS,
+      });
+      return { decryptedKey: '', maskedKey: '', hasKey: false };
+    }
+
+    const row = rows[0];
+    const decryptedKey = decryptGeminiKey(row?.encrypted_gemini_key);
+    const maskedKey = (row?.masked_key || '').trim() || maskGeminiKey(decryptedKey);
+    const hasKey = Boolean(decryptedKey);
+
+    if (userGeminiKeyCache.size > 1000) {
+      userGeminiKeyCache.clear();
+    }
+    userGeminiKeyCache.set(userId, {
+      decryptedKey,
+      maskedKey,
+      hasKey,
+      expiresAt: now + USER_GEMINI_KEY_CACHE_TTL_MS,
+    });
+
+    return { decryptedKey, maskedKey, hasKey };
+  } catch {
+    return { decryptedKey: '', maskedKey: '', hasKey: false };
+  }
+}
+
+/**
+ * Encrypts (AES-256-GCM) and upserts the authenticated user's personal Gemini API key into Supabase.
+ */
+export async function saveUserPersonalGeminiKeyToSupabase(
+  accessToken: string,
+  userId: string,
+  plainKey: string
+): Promise<{ ok: boolean; maskedKey: string; error?: string }> {
+  const cleanKey = decryptGeminiKey(plainKey);
+  if (!cleanKey) {
+    return { ok: false, maskedKey: '', error: '유효한 API 키가 아닙니다.' };
+  }
+
+  const encrypted = encryptGeminiKey(cleanKey);
+  const maskedKey = maskGeminiKey(cleanKey) || 'AIzaSy••••••••••••••••••••';
+
+  try {
+    const { url, anonKey } = getSupabaseRestConfig();
+    if (!url || !anonKey) {
+      return { ok: false, maskedKey: '', error: 'Supabase 서버 설정이 누락되었습니다.' };
+    }
+
+    const res = await fetch(`${url}/rest/v1/user_api_keys?on_conflict=user_id`, {
+      method: 'POST',
+      headers: {
+        apikey: anonKey,
+        Authorization: `Bearer ${accessToken}`,
+        'Content-Type': 'application/json',
+        Prefer: 'resolution=merge-duplicates,return=minimal',
+      },
+      body: JSON.stringify({
+        user_id: userId,
+        encrypted_gemini_key: encrypted,
+        masked_key: maskedKey,
+        updated_at: new Date().toISOString(),
+      }),
+      cache: 'no-store',
+      signal: AbortSignal.timeout(3500),
+    });
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      console.error('Failed to save user_api_keys:', res.status, errText);
+      if (res.status === 404 || errText.includes('user_api_keys') || errText.includes('42P01')) {
+        return {
+          ok: false,
+          maskedKey: '',
+          error: 'Supabase에 user_api_keys 테이블이 아직 생성되지 않았습니다. SQL Editor에서 스키마를 먼저 실행해 주세요.',
+        };
+      }
+      return {
+        ok: false,
+        maskedKey: '',
+        error: `개인 키 저장에 실패했습니다. (HTTP ${res.status})`,
+      };
+    }
+
+    invalidateUserGeminiKeyCache(userId);
+    userGeminiKeyCache.set(userId, {
+      decryptedKey: cleanKey,
+      maskedKey,
+      hasKey: true,
+      expiresAt: Date.now() + USER_GEMINI_KEY_CACHE_TTL_MS,
+    });
+
+    return { ok: true, maskedKey };
+  } catch (err: any) {
+    return { ok: false, maskedKey: '', error: err?.message || 'DB 연결 오류' };
+  }
+}
+
+/**
+ * Deletes the authenticated user's personal Gemini API key from Supabase.
+ */
+export async function deleteUserPersonalGeminiKeyFromSupabase(
+  accessToken: string,
+  userId: string
+): Promise<{ ok: boolean; error?: string }> {
+  try {
+    const { url, anonKey } = getSupabaseRestConfig();
+    if (!url || !anonKey) {
+      return { ok: false, error: 'Supabase 서버 설정이 누락되었습니다.' };
+    }
+
+    const res = await fetch(
+      `${url}/rest/v1/user_api_keys?user_id=eq.${encodeURIComponent(userId)}`,
+      {
+        method: 'DELETE',
+        headers: {
+          apikey: anonKey,
+          Authorization: `Bearer ${accessToken}`,
+          Prefer: 'return=minimal',
+        },
+        cache: 'no-store',
+        signal: AbortSignal.timeout(3500),
+      }
+    );
+
+    if (!res.ok) {
+      const errText = await res.text().catch(() => '');
+      console.error('Failed to delete user_api_keys:', res.status, errText);
+      return { ok: false, error: `개인 키 삭제에 실패했습니다. (HTTP ${res.status})` };
+    }
+
+    invalidateUserGeminiKeyCache(userId);
+    return { ok: true };
+  } catch (err: any) {
+    return { ok: false, error: err?.message || 'DB 연결 오류' };
+  }
+}
+
+/**
+ * Safely resolves the Gemini API key on the server:
+ * 1) Explicit key (e.g. key verification endpoint)
+ * 2) Authenticated user's AES-256-GCM encrypted key stored in Supabase (`user_api_keys`)
+ * 3) Server-wide `process.env.GEMINI_API_KEY`
+ */
+export async function resolveServerGeminiKeyAsync(
+  req: Request,
+  explicitKey?: string
+): Promise<string> {
+  const fromExplicit = decryptGeminiKey(explicitKey);
+  if (fromExplicit) return fromExplicit;
+
+  const authUser = await getAuthenticatedUserFromRequest(req);
+  if (authUser) {
+    const personal = await getUserPersonalGeminiKeyFromSupabase(authUser.accessToken, authUser.id);
+    if (personal.decryptedKey) {
+      return personal.decryptedKey;
+    }
+  }
+
+  const fromServerEnv = process.env.GEMINI_API_KEY?.trim();
+  return fromServerEnv || '';
+}
+
+/**
+ * Legacy synchronous fallback (prefer `resolveServerGeminiKeyAsync` for account-based DB keys).
  */
 export function resolveServerGeminiKey(req: Request, explicitKey?: string): string {
   const fromExplicit = decryptGeminiKey(explicitKey);
   if (fromExplicit) return fromExplicit;
-
-  const fromHeader = decryptGeminiKey(req.headers.get('x-gemini-key'));
-  if (fromHeader) return fromHeader;
-
-  const fromCookie = decryptGeminiKey(extractCookieValue(req.headers.get('cookie'), GEMINI_COOKIE_NAME));
-  if (fromCookie) return fromCookie;
 
   const fromServerEnv = process.env.GEMINI_API_KEY?.trim();
   return fromServerEnv || '';

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { callGeminiWithFallback, resolveServerGeminiKey } from '@/lib/geminiServer';
+import { callGeminiWithFallback, resolveServerGeminiKeyAsync } from '@/lib/geminiServer';
 
 export const runtime = 'nodejs';
 
@@ -681,7 +681,7 @@ export async function GET(request: NextRequest) {
 
   // 3. High-Accuracy AI Lexicographer Fallback via Gemini (표준 영한 사전 수준의 품사별 뜻 & 예문)
   if (meanings.length === 0) {
-    const geminiKey = resolveServerGeminiKey(request);
+    const geminiKey = await resolveServerGeminiKeyAsync(request);
     if (geminiKey) {
       try {
         const aiPrompt = `You are a standard English-Korean dictionary (like Naver/Daum English Dictionary).

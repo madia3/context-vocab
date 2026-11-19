@@ -928,26 +928,58 @@ export default function Home() {
     isAdmin?: boolean;
   } | null>(null);
 
-  // 설정 > AI 연동 탭을 열 때마다 개인/서버 AI 잔여 한도를 최신으로 조회
+  // 계정별 서버 암호화 Gemini 키 상태 및 서버 AI 잔여 한도 동기화 헬퍼
+  async function syncAccountGeminiKeyStatus() {
+    try {
+      const client = getSupabaseClient();
+      if (client) {
+        const {
+          data: { session },
+        } = await client.auth.getSession();
+        if (session?.access_token) {
+          setCurrentAiAccessToken(session.access_token);
+        } else if (!currentUser) {
+          setCurrentAiAccessToken(null);
+        }
+      }
+      const res = await fetch('/api/ai/test-key', {
+        headers: buildAiRequestHeaders(),
+        cache: 'no-store',
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      if (data?.serverConfigured) {
+        setIsServerGeminiReady(true);
+      }
+      const hasKey = Boolean(data?.hasPersonalKey);
+      setHasPersonalGeminiKey(hasKey);
+      setPersonalKeyMasked(typeof data?.maskedKey === 'string' ? data.maskedKey : '');
+      setCurrentAiPersonalKeyStatus(hasKey);
+      if (data?.serverQuota) {
+        setServerAiQuota(data.serverQuota);
+      }
+    } catch {}
+  }
+
+  // 로그인 상태 변경 시(다른 기기에서 로그인 포함) 계정에 저장된 개인 키 상태 자동 동기화
+  useEffect(() => {
+    if (!currentUser) {
+      setHasPersonalGeminiKey(false);
+      setPersonalKeyMasked('');
+      setCurrentAiPersonalKeyStatus(false);
+      return;
+    }
+    syncAccountGeminiKeyStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentUser?.id]);
+
+  // 설정 > AI 연동 탭을 열 때마다 개인/서버 AI 잔여 한도 및 계정 키 상태를 최신으로 조회
   useEffect(() => {
     if (!isSettingsOpen || settingsTab !== 'ai') return;
     setAiUsageStats(getAiUsageStats());
-    let cancelled = false;
-    fetch('/api/ai/test-key', {
-      headers: buildAiRequestHeaders(geminiApiKey),
-      cache: 'no-store',
-    })
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (!cancelled && data?.serverQuota) {
-          setServerAiQuota(data.serverQuota);
-        }
-      })
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [isSettingsOpen, settingsTab, currentUser, geminiApiKey]);
+    syncAccountGeminiKeyStatus();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isSettingsOpen, settingsTab, currentUser?.id]);
 
   // 서버 공용 AI 일일 한도 초과 시 자동으로 개인 키 등록 화면(설정 -> AI 연동) 표시
   useEffect(() => {
@@ -1213,8 +1245,9 @@ export default function Home() {
 
     const client = getSupabaseClient();
     if (client) {
-      client.auth.getUser().then(({ data: { user } }) => {
-        const u = user ?? null;
+      client.auth.getSession().then(({ data: { session } }) => {
+        const u = session?.user ?? null;
+        setCurrentAiUserContext(u, session?.access_token ?? null);
         setCurrentUser(u);
         lastLoadedUserIdRef.current = u?.id || null;
         loadData(u, true);
@@ -1228,6 +1261,7 @@ export default function Home() {
         const isUserSwitched = previousUserId !== undefined && previousUserId !== (user?.id || null);
         lastLoadedUserIdRef.current = user?.id || null;
 
+        setCurrentAiUserContext(user, session?.access_token ?? null);
         setCurrentUser(user);
 
         if (event === 'PASSWORD_RECOVERY') {
@@ -1329,11 +1363,8 @@ export default function Home() {
         }
       })();
 
-      const savedGeminiKey = getStoredGeminiKey();
-      if (savedGeminiKey) {
-        setGeminiApiKey(savedGeminiKey);
-        setGeminiKeyInput(savedGeminiKey);
-      }
+      // 브라우저 로컬 스토리지에 남아있던 레거시 개인 Gemini 키 잔여물 즉시 삭제 (계정 서버 암호화 전환)
+      clearLegacyLocalGeminiKeys();
 
       // Vercel 서버 전역 GEMINI_API_KEY 활성화 여부 확인
       fetch('/api/ai/test-key')
@@ -1639,7 +1670,7 @@ export default function Home() {
             findSentenceWithAI(
               result.text,
               w,
-              geminiApiKey,
+              undefined,
               entry.dictResult?.meanings,
               currentSourceImageRef.current || currentSourceImage
             ).then((matchRes) => {
@@ -1726,7 +1757,7 @@ export default function Home() {
     try {
       const res = await fetch('/api/ai/complete-sentence', {
         method: 'POST',
-        headers: buildAiRequestHeaders(geminiApiKey),
+        headers: buildAiRequestHeaders(),
         body: JSON.stringify({ sentence, word }),
       });
       if (res.ok) {
@@ -1768,7 +1799,7 @@ export default function Home() {
     try {
       const res = await fetch('/api/ai/complete-sentence', {
         method: 'POST',
-        headers: buildAiRequestHeaders(geminiApiKey),
+        headers: buildAiRequestHeaders(),
         body: JSON.stringify({
           sentence,
           word,
@@ -1863,7 +1894,7 @@ export default function Home() {
         // AI Vision 분석 (단일 사진은 1.5~2초 초고속 처리, 연속 모드는 2장 문맥 연결)
         const ocrRes = await extractTextWithAI(
           file,
-          geminiApiKey,
+          undefined,
           imgData,
           updatedImages
         );
@@ -1983,7 +2014,7 @@ export default function Home() {
       setIsUrlScraping(true);
       const res = await fetch('/api/scrape-url', {
         method: 'POST',
-        headers: buildAiRequestHeaders(geminiApiKey),
+        headers: buildAiRequestHeaders(),
         body: JSON.stringify({ url: targetUrl }),
       });
 
@@ -2026,7 +2057,7 @@ export default function Home() {
         try {
           const res = await fetch('/api/ai/clean-text', {
             method: 'POST',
-            headers: buildAiRequestHeaders(geminiApiKey),
+            headers: buildAiRequestHeaders(),
             body: JSON.stringify({ rawText: raw }),
           });
           if (res.ok) {
@@ -2219,7 +2250,7 @@ export default function Home() {
           const matchRes = await findSentenceWithAI(
             pageOcrText,
             wordToSearch,
-            geminiApiKey,
+            undefined,
             res.meanings,
             activeImage,
             contextHint
@@ -2470,7 +2501,6 @@ export default function Home() {
     }
     setIsCleaningWithAI(true);
     try {
-      const apiKey = geminiApiKey || getStoredGeminiKey();
       let restoredText = '';
       let detectedMarked: string[] = [];
 
@@ -2484,7 +2514,7 @@ export default function Home() {
 
         const res = await fetch('/api/ai/ocr', {
           method: 'POST',
-          headers: buildAiRequestHeaders(apiKey),
+          headers: buildAiRequestHeaders(),
           body: JSON.stringify({
             base64: activeImg?.base64 || '',
             mimeType: activeImg?.mimeType || 'image/jpeg',
@@ -2525,7 +2555,7 @@ export default function Home() {
       if (!restoredText && pageOcrText.trim()) {
         const cleanRes = await fetch('/api/ai/clean-text', {
           method: 'POST',
-          headers: buildAiRequestHeaders(apiKey),
+          headers: buildAiRequestHeaders(),
           body: JSON.stringify({
             rawText: pageOcrText,
             mode: 'ocr_repair',
@@ -2648,7 +2678,7 @@ export default function Home() {
     try {
       const res = await fetch('/api/translate', {
         method: 'POST',
-        headers: buildAiRequestHeaders(geminiApiKey),
+        headers: buildAiRequestHeaders(),
         body: JSON.stringify({ text: cleanSent }),
       });
       if (res.ok) {
@@ -4017,7 +4047,7 @@ export default function Home() {
                         <Bot className="w-3.5 h-3.5 text-brand-600" />
                         <span>Gemini AI 연동</span>
                       </div>
-                      {geminiApiKey && (
+                      {hasPersonalGeminiKey && (
                         <span className="text-[10px] bg-emerald-100 text-emerald-700 font-bold px-1.5 py-0.5 rounded-full">
                           연동됨
                         </span>
@@ -7172,7 +7202,7 @@ export default function Home() {
               >
                 <Bot className="w-3.5 h-3.5 text-brand-600" />
                 <span>AI 연동</span>
-                {geminiApiKey && (
+                {hasPersonalGeminiKey && (
                   <span className="w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-white" />
                 )}
               </button>
@@ -7404,10 +7434,10 @@ export default function Home() {
                         <Sparkles className="w-3.5 h-3.5 text-slate-700" />
                         <span>Google Gemini AI 비전 & 문맥 분석</span>
                       </h4>
-                      {geminiApiKey || isServerGeminiReady ? (
+                      {hasPersonalGeminiKey || isServerGeminiReady ? (
                         <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2.5 py-0.5 rounded-full flex items-center gap-1">
                           <Check className="w-2.5 h-2.5" />
-                          <span>{geminiApiKey ? '개인 키 연동됨' : '서버 AI 활성화됨 🚀'}</span>
+                          <span>{hasPersonalGeminiKey ? '개인 키 연동됨' : '서버 AI 활성화됨 🚀'}</span>
                         </span>
                       ) : (
                         <span className="text-[10px] bg-slate-200 text-slate-700 font-bold px-2 py-0.5 rounded-full">
@@ -7438,11 +7468,13 @@ export default function Home() {
                           </button>
                         </div>
                         <p className="text-[11px] text-amber-900/90 leading-relaxed pl-5.5">
-                          아래 안내를 따라 본인 무료 Google API 키를 등록(30초 완료)하시면 <strong>일 1,500회 + 비상 서버 100회</strong>로 바로 이어서 사용하실 수 있습니다.
+                          {currentUser
+                            ? '아래 안내를 따라 본인 무료 Google API 키를 계정에 등록(30초 완료)하시면 일 1,500회 + 비상 서버 100회로 바로 이어서 사용하실 수 있습니다.'
+                            : '로그인하시면 기본 서버 AI 한도가 일 50회로 늘어나고, 본인 무료 Google API 키를 계정에 암호화 등록해 일 1,500회 + 비상 서버 100회까지 모든 기기에서 이용하실 수 있습니다.'}
                         </p>
                       </div>
                     )}
-                    {isServerGeminiReady && !geminiApiKey && (
+                    {isServerGeminiReady && !hasPersonalGeminiKey && (
                       <div className="p-2.5 bg-emerald-50/90 rounded-xl border border-emerald-200 text-[11px] text-emerald-900 font-medium leading-relaxed">
                         ✨ <strong>서버 전역 Gemini AI가 활성화되어 있습니다.</strong><br />
                         Vercel 환경 변수가 감지되어 개인 키를 입력하지 않아도 책 사진 고정밀 OCR 및 밑줄/동그라미 단어 자동 등록이 모든 기기에서 즉시 작동합니다.
@@ -7465,28 +7497,28 @@ export default function Home() {
                         <span className="text-[10px] font-semibold text-indigo-700/80">매일 자정(KST) 초기화</span>
                       </div>
                       <div className="grid grid-cols-1 gap-1.5 text-[11px]">
-                        <div className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg border ${!currentUser && !geminiApiKey ? 'bg-white border-indigo-400 shadow-2xs font-bold text-indigo-950' : 'bg-white/70 border-indigo-100 text-slate-700'}`}>
+                        <div className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg border ${!currentUser && !hasPersonalGeminiKey ? 'bg-white border-indigo-400 shadow-2xs font-bold text-indigo-950' : 'bg-white/70 border-indigo-100 text-slate-700'}`}>
                           <span className="flex items-center gap-1.5">
                             <span>비로그인 (게스트)</span>
-                            {!currentUser && !geminiApiKey && (
+                            {!currentUser && !hasPersonalGeminiKey && (
                               <span className="text-[9.5px] px-1.5 py-0.5 rounded-full bg-indigo-600 text-white font-bold">현재 적용</span>
                             )}
                           </span>
                           <span className="font-bold text-slate-800 whitespace-nowrap">서버 AI 20회/일</span>
                         </div>
-                        <div className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg border ${currentUser && !geminiApiKey ? 'bg-white border-indigo-400 shadow-2xs font-bold text-indigo-950' : 'bg-white/70 border-indigo-100 text-slate-700'}`}>
+                        <div className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg border ${currentUser && !hasPersonalGeminiKey ? 'bg-white border-indigo-400 shadow-2xs font-bold text-indigo-950' : 'bg-white/70 border-indigo-100 text-slate-700'}`}>
                           <span className="flex items-center gap-1.5">
                             <span>로그인 회원 (키 미등록)</span>
-                            {currentUser && !geminiApiKey && (
+                            {currentUser && !hasPersonalGeminiKey && (
                               <span className="text-[9.5px] px-1.5 py-0.5 rounded-full bg-indigo-600 text-white font-bold">현재 적용</span>
                             )}
                           </span>
                           <span className="font-bold text-slate-800 whitespace-nowrap">서버 AI 50회/일</span>
                         </div>
-                        <div className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg border ${geminiApiKey ? 'bg-emerald-50 border-emerald-400 shadow-2xs font-bold text-emerald-950' : 'bg-white/70 border-indigo-100 text-slate-700'}`}>
+                        <div className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg border ${hasPersonalGeminiKey ? 'bg-emerald-50 border-emerald-400 shadow-2xs font-bold text-emerald-950' : 'bg-white/70 border-indigo-100 text-slate-700'}`}>
                           <span className="flex items-center gap-1.5">
                             <span>개인 키 등록 회원</span>
-                            {geminiApiKey && (
+                            {hasPersonalGeminiKey && (
                               <span className="text-[9.5px] px-1.5 py-0.5 rounded-full bg-emerald-600 text-white font-bold">현재 적용</span>
                             )}
                           </span>
@@ -7497,7 +7529,7 @@ export default function Home() {
                       </div>
                       {/* 통합 AI 잔여 한도 게이지바 (개인 키: 초록 / 서버 AI: 하늘 · 잔여 많으면 가득, 다 쓰면 비움) */}
                       {(() => {
-                        const fallbackLimit = geminiApiKey ? 100 : currentUser ? 50 : 20;
+                        const fallbackLimit = hasPersonalGeminiKey ? 100 : currentUser ? 50 : 20;
                         const isQuotaAdmin = Boolean(serverAiQuota?.isAdmin || isAdmin);
                         const serverLimit = serverAiQuota?.limit && !isQuotaAdmin ? serverAiQuota.limit : fallbackLimit;
                         const serverUsed = serverAiQuota?.used ?? 0;
@@ -7506,9 +7538,9 @@ export default function Home() {
                           ? 100
                           : Math.min(100, Math.max(0, Math.round((serverRemaining / Math.max(1, serverLimit)) * 100)));
 
-                        const personalRemaining = geminiApiKey ? aiUsageStats.remainingCount : 0;
+                        const personalRemaining = hasPersonalGeminiKey ? aiUsageStats.remainingCount : 0;
                         const personalLimit = aiUsageStats.dailyLimit || 1500;
-                        const personalRemainingPercent = geminiApiKey
+                        const personalRemainingPercent = hasPersonalGeminiKey
                           ? Math.min(100, Math.max(0, aiUsageStats.remainingPercent))
                           : 0;
 
@@ -7521,7 +7553,7 @@ export default function Home() {
                                   <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
                                   <span>개인 키 잔여</span>
                                 </span>
-                                {geminiApiKey ? (
+                                {hasPersonalGeminiKey ? (
                                   <span className="font-bold text-emerald-700">
                                     {personalRemaining.toLocaleString()} / {personalLimit.toLocaleString()}회
                                     <span className="text-[10px] font-semibold text-emerald-600/80 ml-1">({personalRemainingPercent}%)</span>
@@ -7569,101 +7601,151 @@ export default function Home() {
                     </div>
                   </div>
 
-                  {/* API Key Form */}
+                  {/* API Key Form (로그인 회원 전용 · 계정별 서버 AES-256-GCM 암호화 저장) */}
                   <div className="space-y-2.5">
-                    <div className="space-y-1">
-                      <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                        <Key className="w-3.5 h-3.5 text-brand-600 shrink-0" />
-                        <span>Gemini API Key 등록 (신용카드 불필요 · 평생 무료)</span>
-                      </label>
-                      <div className="flex justify-end">
-                        <a
-                          href="https://aistudio.google.com/app/apikey"
-                          target="_blank"
-                          rel="noreferrer"
-                          className="inline-flex items-center gap-1 text-[11px] text-brand-600 hover:text-brand-800 font-bold underline"
-                        >
-                          <span>무료 키 발급 (Google)</span>
-                          <ExternalLink className="w-3 h-3 shrink-0" />
-                        </a>
-                      </div>
-                      <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200/80 text-[11px] text-slate-600 space-y-1 leading-relaxed">
-                        <p className="font-bold text-slate-700">📌 무료 API 키 발급 방법 (30초 완료)</p>
-                        <ol className="list-decimal list-inside space-y-0.5 text-[10.5px]">
-                          <li>위 <strong>무료 키 발급 (Google)</strong>을 눌러 Google 계정으로 로그인합니다.</li>
-                          <li><strong>API 키 만들기 (Create API key)</strong> 버튼을 눌러 키를 생성합니다.</li>
-                          <li>생성된 키를 복사해 아래 칸에 붙여넣고 <strong>[연동 및 테스트]</strong>를 누르면 완료!</li>
-                        </ol>
-                      </div>
-                    </div>
-
-                    <div className="flex items-center gap-2 w-full min-w-0">
-                      <input
-                        type="password"
-                        value={geminiKeyInput}
-                        onChange={(e) => {
-                          setGeminiKeyInput(e.target.value);
-                          setKeyTestStatus(null);
-                        }}
-                        placeholder="AIzaSy... (발급받은 키를 붙여넣으세요)"
-                        className="flex-1 min-w-0 w-full px-3 py-2 text-xs font-mono bg-slate-50 text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 font-semibold shadow-2xs"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => handleSaveAndTestAiKey()}
-                        disabled={isTestingKey}
-                        className="bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs px-3 py-2 rounded-xl shadow-md transition shrink-0 whitespace-nowrap flex items-center gap-1 disabled:opacity-50 cursor-pointer"
-                      >
-                        {isTestingKey ? (
-                          <>
-                            <RotateCw className="w-3.5 h-3.5 animate-spin shrink-0" />
-                            <span>검증중...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Check className="w-3.5 h-3.5 shrink-0" />
-                            <span>연동 및 테스트</span>
-                          </>
-                        )}
-                      </button>
-                    </div>
-
-                    {/* Status Message */}
-                    {keyTestStatus && (
-                      <div
-                        className={`p-3 rounded-xl border text-xs font-bold flex items-center gap-2 ${
-                          keyTestStatus.ok
-                            ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
-                            : 'bg-rose-50 border-rose-300 text-rose-800'
-                        }`}
-                      >
-                        {keyTestStatus.ok ? (
-                          <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                        ) : (
-                          <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-                        )}
-                        <span>{keyTestStatus.message}</span>
-                      </div>
-                    )}
-
-                    {/* Unlink Button */}
-                    {geminiApiKey && (
-                      <div className="pt-2 border-t border-slate-100 flex items-center justify-between text-[11px] text-slate-500">
-                        <span>현재 키가 등록되어 작동 중입니다.</span>
+                    {!currentUser ? (
+                      <div className="p-4 bg-slate-50 rounded-2xl border border-slate-200/90 space-y-3 text-center">
+                        <div className="w-10 h-10 rounded-2xl bg-indigo-100 text-indigo-600 flex items-center justify-center mx-auto">
+                          <Key className="w-5 h-5" />
+                        </div>
+                        <div className="space-y-1">
+                          <p className="text-xs font-extrabold text-slate-900">
+                            개인 API 키 등록은 로그인 후 이용할 수 있습니다
+                          </p>
+                          <p className="text-[11px] text-slate-600 leading-relaxed">
+                            로그인 후 등록하신 개인 Gemini API 키는 브라우저에 저장되지 않고,
+                            <strong> 계정별로 서버에 AES-256-GCM 암호화 보관</strong>되어 PC·모바일 어느 기기에서 로그인해도 자동으로 동기화됩니다.
+                          </p>
+                        </div>
                         <button
                           type="button"
                           onClick={() => {
-                            setStoredGeminiKey('');
-                            setGeminiApiKey('');
-                            setGeminiKeyInput('');
-                            setKeyTestStatus(null);
-                            triggerToast('AI 키 해제됨', '기본 로컬 모드로 전환되었습니다.');
+                            setIsSettingsOpen(false);
+                            setAuthMode('login');
+                            setIsAuthModalOpen(true);
                           }}
-                          className="text-rose-500 hover:underline font-semibold cursor-pointer"
+                          className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-xl shadow-sm transition cursor-pointer"
                         >
-                          연동 해제
+                          로그인하고 개인 키 등록하기
                         </button>
                       </div>
+                    ) : (
+                      <>
+                        {hasPersonalGeminiKey && (
+                          <div className="p-3 bg-emerald-50/80 rounded-2xl border border-emerald-200/90 space-y-2">
+                            <div className="flex items-center justify-between gap-2">
+                              <div className="flex items-center gap-1.5 text-xs font-extrabold text-emerald-900">
+                                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                                <span>계정에 암호화 저장됨 · 모든 기기 자동 동기화</span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => handleClearPersonalAiKey()}
+                                disabled={isDeletingKey}
+                                className="text-[11px] text-rose-600 hover:text-rose-700 hover:underline font-bold cursor-pointer disabled:opacity-50 shrink-0"
+                              >
+                                {isDeletingKey ? '삭제 중...' : '연동 해제'}
+                              </button>
+                            </div>
+                            <div className="flex items-center justify-between gap-2 bg-white/90 px-3 py-2 rounded-xl border border-emerald-200/70 text-[11px]">
+                              <span className="font-mono font-bold text-slate-700 truncate">
+                                {personalKeyMasked || 'AIzaSy••••••••••••••••••••'}
+                              </span>
+                              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full shrink-0">
+                                AES-256-GCM
+                              </span>
+                            </div>
+                            <p className="text-[10.5px] text-emerald-800/80 leading-relaxed">
+                              키는 브라우저(로컬)에 저장되지 않으며, 서버에 암호화되어 보관됩니다. 새 키로 교체하려면 아래에 새 키를 입력해 주세요.
+                            </p>
+                          </div>
+                        )}
+
+                        <div className="space-y-1">
+                          <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                            <Key className="w-3.5 h-3.5 text-brand-600 shrink-0" />
+                            <span>
+                              {hasPersonalGeminiKey
+                                ? 'Gemini API Key 교체 (계정 암호화 저장)'
+                                : 'Gemini API Key 등록 (신용카드 불필요 · 평생 무료)'}
+                            </span>
+                          </label>
+                          <div className="flex justify-end">
+                            <a
+                              href="https://aistudio.google.com/app/apikey"
+                              target="_blank"
+                              rel="noreferrer"
+                              className="inline-flex items-center gap-1 text-[11px] text-brand-600 hover:text-brand-800 font-bold underline"
+                            >
+                              <span>무료 키 발급 (Google)</span>
+                              <ExternalLink className="w-3 h-3 shrink-0" />
+                            </a>
+                          </div>
+                          {!hasPersonalGeminiKey && (
+                            <div className="p-2.5 bg-slate-50 rounded-xl border border-slate-200/80 text-[11px] text-slate-600 space-y-1 leading-relaxed">
+                              <p className="font-bold text-slate-700">📌 무료 API 키 발급 및 계정 동기화 (30초 완료)</p>
+                              <ol className="list-decimal list-inside space-y-0.5 text-[10.5px]">
+                                <li>위 <strong>무료 키 발급 (Google)</strong>을 눌러 Google 계정으로 로그인합니다.</li>
+                                <li><strong>API 키 만들기 (Create API key)</strong> 버튼을 눌러 키를 생성합니다.</li>
+                                <li>생성된 키를 복사해 아래 칸에 붙여넣고 <strong>[연동 및 테스트]</strong>를 누르면 계정에 안전하게 암호화(AES-256-GCM) 저장됩니다.</li>
+                              </ol>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex items-center gap-2 w-full min-w-0">
+                          <input
+                            type="password"
+                            value={geminiKeyInput}
+                            onChange={(e) => {
+                              setGeminiKeyInput(e.target.value);
+                              setKeyTestStatus(null);
+                            }}
+                            placeholder={
+                              hasPersonalGeminiKey
+                                ? '새 API 키로 교체할 경우에만 입력 (AIzaSy...)'
+                                : 'AIzaSy... (발급받은 키를 붙여넣으세요)'
+                            }
+                            className="flex-1 min-w-0 w-full px-3 py-2 text-xs font-mono bg-slate-50 text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 font-semibold shadow-2xs"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => handleSaveAndTestAiKey()}
+                            disabled={isTestingKey || !geminiKeyInput.trim()}
+                            className="bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs px-3 py-2 rounded-xl shadow-md transition shrink-0 whitespace-nowrap flex items-center gap-1 disabled:opacity-50 cursor-pointer"
+                          >
+                            {isTestingKey ? (
+                              <>
+                                <RotateCw className="w-3.5 h-3.5 animate-spin shrink-0" />
+                                <span>검증중...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Check className="w-3.5 h-3.5 shrink-0" />
+                                <span>{hasPersonalGeminiKey ? '키 교체' : '연동 및 테스트'}</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
+
+                        {/* Status Message */}
+                        {keyTestStatus && (
+                          <div
+                            className={`p-3 rounded-xl border text-xs font-bold flex items-center gap-2 ${
+                              keyTestStatus.ok
+                                ? 'bg-emerald-50 border-emerald-300 text-emerald-800'
+                                : 'bg-rose-50 border-rose-300 text-rose-800'
+                            }`}
+                          >
+                            {keyTestStatus.ok ? (
+                              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                            ) : (
+                              <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
+                            )}
+                            <span>{keyTestStatus.message}</span>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 </div>

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { cleanArticleTextHeuristic } from '@/lib/cleanText';
 import { cleanOcrText } from '@/lib/ocr';
-import { callGeminiWithFallback, checkRateLimit, resolveServerGeminiKey } from '@/lib/geminiServer';
+import { callGeminiWithFallback, checkRateLimit, resolveServerGeminiKeyAsync } from '@/lib/geminiServer';
 
 export const runtime = 'nodejs';
 export const maxDuration = 60;
@@ -27,7 +27,7 @@ export async function POST(req: NextRequest) {
       ? { cleanedText: cleanOcrText(rawText), removedCount: 1 }
       : cleanArticleTextHeuristic(rawText);
 
-    const apiKey = resolveServerGeminiKey(req);
+    const apiKey = await resolveServerGeminiKeyAsync(req);
 
     // AI 키가 없으면 휴리스틱 정제 결과 반환
     if (!apiKey) {

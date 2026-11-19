@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { callGeminiWithFallback, checkRateLimit, resolveServerGeminiKey } from '@/lib/geminiServer';
+import { callGeminiWithFallback, checkRateLimit, resolveServerGeminiKeyAsync } from '@/lib/geminiServer';
 
 export const runtime = 'nodejs';
 export const maxDuration = 30;
@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
     }
 
     // 2. Gemini AI Fallback (Google Translate 실패 시)
-    const apiKey = resolveServerGeminiKey(req);
+    const apiKey = await resolveServerGeminiKeyAsync(req);
     if (apiKey) {
       const prompt = `Translate the following English context sentence into natural, fluent Korean.
 Context:

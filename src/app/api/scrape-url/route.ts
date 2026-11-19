@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import dns from 'dns/promises';
 import { cleanArticleTextHeuristic } from '@/lib/cleanText';
-import { callGeminiWithFallback, checkRateLimit, resolveServerGeminiKey } from '@/lib/geminiServer';
+import { callGeminiWithFallback, checkRateLimit, resolveServerGeminiKeyAsync } from '@/lib/geminiServer';
 
 export const runtime = 'nodejs';
 
@@ -404,7 +404,7 @@ export async function POST(req: NextRequest) {
     // 만약 규칙 기반 추출로 충분한 본문(80자 이상)을 찾았다면, 느린 AI 호출 없이 즉시 반환! (0.3~0.7초 만에 완료)
     if (!finalCleanText || finalCleanText.length < 80) {
       // 규칙 기반 추출 실패 시(특수한 SPA 구조 등)에만 초고속 Gemini Lite 모델로 긴급 복구
-      const apiKey = resolveServerGeminiKey(req);
+      const apiKey = await resolveServerGeminiKeyAsync(req);
 
       if (apiKey && html.length > 200) {
         try {
