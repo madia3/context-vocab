@@ -6714,10 +6714,10 @@ export default function Home() {
                       </div>
                     ) : (
                       /* 정답 선택 후: 선지들은 사라지고 컴팩트한 결과 배너 + 원문 문맥 + 하단 고정 다음 문제 버튼 표시 */
-                      <div className="mt-3 space-y-2.5 animate-fade-in w-full pb-20 sm:pb-0">
+                      <div className="mt-5 space-y-2.5 animate-fade-in w-full pb-20 sm:pb-0">
                         {/* Status Result Banner (Slim) */}
                         <div
-                          className={`px-3.5 py-2.5 rounded-xl flex items-center justify-between gap-2 text-white shadow-sm ${
+                          className={`min-h-[60px] sm:min-h-[64px] px-3.5 py-2 rounded-xl flex items-center justify-between gap-2 text-white shadow-sm ${
                             quizAnswerState.isCorrect ? 'bg-emerald-500' : 'bg-rose-500'
                           }`}
                         >
