@@ -13,7 +13,7 @@ let activeSpeechId = 0;
 let cachedVoices: SpeechSynthesisVoice[] = [];
 let currentTtsRate: number = 1.0;
 let currentTtsGender: TtsGender = 'random';
-let currentTtsBackgroundPlay: boolean = true;
+let currentTtsBackgroundPlay: boolean = false;
 let lastRandomVariantKey: string = '';
 
 export function setTtsBackgroundPlay(enabled: boolean) {

@@ -1,2 +1,2 @@
-export const APP_BUILD_VERSION = 'v2026.11.19-47 (11/19 23:06 KST)';
-export const APP_BUILD_SUMMARY = '발음 음성(TTS) 악센트 선택을 드롭다운에서 3분할 버튼(🇺🇸 미국식 / 🇬🇧 영국식 / 🎲 랜덤)으로 통일';
+export const APP_BUILD_VERSION = 'v2026.11.19-48 (11/19 23:09 KST)';
+export const APP_BUILD_SUMMARY = '다른 탭·백그라운드에서도 계속 듣기 옵션 기본값을 OFF로 변경';

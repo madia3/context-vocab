@@ -668,8 +668,8 @@ export default function Home() {
   const [ttsVoice, setTtsVoice] = useState('random');
   const [ttsGender, setTtsGender] = useState<TtsGender>('random');
   const [ttsRate, setTtsRate] = useState<number>(1.0);
-  const [ttsBackgroundPlay, setTtsBackgroundPlayState] = useState<boolean>(true);
-  const ttsBackgroundPlayRef = useRef<boolean>(true);
+  const [ttsBackgroundPlay, setTtsBackgroundPlayState] = useState<boolean>(false);
+  const ttsBackgroundPlayRef = useRef<boolean>(false);
   const [hasPersonalGeminiKey, setHasPersonalGeminiKey] = useState(false);
   const [personalKeyMasked, setPersonalKeyMasked] = useState('');
   const [personalKeyQuota, setPersonalKeyQuota] = useState<{
