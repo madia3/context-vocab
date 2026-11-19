@@ -3900,7 +3900,7 @@ export default function Home() {
     <>
       {/* Header (Mobile First Clean 2-Tier Structure) */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-30 shadow-xs">
-        <div className="max-w-5xl mx-auto px-4 py-2.5 flex items-center justify-between gap-3">
+        <div className="max-w-2xl mx-auto px-4 py-2.5 flex items-center justify-between gap-3">
           {/* Logo */}
           <div className="flex items-center gap-2.5">
             <div className="w-8 h-8 rounded-xl bg-white shadow-xs ring-1 ring-slate-200/80 overflow-hidden flex items-center justify-center p-0.5 select-none shrink-0">
@@ -4269,7 +4269,7 @@ export default function Home() {
               : 'bg-blue-500/10 text-blue-900 border-blue-200'
           }`}
         >
-          <div className="max-w-5xl mx-auto flex items-center justify-between gap-3 min-w-0">
+          <div className="max-w-2xl mx-auto flex items-center justify-between gap-3 min-w-0">
             <div className="flex items-center gap-2 min-w-0">
               <span className="text-sm shrink-0">
                 {announcement.type === 'warning' ? '⚠️' : announcement.type === 'update' ? '🚀' : '💡'}
@@ -4294,7 +4294,7 @@ export default function Home() {
         onTouchMove={handleTouchMove}
         onTouchEnd={handleTouchEnd}
         onTouchCancel={handleTouchEnd}
-        className="max-w-5xl mx-auto w-full px-3.5 sm:px-4 py-3 sm:py-4 flex-1 overflow-x-hidden touch-pan-y"
+        className="max-w-2xl mx-auto w-full px-3.5 sm:px-4 py-3 sm:py-4 flex-1 overflow-x-hidden touch-pan-y"
       >
         {/* 3-Tab Bar (Now in Scroll Area - Scrolls naturally with content & Swipeable) */}
         <div className="mb-3">
@@ -6267,7 +6267,7 @@ export default function Home() {
                 </div>
               </div>
             ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 gap-3.5">
                 {filteredVocabulary.map((item) => {
                   const qCount = item.quizCount || 0;
                   const cCount = item.correctCount || 0;
@@ -7042,7 +7042,7 @@ export default function Home() {
 
       {/* Footer */}
       <footer className="py-6 border-t border-slate-200/80 bg-white text-center text-xs text-slate-500">
-        <div className="max-w-5xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
+        <div className="max-w-2xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
           <div className="flex flex-col sm:flex-row items-center gap-1.5 sm:gap-3 text-slate-500">
             <p>© {new Date().getFullYear()} 원서. 문장. 단어 (divivid). All rights reserved.</p>
             <span className="text-[11px] font-mono text-indigo-700 font-bold bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
