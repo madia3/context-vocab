@@ -274,6 +274,8 @@ export default function Home() {
   const [selectedTargetBooks, setSelectedTargetBooks] = useState<string[]>(['원서 첫걸음: 어린 왕자']);
   const [isCustomBook, setIsCustomBook] = useState(false);
   const [customBookInput, setCustomBookInput] = useState('');
+  const [isAddBookDropdownOpen, setIsAddBookDropdownOpen] = useState(false);
+  const addBookDropdownRef = useRef<HTMLDivElement>(null);
   // 단어장별 최근 사용 시각(타임스탬프) 기록
   const [bookUsageMap, setBookUsageMap] = useState<Record<string, number>>({});
   // 단어 목록 랜덤 순서 재배치를 위한 셔플 키
@@ -3571,6 +3573,21 @@ export default function Home() {
     };
   }, [isBookSelectorOpen]);
 
+  // 바깥 클릭 시 단어 등록 탭 단어장 드롭다운 닫기
+  useEffect(() => {
+    const handleClickOutside = (e: MouseEvent) => {
+      if (addBookDropdownRef.current && !addBookDropdownRef.current.contains(e.target as Node)) {
+        setIsAddBookDropdownOpen(false);
+      }
+    };
+    if (isAddBookDropdownOpen) {
+      document.addEventListener('mousedown', handleClickOutside);
+    }
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, [isAddBookDropdownOpen]);
+
 
   const currentQuizItem = quizList[currentQuizIndex];
 
@@ -4055,119 +4072,159 @@ export default function Home() {
               }`}
             >
               <section className="max-w-2xl mx-auto w-full min-w-0 space-y-3 sm:space-y-4">
-                {/* Book Title Selection / Input (단어장 세로 리스트) */}
-                <div className="bg-white p-3.5 sm:p-4 rounded-2xl border border-slate-200 shadow-xs space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                {/* Book Title Selection / Input (단어장 드롭다운 단일 선택 - 화면 공간 최소화) */}
+                <div className="bg-white p-3 sm:p-3.5 rounded-2xl border border-slate-200 shadow-xs space-y-2 relative" ref={addBookDropdownRef}>
+                  <div className="flex items-center justify-between gap-2">
+                    <label className="text-xs font-bold text-slate-700 flex items-center gap-1.5 shrink-0">
                       <BookMarked className="w-3.5 h-3.5 text-indigo-600" />
-                      <span>저장할 단어장 선택 <span className="text-rose-500">*</span></span>
+                      <span>저장할 단어장 <span className="text-rose-500">*</span></span>
                     </label>
-                    <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100 truncate max-w-[180px]">
-                      {selectedTargetBooks[0] || inputBookTitle || '단어장 선택됨'}
+                    <span className="text-[10.5px] text-slate-400 font-medium">
+                      총 {availableBookTitles.length}개 단어장
                     </span>
                   </div>
 
-                  {/* 세로 목록형 단일 선택 단어장 리스트 */}
-                  <div className="space-y-1.5 max-h-60 overflow-y-auto pr-0.5">
-                    {availableBookTitles.map((title) => {
-                      const isSelected = (selectedTargetBooks[0] || inputBookTitle) === title;
-                      const count = vocabulary.filter((v) => (v.bookTitle || '기본 단어장') === title).length;
-                      return (
-                        <button
-                          key={title}
-                          type="button"
-                          onClick={() => handleToggleTargetBook(title)}
-                          className={`w-full p-2.5 rounded-xl border text-xs font-bold flex items-center justify-between transition cursor-pointer text-left ${
-                            isSelected
-                              ? 'bg-indigo-50/90 border-indigo-400 text-indigo-950 shadow-2xs'
-                              : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-100 hover:border-slate-300'
-                          }`}
-                        >
-                          <div className="flex items-center gap-2.5 min-w-0">
-                            <div
-                              className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 border-2 transition ${
-                                isSelected
-                                  ? 'border-indigo-600 bg-indigo-600'
-                                  : 'border-slate-300 bg-white'
-                              }`}
-                            >
-                              {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
-                            </div>
-                            <span className="truncate">{title}</span>
-                          </div>
-                          <span className={`text-[11px] shrink-0 font-medium ${isSelected ? 'text-indigo-600 font-bold' : 'text-slate-400'}`}>
-                            {count}단어
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
-
-                  {/* 새 단어장 추가 버튼 및 직접 입력란 */}
-                  <div className="pt-0.5">
-                    {isCustomBook ? (
-                      <div className="flex items-center gap-2 animate-fade-in">
-                        <input
-                          type="text"
-                          value={customBookInput}
-                          onChange={(e) => setCustomBookInput(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') {
-                              e.preventDefault();
-                              const trimmed = customBookInput.trim();
-                              if (trimmed) {
-                                handleSwitchBook(trimmed);
-                                setIsCustomBook(false);
-                                setCustomBookInput('');
-                              }
-                            }
-                          }}
-                          placeholder="새 단어장 이름 입력 (예: 코스모스, 토익 필수)"
-                          className="flex-1 px-3 py-2 text-xs bg-white text-slate-900 border-2 border-indigo-500 rounded-xl focus:outline-none font-bold"
-                          autoFocus
-                        />
-                        <button
-                          type="button"
-                          onClick={() => {
+                  {isCustomBook ? (
+                    <div className="flex items-center gap-2 animate-fade-in">
+                      <input
+                        type="text"
+                        value={customBookInput}
+                        onChange={(e) => setCustomBookInput(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') {
+                            e.preventDefault();
                             const trimmed = customBookInput.trim();
                             if (trimmed) {
                               handleSwitchBook(trimmed);
                               setIsCustomBook(false);
                               setCustomBookInput('');
                             }
-                          }}
-                          disabled={!customBookInput.trim()}
-                          className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition shrink-0 cursor-pointer shadow-xs"
-                        >
-                          추가
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setIsCustomBook(false);
-                            setCustomBookInput('');
-                          }}
-                          className="px-2.5 py-2 text-xs text-slate-500 hover:text-slate-800 transition cursor-pointer shrink-0"
-                        >
-                          취소
-                        </button>
-                      </div>
-                    ) : (
+                          }
+                        }}
+                        placeholder="새 단어장 이름 입력 (예: 코스모스, 토익 필수)"
+                        className="flex-1 px-3 py-2 text-xs bg-white text-slate-900 border-2 border-indigo-500 rounded-xl focus:outline-none font-bold"
+                        autoFocus
+                      />
                       <button
                         type="button"
-                        onClick={() => setIsCustomBook(true)}
-                        className="w-full py-2 px-3 border border-dashed border-slate-300 hover:border-indigo-400 hover:bg-indigo-50/50 text-slate-600 hover:text-indigo-700 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition cursor-pointer"
+                        onClick={() => {
+                          const trimmed = customBookInput.trim();
+                          if (trimmed) {
+                            handleSwitchBook(trimmed);
+                            setIsCustomBook(false);
+                            setCustomBookInput('');
+                          }
+                        }}
+                        disabled={!customBookInput.trim()}
+                        className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white text-xs font-bold rounded-xl transition shrink-0 cursor-pointer shadow-xs"
                       >
-                        <Plus className="w-3.5 h-3.5 text-indigo-600" />
-                        <span>+ 새 단어장 추가하기</span>
+                        추가
                       </button>
-                    )}
-                  </div>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsCustomBook(false);
+                          setCustomBookInput('');
+                        }}
+                        className="px-2.5 py-2 text-xs text-slate-500 hover:text-slate-800 transition cursor-pointer shrink-0"
+                      >
+                        취소
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="relative">
+                      {/* 닫힘 상태: 선택된 단어장 1개만 표시하는 컴팩트 드롭다운 트리거 */}
+                      {(() => {
+                        const activeTitle = selectedTargetBooks[0] || inputBookTitle || '기본 단어장';
+                        const activeCount = vocabulary.filter((v) => (v.bookTitle || '기본 단어장') === activeTitle).length;
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => setIsAddBookDropdownOpen((prev) => !prev)}
+                            className="w-full px-3 py-2.5 bg-slate-50 hover:bg-indigo-50/60 text-slate-900 border border-slate-200 hover:border-indigo-300 rounded-xl transition flex items-center justify-between gap-2 cursor-pointer text-left shadow-2xs"
+                          >
+                            <div className="flex items-center gap-2 min-w-0">
+                              <BookOpen className="w-4 h-4 text-indigo-600 shrink-0" />
+                              <span className="text-xs font-extrabold text-slate-900 truncate">
+                                {activeTitle}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-1.5 shrink-0">
+                              <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">
+                                {activeCount}단어
+                              </span>
+                              <ChevronDown
+                                className={`w-4 h-4 text-slate-500 transition-transform duration-200 ${
+                                  isAddBookDropdownOpen ? 'rotate-180 text-indigo-600' : ''
+                                }`}
+                              />
+                            </div>
+                          </button>
+                        );
+                      })()}
 
-                  {selectedTargetBooks.length > 1 && (
-                    <p className="text-[11px] text-indigo-600 font-medium flex items-center gap-1 pt-0.5">
-                      <span>💡 선택한 {selectedTargetBooks.length}개 단어장에 동일 단어가 동시에 저장/병합됩니다.</span>
-                    </p>
+                      {/* 열림 상태: 클릭 시 펼쳐지는 단일 선택 드롭다운 목록 */}
+                      {isAddBookDropdownOpen && (
+                        <div className="absolute left-0 right-0 top-full mt-1.5 z-40 bg-white border border-slate-200 rounded-2xl shadow-xl overflow-hidden divide-y divide-slate-100 animate-fade-in">
+                          <div className="max-h-60 overflow-y-auto p-1.5 space-y-1">
+                            {availableBookTitles.map((title) => {
+                              const isSelected = (selectedTargetBooks[0] || inputBookTitle) === title;
+                              const count = vocabulary.filter((v) => (v.bookTitle || '기본 단어장') === title).length;
+                              return (
+                                <button
+                                  key={title}
+                                  type="button"
+                                  onClick={() => {
+                                    handleToggleTargetBook(title);
+                                    setIsAddBookDropdownOpen(false);
+                                  }}
+                                  className={`w-full px-3 py-2 rounded-xl text-xs font-bold flex items-center justify-between transition cursor-pointer text-left ${
+                                    isSelected
+                                      ? 'bg-indigo-50 text-indigo-950'
+                                      : 'hover:bg-slate-50 text-slate-700'
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-2 min-w-0">
+                                    <div
+                                      className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 border-2 transition ${
+                                        isSelected
+                                          ? 'border-indigo-600 bg-indigo-600'
+                                          : 'border-slate-300 bg-white'
+                                      }`}
+                                    >
+                                      {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                                    </div>
+                                    <span className="truncate">{title}</span>
+                                  </div>
+                                  <span
+                                    className={`text-[11px] shrink-0 font-medium ${
+                                      isSelected ? 'text-indigo-600 font-bold' : 'text-slate-400'
+                                    }`}
+                                  >
+                                    {count}단어
+                                  </span>
+                                </button>
+                              );
+                            })}
+                          </div>
+
+                          {/* 드롭다운 하단: 새 단어장 추가 버튼 */}
+                          <div className="p-1.5 bg-slate-50">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setIsAddBookDropdownOpen(false);
+                                setIsCustomBook(true);
+                              }}
+                              className="w-full py-2 px-3 bg-white hover:bg-indigo-50 border border-dashed border-slate-300 hover:border-indigo-400 text-slate-700 hover:text-indigo-700 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition cursor-pointer"
+                            >
+                              <Plus className="w-3.5 h-3.5 text-indigo-600" />
+                              <span>새 단어장 추가하기</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
 
