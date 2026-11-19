@@ -7280,30 +7280,6 @@ export default function Home() {
               {/* TAB 2: Google Gemini AI 연동 */}
               {settingsTab === 'ai' && (
                 <div className="space-y-4 animate-fade-in">
-                  {/* Admin Shortcut Banner */}
-                  {isAdmin && (
-                    <div className="p-3 bg-gradient-to-r from-purple-50 via-indigo-50 to-purple-50 rounded-2xl border border-purple-200 flex items-center justify-between gap-2.5 shadow-2xs">
-                      <div className="flex items-center gap-2 min-w-0">
-                        <span className="text-base shrink-0">👑</span>
-                        <div className="min-w-0 text-[11px] leading-tight">
-                          <span className="font-bold text-purple-900 block">
-                            최고 관리자 계정 ({currentUser?.email}) 인증됨
-                          </span>
-                          <span className="text-purple-700 text-[10.5px]">
-                            Vercel 서버 전역 API 키 실시간 사용량 및 핑 진단이 활성화되어 있습니다.
-                          </span>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => setSettingsTab('admin')}
-                        className="px-2.5 py-1.5 bg-purple-600 hover:bg-purple-700 text-white font-bold text-[11px] rounded-xl shrink-0 transition shadow-xs cursor-pointer flex items-center gap-1"
-                      >
-                        <span>서버 관제 열기 →</span>
-                      </button>
-                    </div>
-                  )}
-
                   {/* Status Banner */}
                   <div className="bg-brand-50/70 rounded-2xl p-4 border border-brand-200/80 space-y-2 text-xs">
                     <div className="flex items-center justify-between">
@@ -7341,24 +7317,26 @@ export default function Home() {
                   </div>
 
                   {/* API Key Form */}
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between">
+                  <div className="space-y-2.5">
+                    <div className="space-y-1">
                       <label className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                        <Key className="w-3.5 h-3.5 text-brand-600" />
+                        <Key className="w-3.5 h-3.5 text-brand-600 shrink-0" />
                         <span>Gemini API Key 등록 (신용카드 불필요 · 평생 무료)</span>
                       </label>
-                      <a
-                        href="https://aistudio.google.com/app/apikey"
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-[11px] text-brand-600 hover:text-brand-800 font-bold underline flex items-center gap-1"
-                      >
-                        <span>무료 키 발급 (Google)</span>
-                        <ExternalLink className="w-3 h-3" />
-                      </a>
+                      <div>
+                        <a
+                          href="https://aistudio.google.com/app/apikey"
+                          target="_blank"
+                          rel="noreferrer"
+                          className="inline-flex items-center gap-1 text-[11px] text-brand-600 hover:text-brand-800 font-bold underline"
+                        >
+                          <span>무료 키 발급 (Google)</span>
+                          <ExternalLink className="w-3 h-3 shrink-0" />
+                        </a>
+                      </div>
                     </div>
 
-                    <div className="flex gap-2">
+                    <div className="flex items-center gap-2 w-full min-w-0">
                       <input
                         type="password"
                         value={geminiKeyInput}
@@ -7366,23 +7344,23 @@ export default function Home() {
                           setGeminiKeyInput(e.target.value);
                           setKeyTestStatus(null);
                         }}
-                        placeholder="AIzaSy... (발급받은 키를 여기에 붙여넣으세요)"
-                        className="flex-1 px-3 py-2 text-xs font-mono bg-slate-50 text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 font-semibold shadow-2xs"
+                        placeholder="AIzaSy... (발급받은 키를 붙여넣으세요)"
+                        className="flex-1 min-w-0 w-full px-3 py-2 text-xs font-mono bg-slate-50 text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 font-semibold shadow-2xs"
                       />
                       <button
                         type="button"
                         onClick={() => handleSaveAndTestAiKey()}
                         disabled={isTestingKey}
-                        className="bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs px-3.5 py-2 rounded-xl shadow-md transition shrink-0 flex items-center gap-1.5 disabled:opacity-50 cursor-pointer"
+                        className="bg-brand-500 hover:bg-brand-600 text-white font-bold text-xs px-3 py-2 rounded-xl shadow-md transition shrink-0 whitespace-nowrap flex items-center gap-1 disabled:opacity-50 cursor-pointer"
                       >
                         {isTestingKey ? (
                           <>
-                            <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                            <RotateCw className="w-3.5 h-3.5 animate-spin shrink-0" />
                             <span>검증중...</span>
                           </>
                         ) : (
                           <>
-                            <Check className="w-3.5 h-3.5" />
+                            <Check className="w-3.5 h-3.5 shrink-0" />
                             <span>연동 및 테스트</span>
                           </>
                         )}

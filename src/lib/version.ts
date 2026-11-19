@@ -1,2 +1,2 @@
-export const APP_BUILD_VERSION = 'v2026.11.19-15 (11/19 10:28 KST)';
-export const APP_BUILD_SUMMARY = '2.5 구형 모델 우선순위 제외 & 빈 응답 사유(finishReason) 표시 + maxOutputTokens 4096 상향';
+export const APP_BUILD_VERSION = 'v2026.11.19-16 (11/19 11:00 KST)';
+export const APP_BUILD_SUMMARY = 'AI 연동 탭 관리자 배너 제거, 무료 키 발급 줄바꿈, 연동 버튼 튀어나감 수정';
