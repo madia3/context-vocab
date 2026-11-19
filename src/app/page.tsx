@@ -42,6 +42,8 @@ import {
   findSentenceWithAI,
   getStoredGeminiKey,
   setStoredGeminiKey,
+  setCurrentAiUserContext,
+  buildAiRequestHeaders,
   fileToBase64,
   type OcrEngineType,
   type OcrTimingStats,
@@ -601,6 +603,9 @@ export default function Home() {
 
   // User Authentication & Supabase Cloud State
   const [currentUser, setCurrentUser] = useState<User | null>(null);
+  useEffect(() => {
+    setCurrentAiUserContext(currentUser);
+  }, [currentUser]);
   const [isSupabaseReady, setIsSupabaseReady] = useState(false);
   const [isUserMenuOpen, setIsUserMenuOpen] = useState(false);
   const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
@@ -1603,10 +1608,7 @@ export default function Home() {
     try {
       const res = await fetch('/api/ai/complete-sentence', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(geminiApiKey ? { 'x-gemini-key': geminiApiKey } : {}),
-        },
+        headers: buildAiRequestHeaders(geminiApiKey),
         body: JSON.stringify({ sentence, word }),
       });
       if (res.ok) {
@@ -1643,10 +1645,7 @@ export default function Home() {
     try {
       const res = await fetch('/api/ai/complete-sentence', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(geminiApiKey ? { 'x-gemini-key': geminiApiKey } : {}),
-        },
+        headers: buildAiRequestHeaders(geminiApiKey),
         body: JSON.stringify({
           sentence,
           word,
@@ -1861,10 +1860,7 @@ export default function Home() {
       setIsUrlScraping(true);
       const res = await fetch('/api/scrape-url', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(geminiApiKey ? { 'x-gemini-key': geminiApiKey } : {}),
-        },
+        headers: buildAiRequestHeaders(geminiApiKey),
         body: JSON.stringify({ url: targetUrl }),
       });
 
@@ -1907,10 +1903,7 @@ export default function Home() {
         try {
           const res = await fetch('/api/ai/clean-text', {
             method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              ...(geminiApiKey ? { 'x-gemini-key': geminiApiKey } : {}),
-            },
+            headers: buildAiRequestHeaders(geminiApiKey),
             body: JSON.stringify({ rawText: raw }),
           });
           if (res.ok) {
@@ -2363,10 +2356,7 @@ export default function Home() {
 
         const res = await fetch('/api/ai/ocr', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(apiKey ? { 'x-gemini-key': apiKey } : {}),
-          },
+          headers: buildAiRequestHeaders(apiKey),
           body: JSON.stringify({
             base64: activeImg?.base64 || '',
             mimeType: activeImg?.mimeType || 'image/jpeg',
@@ -2399,10 +2389,7 @@ export default function Home() {
       if (!restoredText && pageOcrText.trim()) {
         const cleanRes = await fetch('/api/ai/clean-text', {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            ...(apiKey ? { 'x-gemini-key': apiKey } : {}),
-          },
+          headers: buildAiRequestHeaders(apiKey),
           body: JSON.stringify({
             rawText: pageOcrText,
             mode: 'ocr_repair',
@@ -2525,10 +2512,7 @@ export default function Home() {
     try {
       const res = await fetch('/api/translate', {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(geminiApiKey ? { 'x-gemini-key': geminiApiKey } : {}),
-        },
+        headers: buildAiRequestHeaders(geminiApiKey),
         body: JSON.stringify({ text: cleanSent }),
       });
       if (res.ok) {
@@ -7314,6 +7298,45 @@ export default function Home() {
                         <span><strong>문맥 속 변화형 자동 감지</strong>: 단어를 원형(party, run)으로 입력해도 책 속의 복수형(parties), 과거형(ran), 분사형 등을 AI가 스스로 찾아냅니다.</span>
                       </li>
                     </ul>
+                    {/* Daily Free AI Quota Policy Card */}
+                    <div className="p-3 bg-indigo-50/70 rounded-xl border border-indigo-200/80 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <p className="text-[11.5px] font-extrabold text-indigo-950">📊 일일 무료 AI 사용 한도 안내</p>
+                        <span className="text-[10px] font-semibold text-indigo-700/80">매일 자정(KST) 초기화</span>
+                      </div>
+                      <div className="grid grid-cols-1 gap-1.5 text-[11px]">
+                        <div className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg border ${!currentUser && !geminiApiKey ? 'bg-white border-indigo-400 shadow-2xs font-bold text-indigo-950' : 'bg-white/70 border-indigo-100 text-slate-700'}`}>
+                          <span className="flex items-center gap-1.5">
+                            <span>비로그인 (게스트)</span>
+                            {!currentUser && !geminiApiKey && (
+                              <span className="text-[9.5px] px-1.5 py-0.5 rounded-full bg-indigo-600 text-white font-bold">현재 적용</span>
+                            )}
+                          </span>
+                          <span className="font-bold text-slate-800">서버 AI 일 20회</span>
+                        </div>
+                        <div className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg border ${currentUser && !geminiApiKey ? 'bg-white border-indigo-400 shadow-2xs font-bold text-indigo-950' : 'bg-white/70 border-indigo-100 text-slate-700'}`}>
+                          <span className="flex items-center gap-1.5">
+                            <span>로그인 회원 (키 미등록)</span>
+                            {currentUser && !geminiApiKey && (
+                              <span className="text-[9.5px] px-1.5 py-0.5 rounded-full bg-indigo-600 text-white font-bold">현재 적용</span>
+                            )}
+                          </span>
+                          <span className="font-bold text-slate-800">서버 AI 일 50회</span>
+                        </div>
+                        <div className={`flex items-center justify-between px-2.5 py-1.5 rounded-lg border ${geminiApiKey ? 'bg-emerald-50 border-emerald-400 shadow-2xs font-bold text-emerald-950' : 'bg-white/70 border-indigo-100 text-slate-700'}`}>
+                          <span className="flex items-center gap-1.5">
+                            <span>개인 키 등록 회원</span>
+                            {geminiApiKey && (
+                              <span className="text-[9.5px] px-1.5 py-0.5 rounded-full bg-emerald-600 text-white font-bold">현재 적용</span>
+                            )}
+                          </span>
+                          <span className="font-bold text-emerald-700">본인 키 1,500회 + 비상 서버 100회</span>
+                        </div>
+                      </div>
+                      <p className="text-[10px] text-indigo-900/75 leading-relaxed">
+                        💡 개인 무료 키를 등록하면 본인 한도(일 1,500회)가 우선 사용되며, 초과 시에도 비상 서버 키(일 100회)로 자동 이어집니다.
+                      </p>
+                    </div>
                   </div>
 
                   {/* API Key Form */}

@@ -84,6 +84,7 @@ Return strictly valid JSON:
       const visionRes = await callGeminiWithFallback({
         apiKey,
         endpoint: 'match-sentence-vision',
+        req,
         parts: [
           { text: buildPrompt(true) },
           {
@@ -110,6 +111,7 @@ Return strictly valid JSON:
         parts: [{ text: buildPrompt(false) }],
         temperature: 0.0,
         responseMimeType: 'application/json',
+        req,
       });
       if (textRes.ok && textRes.text) {
         rawJsonText = textRes.text;

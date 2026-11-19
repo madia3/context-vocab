@@ -1,2 +1,2 @@
-export const APP_BUILD_VERSION = 'v2026.11.19-17 (11/19 11:25 KST)';
-export const APP_BUILD_SUMMARY = '무료 키 발급 링크 우측 정렬 및 3단계 발급 방법 안내 추가';
+export const APP_BUILD_VERSION = 'v2026.11.19-18 (11/19 11:35 KST)';
+export const APP_BUILD_SUMMARY = '등급별 서버 AI 일일 한도(20/50/1500+100회) 적용 및 안내 표시';

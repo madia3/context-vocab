@@ -6,6 +6,30 @@ export const GEMINI_API_KEY_STORAGE = 'context_vocab_gemini_api_key';
 export const GEMINI_API_KEY_MASK_STORAGE = 'context_vocab_gemini_api_key_masked';
 const CLIENT_SHIELD_SALT = 'divivid_voca_key_shield_v1';
 
+let activeAiUserContext: { id?: string; email?: string } | null = null;
+
+export function setCurrentAiUserContext(user?: { id?: string; email?: string } | null) {
+  activeAiUserContext = user ? { id: user.id, email: user.email } : null;
+}
+
+export function buildAiRequestHeaders(customApiKey?: string): Record<string, string> {
+  const apiKey = customApiKey || getStoredGeminiKey();
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  };
+  if (apiKey) {
+    headers['x-gemini-key'] = apiKey;
+    headers['x-has-personal-key'] = '1';
+  }
+  if (activeAiUserContext?.id) {
+    headers['x-user-id'] = activeAiUserContext.id;
+  }
+  if (activeAiUserContext?.email) {
+    headers['x-user-email'] = activeAiUserContext.email;
+  }
+  return headers;
+}
+
 function shieldPlainKeyClient(plainKey: string): string {
   const clean = plainKey.trim();
   if (!clean) return '';
@@ -213,10 +237,7 @@ export async function repairOcrTextWithAIMeta(
   try {
     const res = await fetch('/api/ai/clean-text', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(apiKey ? { 'x-gemini-key': apiKey } : {}),
-      },
+      headers: buildAiRequestHeaders(apiKey),
       body: JSON.stringify({ rawText, mode: 'ocr_repair' }),
     });
     if (res.ok) {
@@ -344,10 +365,7 @@ export async function extractTextWithAI(
   try {
     const res = await fetch('/api/ai/ocr', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(apiKey ? { 'x-gemini-key': apiKey } : {}),
-      },
+      headers: buildAiRequestHeaders(apiKey),
       signal: AbortSignal.timeout(22000),
       body: JSON.stringify({
         images: imagesToSend,
@@ -562,10 +580,7 @@ export async function findSentenceWithAI(
   try {
     const res = await fetch('/api/ai/match-sentence', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...(apiKey ? { 'x-gemini-key': apiKey } : {}),
-      },
+      headers: buildAiRequestHeaders(apiKey),
       body: JSON.stringify({
         pageText,
         word,

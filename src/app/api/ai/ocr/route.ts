@@ -138,6 +138,7 @@ Output strictly valid JSON:
         temperature: 0.0,
         responseMimeType: 'application/json',
         maxOutputTokens: 4096,
+        req,
       });
 
       visionDurationMs = visionRes.durationMs;
@@ -205,6 +206,7 @@ ${String(fallbackRawText).slice(0, 6000)}
         parts: [{ text: repairPrompt }],
         temperature: 0.0,
         responseMimeType: 'application/json',
+        req,
       });
 
       if (textRes.ok && textRes.text) {

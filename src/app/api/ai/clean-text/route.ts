@@ -86,6 +86,7 @@ ${rawText.slice(0, 8000)}
       parts: [{ text: prompt }],
       temperature: 0.0,
       responseMimeType: 'application/json',
+      req,
     });
 
     if (aiRes.ok && aiRes.text) {

@@ -95,6 +95,7 @@ Output strictly valid JSON:
       temperature: 0.2,
       responseMimeType: 'application/json',
       maxOutputTokens: 350,
+      req,
     });
 
     let completedText = '';

@@ -1,9 +1,17 @@
 import crypto from 'crypto';
 import fs from 'fs';
 import path from 'path';
+import { isUserAdmin } from '@/lib/admin';
 
 // Shared server-side Gemini API model configuration, rate limiter & fast fallback caller
 // Optimized to remember the fastest working model and avoid sequential timeout cascades
+
+export const SERVER_KEY_DAILY_QUOTAS = {
+  guest: 20,           // 비로그인(게스트): 일 20회
+  member: 50,          // 로그인 회원(개인 키 미등록): 일 50회
+  personalBackup: 100, // 개인 키 등록 회원(본인 키 1,500회 소진 시 비상 서버 키): +100회
+  personalOwn: 1500,   // 개인 무료 키 일일 한도(Google 무료 티어 기준): 1,500회
+} as const;
 
 export const GEMINI_COOKIE_NAME = 'cv_gemini_key';
 const OBFUSCATION_SALT = 'divivid_voca_key_shield_v1';
@@ -439,6 +447,121 @@ export function checkRateLimit(req: Request, maxRequestsPerMinute: number = 30):
   }
 }
 
+// Per-User Daily Quota Tracker for Server-Key Usage (persisted in /tmp, resets daily at KST midnight)
+const USER_QUOTA_FILE_PATH = path.join('/tmp', 'cv_user_daily_quota.json');
+
+interface PersistedUserQuotas {
+  dateKst: string;
+  counts: Record<string, number>;
+}
+
+let memoryUserQuotas: PersistedUserQuotas | null = null;
+
+function getTodayKstDate(): string {
+  const kstNow = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  return kstNow.toISOString().slice(0, 10);
+}
+
+function loadUserQuotas(): PersistedUserQuotas {
+  const today = getTodayKstDate();
+  if (memoryUserQuotas && memoryUserQuotas.dateKst === today) {
+    return memoryUserQuotas;
+  }
+  try {
+    if (fs.existsSync(USER_QUOTA_FILE_PATH)) {
+      const raw = fs.readFileSync(USER_QUOTA_FILE_PATH, 'utf8');
+      const parsed = JSON.parse(raw) as PersistedUserQuotas;
+      if (parsed && parsed.dateKst === today && parsed.counts) {
+        memoryUserQuotas = parsed;
+        return parsed;
+      }
+    }
+  } catch {}
+  memoryUserQuotas = { dateKst: today, counts: {} };
+  return memoryUserQuotas;
+}
+
+function saveUserQuotas(data: PersistedUserQuotas) {
+  memoryUserQuotas = data;
+  try {
+    fs.writeFileSync(USER_QUOTA_FILE_PATH, JSON.stringify(data), 'utf8');
+  } catch {}
+}
+
+export function checkAndConsumeServerKeyQuota(
+  req: Request,
+  options?: { isPersonalKeyFallback?: boolean }
+): {
+  allowed: boolean;
+  tier: 'admin' | 'personal_backup' | 'member' | 'guest';
+  limit: number;
+  used: number;
+  remaining: number;
+  message?: string;
+} {
+  try {
+    const userEmail = (req.headers.get('x-user-email') || '').trim();
+    const userId = (req.headers.get('x-user-id') || '').trim();
+    const hasPersonalKey =
+      Boolean(options?.isPersonalKeyFallback) || req.headers.get('x-has-personal-key') === '1';
+
+    if (isUserAdmin(userEmail)) {
+      return { allowed: true, tier: 'admin', limit: 999999, used: 0, remaining: 999999 };
+    }
+
+    const forwarded = req.headers.get('x-forwarded-for');
+    const ip = forwarded ? forwarded.split(',')[0].trim() : req.headers.get('x-real-ip') || 'anonymous';
+    const subjectKey = userId ? `uid:${userId}` : `ip:${ip}`;
+
+    let tier: 'personal_backup' | 'member' | 'guest' = 'guest';
+    let limit: number = SERVER_KEY_DAILY_QUOTAS.guest;
+    if (hasPersonalKey) {
+      tier = 'personal_backup';
+      limit = SERVER_KEY_DAILY_QUOTAS.personalBackup;
+    } else if (userId) {
+      tier = 'member';
+      limit = SERVER_KEY_DAILY_QUOTAS.member;
+    }
+
+    const store = loadUserQuotas();
+    const currentUsed = store.counts[subjectKey] || 0;
+
+    if (currentUsed >= limit) {
+      const tierLabel =
+        tier === 'guest'
+          ? `비로그인 일일 무료 한도(${limit}회)`
+          : tier === 'member'
+          ? `로그인 회원 무료 서버 한도(${limit}회)`
+          : `개인 키 소진 후 비상 서버 한도(${limit}회)`;
+      const guideMsg =
+        tier === 'personal_backup'
+          ? `오늘의 ${tierLabel}를 모두 사용했습니다. 내일 자정(KST)에 자동 초기화됩니다.`
+          : `오늘의 ${tierLabel}를 모두 사용했습니다. 설정 > AI 연동에서 무료 개인 API 키를 등록하시면 매일 1,500회 + 비상 100회까지 이용하실 수 있습니다.`;
+      return {
+        allowed: false,
+        tier,
+        limit,
+        used: currentUsed,
+        remaining: 0,
+        message: guideMsg,
+      };
+    }
+
+    store.counts[subjectKey] = currentUsed + 1;
+    saveUserQuotas(store);
+
+    return {
+      allowed: true,
+      tier,
+      limit,
+      used: currentUsed + 1,
+      remaining: Math.max(0, limit - (currentUsed + 1)),
+    };
+  } catch {
+    return { allowed: true, tier: 'guest', limit: SERVER_KEY_DAILY_QUOTAS.guest, used: 0, remaining: SERVER_KEY_DAILY_QUOTAS.guest };
+  }
+}
+
 /**
  * Safely resolves the Gemini API key on the server (supports AES-256-GCM encrypted token, HttpOnly cookie, or server env).
  */
@@ -561,6 +684,7 @@ export async function callGeminiWithFallback(options: {
   maxOutputTokens?: number;
   candidates?: GeminiModelCandidate[];
   endpoint?: string;
+  req?: Request;
 }): Promise<{
   ok: boolean;
   text: string;
@@ -578,6 +702,7 @@ export async function callGeminiWithFallback(options: {
     maxOutputTokens,
     candidates = FAST_GEMINI_CANDIDATES,
     endpoint = 'general',
+    req,
   } = options;
 
   const startTime = Date.now();
@@ -588,6 +713,23 @@ export async function callGeminiWithFallback(options: {
 
   if (!cleanApiKey) {
     return { ok: false, text: '', lastError: 'API 키가 비어있습니다.', attemptLogs };
+  }
+
+  // 서버 공용 키를 사용할 때는 사용자 등급별 일일 한도 검사 (비로그인 20회 / 로그인 50회 / 개인키 비상 +100회 / 관리자 무제한)
+  if (isServerKey && req) {
+    const quota = checkAndConsumeServerKeyQuota(req, {
+      isPersonalKeyFallback: endpoint.endsWith('-fallback'),
+    });
+    if (!quota.allowed) {
+      attemptLogs.push(`서버 키 일일 한도 초과 (${quota.used}/${quota.limit}회)`);
+      return {
+        ok: false,
+        text: '',
+        lastError: quota.message || '오늘의 무료 서버 AI 한도를 모두 사용했습니다.',
+        durationMs: 0,
+        attemptLogs,
+      };
+    }
   }
 
   // Restore last known working model from persisted usage if memory is cold
