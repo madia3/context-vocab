@@ -40,9 +40,10 @@ import {
 import {
   extractTextWithAI,
   findSentenceWithAI,
-  getStoredGeminiKey,
-  setStoredGeminiKey,
+  clearLegacyLocalGeminiKeys,
   setCurrentAiUserContext,
+  setCurrentAiAccessToken,
+  setCurrentAiPersonalKeyStatus,
   buildAiRequestHeaders,
   setAiQuotaExceededHandler,
   notifyAiQuotaExceeded,
@@ -633,10 +634,12 @@ export default function Home() {
   const [settingsTab, setSettingsTab] = useState<'profile' | 'ai' | 'preferences' | 'admin'>('profile');
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [isTestingKey, setIsTestingKey] = useState(false);
+  const [isDeletingKey, setIsDeletingKey] = useState(false);
   const [keyTestStatus, setKeyTestStatus] = useState<{ ok: boolean; message: string } | null>(null);
   const [ttsVoice, setTtsVoice] = useState('en-US');
   const [ttsRate, setTtsRate] = useState<number>(1.25);
-  const [geminiApiKey, setGeminiApiKey] = useState('');
+  const [hasPersonalGeminiKey, setHasPersonalGeminiKey] = useState(false);
+  const [personalKeyMasked, setPersonalKeyMasked] = useState('');
   const [geminiKeyInput, setGeminiKeyInput] = useState('');
   const [isServerGeminiReady, setIsServerGeminiReady] = useState(false);
   const [aiUsageStats, setAiUsageStats] = useState<AiUsageStats>(() => getAiUsageStats());
@@ -925,9 +928,10 @@ export default function Home() {
     isAdmin?: boolean;
   } | null>(null);
 
-  // 설정 > AI 연동 탭을 열 때마다 서버 AI 잔여 한도를 최신으로 조회
+  // 설정 > AI 연동 탭을 열 때마다 개인/서버 AI 잔여 한도를 최신으로 조회
   useEffect(() => {
     if (!isSettingsOpen || settingsTab !== 'ai') return;
+    setAiUsageStats(getAiUsageStats());
     let cancelled = false;
     fetch('/api/ai/test-key', {
       headers: buildAiRequestHeaders(geminiApiKey),
@@ -980,33 +984,59 @@ export default function Home() {
     }, 3500);
   }
 
-  // Google Gemini AI Key 저장 및 유효성 테스트
+  // Google Gemini AI Key 서버(계정별 AES-256-GCM 암호화) 저장 및 유효성 테스트
   async function handleSaveAndTestAiKey(keyToSave?: string) {
+    if (!currentUser) {
+      setKeyTestStatus({
+        ok: false,
+        message: '개인 API 키 등록은 로그인 후 이용할 수 있습니다. 로그인하시면 모든 기기에서 자동 동기화됩니다.',
+      });
+      setIsAuthModalOpen(true);
+      return;
+    }
+
     const key = (keyToSave || geminiKeyInput).trim();
     if (!key) {
-      setStoredGeminiKey('');
-      setGeminiApiKey('');
-      setKeyTestStatus({ ok: false, message: 'API 키가 비어있습니다. 기본 로컬 모드로 작동합니다.' });
+      setKeyTestStatus({ ok: false, message: '등록할 Google Gemini API 키를 입력해 주세요.' });
       return;
     }
 
     setIsTestingKey(true);
     setKeyTestStatus(null);
     try {
+      const client = getSupabaseClient();
+      if (client) {
+        const {
+          data: { session },
+        } = await client.auth.getSession();
+        if (session?.access_token) {
+          setCurrentAiAccessToken(session.access_token);
+        }
+      }
+
       const res = await fetch('/api/ai/test-key', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: buildAiRequestHeaders(),
         body: JSON.stringify({ apiKey: key }),
       });
       const data = await res.json();
       if (data.ok) {
-        setStoredGeminiKey(key);
-        setGeminiApiKey(key);
+        clearLegacyLocalGeminiKeys();
+        setHasPersonalGeminiKey(true);
+        setPersonalKeyMasked(data.maskedKey || '');
+        setCurrentAiPersonalKeyStatus(true);
+        setGeminiKeyInput('');
         setAiQuotaExceededNotice(null);
         recordAiUsage(1);
         setAiUsageStats(getAiUsageStats());
-        setKeyTestStatus({ ok: true, message: data.message || 'Google Gemini AI 연동 성공! 🤖 모든 AI 비전 및 문맥 분석 기능이 활성화되었습니다.' });
-        triggerToast('AI 연동 완료! 🤖', '책 사진 고정밀 인식 및 복수/시제 변화형 문맥 추출이 활성화되었습니다.');
+        setKeyTestStatus({
+          ok: true,
+          message:
+            data.message ||
+            'Google Gemini AI 연동 완료! 🤖 계정에 안전하게 암호화 저장되어 모든 기기에서 바로 사용할 수 있습니다.',
+        });
+        triggerToast('계정 AI 키 암호화 저장 완료! 🔐', '이제 PC·모바일 어디서 로그인해도 개인 키가 자동 적용됩니다.');
+        syncAccountGeminiKeyStatus();
       } else {
         setKeyTestStatus({ ok: false, message: data.error || 'API 키 검증 실패. 올바른 키인지 확인해 주세요.' });
       }
@@ -1014,6 +1044,46 @@ export default function Home() {
       setKeyTestStatus({ ok: false, message: '서버 연결에 실패했습니다.' });
     } finally {
       setIsTestingKey(false);
+    }
+  }
+
+  // 계정에 암호화 저장된 개인 Gemini API Key 삭제
+  async function handleClearPersonalAiKey() {
+    if (!currentUser) return;
+    setIsDeletingKey(true);
+    setKeyTestStatus(null);
+    try {
+      const client = getSupabaseClient();
+      if (client) {
+        const {
+          data: { session },
+        } = await client.auth.getSession();
+        if (session?.access_token) {
+          setCurrentAiAccessToken(session.access_token);
+        }
+      }
+      const res = await fetch('/api/ai/test-key', {
+        method: 'POST',
+        headers: buildAiRequestHeaders(),
+        body: JSON.stringify({ action: 'clear' }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        clearLegacyLocalGeminiKeys();
+        setHasPersonalGeminiKey(false);
+        setPersonalKeyMasked('');
+        setCurrentAiPersonalKeyStatus(false);
+        setGeminiKeyInput('');
+        setKeyTestStatus(null);
+        triggerToast('개인 AI 키 삭제 완료', '계정에서 개인 키가 영구 삭제되었으며 기본 서버 무료 한도로 전환되었습니다.');
+        syncAccountGeminiKeyStatus();
+      } else {
+        setKeyTestStatus({ ok: false, message: data.error || '개인 키 삭제에 실패했습니다.' });
+      }
+    } catch {
+      setKeyTestStatus({ ok: false, message: '서버 연결에 실패했습니다.' });
+    } finally {
+      setIsDeletingKey(false);
     }
   }
 
@@ -7425,42 +7495,73 @@ export default function Home() {
                           </span>
                         </div>
                       </div>
-                      {/* 서버 AI 일일 한도 게이지바 */}
+                      {/* 통합 AI 잔여 한도 게이지바 (개인 키: 초록 / 서버 AI: 하늘 · 잔여 많으면 가득, 다 쓰면 비움) */}
                       {(() => {
                         const fallbackLimit = geminiApiKey ? 100 : currentUser ? 50 : 20;
                         const isQuotaAdmin = Boolean(serverAiQuota?.isAdmin || isAdmin);
-                        const limit = serverAiQuota?.limit && !isQuotaAdmin ? serverAiQuota.limit : fallbackLimit;
-                        const used = serverAiQuota?.used ?? 0;
-                        const remaining = Math.max(0, limit - used);
-                        const percent = isQuotaAdmin ? 0 : Math.min(100, Math.round((used / Math.max(1, limit)) * 100));
-                        const barColor =
-                          percent >= 90
-                            ? 'bg-rose-500'
-                            : percent >= 70
-                            ? 'bg-amber-500'
-                            : 'bg-indigo-600';
+                        const serverLimit = serverAiQuota?.limit && !isQuotaAdmin ? serverAiQuota.limit : fallbackLimit;
+                        const serverUsed = serverAiQuota?.used ?? 0;
+                        const serverRemaining = Math.max(0, serverLimit - serverUsed);
+                        const serverRemainingPercent = isQuotaAdmin
+                          ? 100
+                          : Math.min(100, Math.max(0, Math.round((serverRemaining / Math.max(1, serverLimit)) * 100)));
+
+                        const personalRemaining = geminiApiKey ? aiUsageStats.remainingCount : 0;
+                        const personalLimit = aiUsageStats.dailyLimit || 1500;
+                        const personalRemainingPercent = geminiApiKey
+                          ? Math.min(100, Math.max(0, aiUsageStats.remainingPercent))
+                          : 0;
 
                         return (
-                          <div className="pt-1.5 border-t border-indigo-200/70 space-y-1.5">
-                            <div className="flex items-center justify-between text-[11px]">
-                              <span className="font-bold text-indigo-950 flex items-center gap-1">
-                                <Gauge className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-                                <span>서버 AI 오늘 사용량</span>
-                              </span>
-                              {isQuotaAdmin ? (
-                                <span className="font-bold text-emerald-700">관리자 무제한 👑</span>
-                              ) : (
-                                <span className="font-bold text-slate-700">
-                                  <span className={percent >= 90 ? 'text-rose-600' : 'text-indigo-700'}>{used}</span> / {limit}회
-                                  <span className="text-[10px] font-semibold text-slate-500 ml-1">(잔여 {remaining}회)</span>
+                          <div className="pt-2 border-t border-indigo-200/70 space-y-2.5">
+                            {/* 1. 개인 키 게이지바 (초록색) */}
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="font-bold text-emerald-900 flex items-center gap-1.5">
+                                  <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+                                  <span>개인 키 잔여</span>
                                 </span>
-                              )}
+                                {geminiApiKey ? (
+                                  <span className="font-bold text-emerald-700">
+                                    {personalRemaining.toLocaleString()} / {personalLimit.toLocaleString()}회
+                                    <span className="text-[10px] font-semibold text-emerald-600/80 ml-1">({personalRemainingPercent}%)</span>
+                                  </span>
+                                ) : (
+                                  <span className="text-[10.5px] font-semibold text-slate-400">
+                                    미등록 (0 / {personalLimit.toLocaleString()}회)
+                                  </span>
+                                )}
+                              </div>
+                              <div className="w-full h-2 bg-slate-200/80 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full rounded-full bg-emerald-500 transition-all duration-500"
+                                  style={{ width: `${personalRemainingPercent}%` }}
+                                />
+                              </div>
                             </div>
-                            <div className="w-full h-2 bg-indigo-100 rounded-full overflow-hidden">
-                              <div
-                                className={`h-full rounded-full transition-all duration-500 ${isQuotaAdmin ? 'bg-emerald-500 w-full opacity-40' : barColor}`}
-                                style={isQuotaAdmin ? undefined : { width: `${percent}%` }}
-                              />
+
+                            {/* 2. 서버 AI 게이지바 (하늘색) */}
+                            <div className="space-y-1">
+                              <div className="flex items-center justify-between text-[11px]">
+                                <span className="font-bold text-sky-900 flex items-center gap-1.5">
+                                  <span className="w-2 h-2 rounded-full bg-sky-500 shrink-0" />
+                                  <span>서버 AI 잔여</span>
+                                </span>
+                                {isQuotaAdmin ? (
+                                  <span className="font-bold text-sky-700">관리자 무제한 👑</span>
+                                ) : (
+                                  <span className="font-bold text-sky-700">
+                                    {serverRemaining.toLocaleString()} / {serverLimit.toLocaleString()}회
+                                    <span className="text-[10px] font-semibold text-sky-600/80 ml-1">({serverRemainingPercent}%)</span>
+                                  </span>
+                                )}
+                              </div>
+                              <div className="w-full h-2 bg-slate-200/80 rounded-full overflow-hidden">
+                                <div
+                                  className="h-full rounded-full bg-sky-500 transition-all duration-500"
+                                  style={{ width: `${serverRemainingPercent}%` }}
+                                />
+                              </div>
                             </div>
                           </div>
                         );
@@ -7542,72 +7643,6 @@ export default function Home() {
                           <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
                         )}
                         <span>{keyTestStatus.message}</span>
-                      </div>
-                    )}
-
-                    {/* Free Tier Quota Gauge Bar */}
-                    {geminiApiKey && (
-                      <div className="p-3.5 bg-gradient-to-br from-slate-50 via-emerald-50/30 to-teal-50/20 rounded-2xl border border-emerald-200/90 shadow-2xs space-y-2.5">
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-1.5">
-                            <div className="w-5 h-5 rounded-lg bg-emerald-500/10 flex items-center justify-center text-emerald-600">
-                              <Gauge className="w-3.5 h-3.5" />
-                            </div>
-                            <span className="text-xs font-bold text-slate-800">무료 AI 사용량 현황</span>
-                          </div>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
-                            Google Free Tier
-                          </span>
-                        </div>
-
-                        {/* Progress Gauge */}
-                        <div className="space-y-1.5">
-                          <div className="flex items-center justify-between text-[11px] font-semibold text-slate-600">
-                            <span>
-                              오늘 잔여:{' '}
-                              <strong className="text-emerald-700 font-bold">
-                                {aiUsageStats.remainingCount.toLocaleString()}회
-                              </strong>{' '}
-                              / {aiUsageStats.dailyLimit.toLocaleString()}회
-                            </span>
-                            <span className="text-emerald-700 font-bold">
-                              {aiUsageStats.remainingPercent}% 남음
-                            </span>
-                          </div>
-
-                          <div className="w-full h-2.5 bg-slate-200/90 rounded-full overflow-hidden p-0.5">
-                            <div
-                              className={`h-full rounded-full transition-all duration-500 ${
-                                aiUsageStats.remainingPercent > 25
-                                  ? 'bg-gradient-to-r from-emerald-500 to-teal-500'
-                                  : aiUsageStats.remainingPercent > 10
-                                  ? 'bg-gradient-to-r from-amber-500 to-orange-500'
-                                  : 'bg-gradient-to-r from-rose-500 to-red-500'
-                              }`}
-                              style={{ width: `${Math.max(4, aiUsageStats.remainingPercent)}%` }}
-                            />
-                          </div>
-                        </div>
-
-                        {/* Quota details & Link to Google AI Studio */}
-                        <div className="pt-2 flex flex-wrap items-center justify-between gap-1.5 text-[10px] text-slate-500 border-t border-slate-200/70">
-                          <div className="flex items-center gap-2">
-                            <span className="flex items-center gap-1 font-medium text-slate-600">
-                              <Zap className="w-3 h-3 text-amber-500" />
-                              <span>분당 한도: <strong>15회 (15 RPM)</strong></span>
-                            </span>
-                            <span className="text-slate-400">• 매일 00:00 리셋</span>
-                          </div>
-                          <a
-                            href="https://aistudio.google.com/"
-                            target="_blank"
-                            rel="noreferrer"
-                            className="text-brand-600 hover:text-brand-800 font-bold underline flex items-center gap-0.5"
-                          >
-                            <span>Google AI Studio 대시보드</span>
-                            <ExternalLink className="w-2.5 h-2.5" />
-                          </a>
-                        </div>
                       </div>
                     )}
 
@@ -7877,7 +7912,7 @@ export default function Home() {
                                   : 'bg-gradient-to-r from-rose-500 to-red-500'
                               }`}
                               style={{
-                                width: `${Math.max(3, 100 - (serverUsageReport?.usagePercent ?? 0))}%`,
+                                width: `${Math.max(0, 100 - (serverUsageReport?.usagePercent ?? 0))}%`,
                               }}
                             />
                           </div>
