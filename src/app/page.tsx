@@ -9090,7 +9090,26 @@ export default function Home() {
                   {/* TTS Voice Select & Speed Slider */}
                   <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 space-y-3">
                     <div>
-                      <label className="block font-bold text-slate-800 mb-1.5">발음 음성(TTS) 악센트</label>
+                      <div className="flex items-center justify-between gap-2 mb-1.5">
+                        <label className="block font-bold text-slate-800">발음 음성(TTS) 악센트</label>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTtsVoice('random');
+                            localStorage.setItem('context_vocab_tts_voice', 'random');
+                            setTtsGender('random');
+                            setTtsVoiceGender('random');
+                            triggerToast('전체 랜덤 목소리 적용 🎲', '미국·영국 / 남성·여성 4가지 음성이 번갈아 재생됩니다.');
+                          }}
+                          className={`text-[10.5px] font-bold px-2 py-0.5 rounded-full border transition cursor-pointer active:scale-95 ${
+                            ttsVoice === 'random' && ttsGender === 'random'
+                              ? 'bg-indigo-600 text-white border-indigo-700'
+                              : 'bg-indigo-50 text-indigo-700 border-indigo-200 hover:bg-indigo-100'
+                          }`}
+                        >
+                          🎲 전체 랜덤 (미·영·남·여)
+                        </button>
+                      </div>
                       <select
                         value={ttsVoice}
                         onChange={(e) => {
@@ -9101,22 +9120,23 @@ export default function Home() {
                       >
                         <option value="en-US">영어 (미국식 - US English)</option>
                         <option value="en-GB">영어 (영국식 - GB English)</option>
+                        <option value="random">🎲 랜덤 (미국식 / 영국식 번갈아 듣기)</option>
                       </select>
                     </div>
 
-                    {/* TTS Voice Gender Toggle (남/여 목소리 선택 - 속도 조절 바로 위) */}
+                    {/* TTS Voice Gender Toggle (남/여/랜덤 목소리 선택 - 속도 조절 바로 위) */}
                     <div className="pt-2.5 border-t border-slate-200/80">
                       <label className="block text-xs font-bold text-slate-800 mb-1.5">
-                        낭독 목소리 (남/여)
+                        낭독 목소리 (여 / 남 / 랜덤)
                       </label>
-                      <div className="grid grid-cols-2 gap-2">
+                      <div className="grid grid-cols-3 gap-2">
                         <button
                           type="button"
                           onClick={() => {
                             setTtsGender('female');
                             setTtsVoiceGender('female');
                           }}
-                          className={`py-2 px-3 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-[0.98] ${
+                          className={`py-2 px-2 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1 cursor-pointer active:scale-[0.98] ${
                             ttsGender === 'female'
                               ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
                               : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
@@ -9124,7 +9144,7 @@ export default function Home() {
                         >
                           <span>👩 여성</span>
                           <span className={`text-[10px] font-semibold ${ttsGender === 'female' ? 'text-indigo-100' : 'text-slate-400'}`}>
-                            {ttsVoice.startsWith('en-GB') ? 'Sonia' : 'Ava'}
+                            {ttsVoice === 'random' ? '미·영' : ttsVoice.startsWith('en-GB') ? 'Sonia' : 'Ava'}
                           </span>
                         </button>
                         <button
@@ -9133,7 +9153,7 @@ export default function Home() {
                             setTtsGender('male');
                             setTtsVoiceGender('male');
                           }}
-                          className={`py-2 px-3 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-[0.98] ${
+                          className={`py-2 px-2 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1 cursor-pointer active:scale-[0.98] ${
                             ttsGender === 'male'
                               ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
                               : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
@@ -9141,7 +9161,24 @@ export default function Home() {
                         >
                           <span>👨 남성</span>
                           <span className={`text-[10px] font-semibold ${ttsGender === 'male' ? 'text-indigo-100' : 'text-slate-400'}`}>
-                            {ttsVoice.startsWith('en-GB') ? 'Ryan' : 'Brian'}
+                            {ttsVoice === 'random' ? '미·영' : ttsVoice.startsWith('en-GB') ? 'Ryan' : 'Brian'}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTtsGender('random');
+                            setTtsVoiceGender('random');
+                          }}
+                          className={`py-2 px-2 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1 cursor-pointer active:scale-[0.98] ${
+                            ttsGender === 'random'
+                              ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
+                              : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                          }`}
+                        >
+                          <span>🎲 랜덤</span>
+                          <span className={`text-[10px] font-semibold ${ttsGender === 'random' ? 'text-indigo-100' : 'text-slate-400'}`}>
+                            {ttsVoice === 'random' ? '4종' : '남·여'}
                           </span>
                         </button>
                       </div>

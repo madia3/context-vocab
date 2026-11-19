@@ -1,6 +1,8 @@
 // 고음질 자연스러운 원어민 TTS (Studio Human Audio + Neural TTS + 프리미엄 브라우저 음성)
 
-export type TtsGender = 'female' | 'male';
+export type TtsGender = 'female' | 'male' | 'random';
+type ResolvedGender = 'female' | 'male';
+type ResolvedLang = 'en-US' | 'en-GB';
 
 let currentAudio: HTMLAudioElement | null = null;
 let cancelCurrentPlayback: (() => void) | null = null;
@@ -8,9 +10,10 @@ let activeSpeechId = 0;
 let cachedVoices: SpeechSynthesisVoice[] = [];
 let currentTtsRate: number = 1.25;
 let currentTtsGender: TtsGender = 'female';
+let lastRandomVariantKey: string = '';
 
 export function setTtsVoiceGender(gender: TtsGender) {
-  currentTtsGender = gender === 'male' ? 'male' : 'female';
+  currentTtsGender = gender === 'male' || gender === 'random' ? gender : 'female';
   if (typeof window !== 'undefined') {
     localStorage.setItem('context_vocab_tts_gender', currentTtsGender);
   }
@@ -19,7 +22,7 @@ export function setTtsVoiceGender(gender: TtsGender) {
 export function getTtsVoiceGender(): TtsGender {
   if (typeof window !== 'undefined') {
     const saved = localStorage.getItem('context_vocab_tts_gender');
-    if (saved === 'male' || saved === 'female') {
+    if (saved === 'male' || saved === 'female' || saved === 'random') {
       currentTtsGender = saved;
       return currentTtsGender;
     }
@@ -109,10 +112,77 @@ interface PreloadedAudioEntry {
 
 const audioBlobCache = new Map<string, PreloadedAudioEntry>();
 const inFlightPreloads = new Map<string, Promise<string | null>>();
+const preloadedRandomVariants = new Map<string, { lang: ResolvedLang; gender: ResolvedGender }>();
 const MAX_CACHE_ENTRIES = 50;
 
-function getCacheKey(text: string, lang: string, gender: TtsGender): string {
+function getCacheKey(text: string, lang: string, gender: ResolvedGender): string {
   return `${lang}:${gender}:${text.trim().toLowerCase()}`;
+}
+
+function pickRandomVoiceVariant(
+  langSetting: string,
+  genderSetting: TtsGender
+): { lang: ResolvedLang; gender: ResolvedGender } {
+  const langs: ResolvedLang[] =
+    langSetting === 'random'
+      ? ['en-US', 'en-GB']
+      : [langSetting.startsWith('en-GB') ? 'en-GB' : 'en-US'];
+  const genders: ResolvedGender[] =
+    genderSetting === 'random' ? ['female', 'male'] : [genderSetting];
+
+  const pool: Array<{ lang: ResolvedLang; gender: ResolvedGender }> = [];
+  for (const l of langs) {
+    for (const g of genders) {
+      pool.push({ lang: l, gender: g });
+    }
+  }
+
+  if (pool.length === 1) return pool[0];
+
+  // 직전에 재생한 목소리와 다른 조합을 우선 선택해 랜덤 체감을 높임
+  const filtered = pool.filter((item) => `${item.lang}:${item.gender}` !== lastRandomVariantKey);
+  const candidates = filtered.length > 0 ? filtered : pool;
+  const chosen = candidates[Math.floor(Math.random() * candidates.length)];
+  lastRandomVariantKey = `${chosen.lang}:${chosen.gender}`;
+  return chosen;
+}
+
+function resolveTtsVariant(
+  text: string,
+  langSetting: string,
+  genderSetting: TtsGender,
+  mode: 'preload' | 'play'
+): { lang: ResolvedLang; gender: ResolvedGender } {
+  const isRandomMode = langSetting === 'random' || genderSetting === 'random';
+  if (!isRandomMode) {
+    return {
+      lang: langSetting.startsWith('en-GB') ? 'en-GB' : 'en-US',
+      gender: genderSetting,
+    };
+  }
+
+  const textKey = `${langSetting}:${genderSetting}:${text.trim().toLowerCase()}`;
+  if (mode === 'play') {
+    const preloaded = preloadedRandomVariants.get(textKey);
+    if (preloaded) {
+      preloadedRandomVariants.delete(textKey);
+      lastRandomVariantKey = `${preloaded.lang}:${preloaded.gender}`;
+      return preloaded;
+    }
+    return pickRandomVoiceVariant(langSetting, genderSetting);
+  }
+
+  // preload 모드: 이미 해당 문장에 대해 선택된 랜덤 조합이 있으면 재사용
+  const existing = preloadedRandomVariants.get(textKey);
+  if (existing) return existing;
+
+  const chosen = pickRandomVoiceVariant(langSetting, genderSetting);
+  if (preloadedRandomVariants.size > 40) {
+    const firstKey = preloadedRandomVariants.keys().next().value;
+    if (firstKey) preloadedRandomVariants.delete(firstKey);
+  }
+  preloadedRandomVariants.set(textKey, chosen);
+  return chosen;
 }
 
 /**
@@ -125,8 +195,9 @@ export async function preloadNaturalAudioTTS(text: string, lang: string = 'en-US
   const cleanText = text.trim();
   if (!cleanText) return null;
 
-  const gender = getTtsVoiceGender();
-  const key = getCacheKey(cleanText, lang, gender);
+  const genderSetting = getTtsVoiceGender();
+  const resolved = resolveTtsVariant(cleanText, lang, genderSetting, 'preload');
+  const key = getCacheKey(cleanText, resolved.lang, resolved.gender);
 
   // 1. 이미 메모리에 캐시되어 있는 경우
   const existing = audioBlobCache.get(key);
@@ -141,7 +212,7 @@ export async function preloadNaturalAudioTTS(text: string, lang: string = 'en-US
   }
 
   // 3. 백그라운드 프리로드 시작
-  const audioUrl = `/api/tts?text=${encodeURIComponent(cleanText)}&lang=${encodeURIComponent(lang)}&gender=${gender}&v=2`;
+  const audioUrl = `/api/tts?text=${encodeURIComponent(cleanText)}&lang=${encodeURIComponent(resolved.lang)}&gender=${resolved.gender}&v=2`;
 
   const preloadPromise = (async () => {
     try {
@@ -228,8 +299,9 @@ export function playNaturalAudioTTS(
         return;
       }
 
-      const gender = getTtsVoiceGender();
-      const key = getCacheKey(cleanText, lang, gender);
+      const genderSetting = getTtsVoiceGender();
+      const resolved = resolveTtsVariant(cleanText, lang, genderSetting, 'play');
+      const key = getCacheKey(cleanText, resolved.lang, resolved.gender);
 
       // 1. 이미 프리로드 완료된 Blob URL이 있는 경우 -> 메모리에서 0초 지연 즉각 재생!
       let targetSourceUrl: string | null = null;
@@ -257,7 +329,7 @@ export function playNaturalAudioTTS(
       }
 
       if (!targetSourceUrl) {
-        targetSourceUrl = `/api/tts?text=${encodeURIComponent(cleanText)}&lang=${encodeURIComponent(lang)}&gender=${gender}&v=2`;
+        targetSourceUrl = `/api/tts?text=${encodeURIComponent(cleanText)}&lang=${encodeURIComponent(resolved.lang)}&gender=${resolved.gender}&v=2`;
       }
 
       const playbackSpeed = typeof rate === 'number' ? rate : getTtsPlaybackRate();
@@ -324,13 +396,14 @@ export function playWebSpeechTTS(text: string, voiceCode: string = 'en-US', rate
 
     window.speechSynthesis.cancel();
 
+    const resolved = pickRandomVoiceVariant(voiceCode, getTtsVoiceGender());
     const currentRate = typeof rate === 'number' ? rate : getTtsPlaybackRate();
     const utterance = new SpeechSynthesisUtterance(text);
     utterance.rate = currentRate;
     utterance.pitch = 1.0;
-    utterance.lang = voiceCode;
+    utterance.lang = resolved.lang;
 
-    const bestVoice = getBestVoice(voiceCode);
+    const bestVoice = getBestVoice(resolved.lang, resolved.gender);
     if (bestVoice) {
       utterance.voice = bestVoice;
     }
