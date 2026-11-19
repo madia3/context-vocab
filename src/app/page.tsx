@@ -4420,21 +4420,21 @@ export default function Home() {
                           <button
                             type="button"
                             onClick={() => setIsAddBookDropdownOpen((prev) => !prev)}
-                            className="w-full px-3 py-2.5 bg-slate-50 hover:bg-indigo-50/60 text-slate-900 border border-slate-200 hover:border-indigo-300 rounded-xl transition flex items-center justify-between gap-2 cursor-pointer text-left shadow-2xs"
+                            className="w-full px-3 py-2.5 bg-emerald-50 hover:bg-emerald-100/70 text-emerald-900 border border-emerald-300 hover:border-emerald-400 rounded-xl transition flex items-center justify-between gap-2 cursor-pointer text-left shadow-2xs"
                           >
                             <div className="flex items-center gap-2 min-w-0">
-                              <BookOpen className="w-4 h-4 text-indigo-600 shrink-0" />
-                              <span className="text-xs font-extrabold text-slate-900 truncate">
+                              <BookOpen className="w-4 h-4 text-emerald-600 shrink-0" />
+                              <span className="text-xs font-extrabold text-emerald-900 truncate">
                                 {activeTitle}
                               </span>
                             </div>
                             <div className="flex items-center gap-1.5 shrink-0">
-                              <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-100">
+                              <span className="text-[11px] font-bold px-2 py-0.5 rounded-full bg-white/80 text-emerald-800 border border-emerald-200">
                                 {activeCount}단어
                               </span>
                               <ChevronDown
-                                className={`w-4 h-4 text-slate-500 transition-transform duration-200 ${
-                                  isAddBookDropdownOpen ? 'rotate-180 text-indigo-600' : ''
+                                className={`w-4 h-4 text-emerald-600 transition-transform duration-200 ${
+                                  isAddBookDropdownOpen ? 'rotate-180 text-emerald-700' : ''
                                 }`}
                               />
                             </div>
@@ -4584,19 +4584,19 @@ export default function Home() {
                         <div
                           className={`p-2 sm:p-2.5 rounded-xl border text-xs flex items-center justify-between gap-2 transition ${
                             lastOcrEngineInfo.method === 'gemini_vision'
-                              ? 'bg-emerald-50 border-emerald-300 text-emerald-900 shadow-2xs'
+                              ? 'bg-slate-50 border-slate-200 text-slate-800 shadow-2xs'
                               : lastOcrEngineInfo.method === 'gemini_repair'
-                              ? 'bg-indigo-50 border-indigo-300 text-indigo-900 shadow-2xs'
+                              ? 'bg-slate-50 border-slate-200 text-slate-800 shadow-2xs'
                               : lastOcrEngineInfo.method === 'web'
-                              ? 'bg-slate-100 border-slate-300 text-slate-800'
+                              ? 'bg-slate-50 border-slate-200 text-slate-800 shadow-2xs'
                               : 'bg-amber-50 border-amber-300 text-amber-900 shadow-2xs'
                           }`}
                         >
                           <div className="flex items-center gap-1.5 min-w-0">
                             {lastOcrEngineInfo.method === 'gemini_vision' ? (
-                              <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shrink-0 animate-pulse" />
+                              <span className="w-2.5 h-2.5 rounded-full bg-slate-400 shrink-0" />
                             ) : lastOcrEngineInfo.method === 'gemini_repair' ? (
-                              <Sparkles className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
+                              <Sparkles className="w-3.5 h-3.5 text-slate-600 shrink-0" />
                             ) : lastOcrEngineInfo.method === 'web' ? (
                               <Globe className="w-3.5 h-3.5 text-slate-600 shrink-0" />
                             ) : (
