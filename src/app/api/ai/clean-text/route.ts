@@ -89,6 +89,17 @@ ${rawText.slice(0, 8000)}
       req,
     });
 
+    if (aiRes.quotaExceeded) {
+      return NextResponse.json(
+        {
+          error: aiRes.lastError || '오늘의 무료 서버 AI 한도를 모두 사용했습니다.',
+          code: 'SERVER_QUOTA_EXCEEDED',
+          quotaInfo: aiRes.quotaInfo,
+        },
+        { status: 429 }
+      );
+    }
+
     if (aiRes.ok && aiRes.text) {
       try {
         const cleanJson = aiRes.text.replace(/```json/gi, '').replace(/```/g, '').trim();

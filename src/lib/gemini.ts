@@ -8,6 +8,32 @@ const CLIENT_SHIELD_SALT = 'divivid_voca_key_shield_v1';
 
 let activeAiUserContext: { id?: string; email?: string } | null = null;
 
+export interface AiQuotaExceededInfo {
+  message: string;
+  tier?: string;
+  used?: number;
+  limit?: number;
+}
+
+type AiQuotaExceededHandler = (info: AiQuotaExceededInfo) => void;
+let aiQuotaExceededHandler: AiQuotaExceededHandler | null = null;
+
+export function setAiQuotaExceededHandler(handler: AiQuotaExceededHandler | null) {
+  aiQuotaExceededHandler = handler;
+}
+
+export function notifyAiQuotaExceeded(
+  message: string,
+  quotaInfo?: { tier?: string; used?: number; limit?: number }
+) {
+  if (aiQuotaExceededHandler) {
+    aiQuotaExceededHandler({
+      message: message || '오늘의 무료 서버 AI 한도를 모두 사용했습니다.',
+      ...quotaInfo,
+    });
+  }
+}
+
 export function setCurrentAiUserContext(user?: { id?: string; email?: string } | null) {
   activeAiUserContext = user ? { id: user.id, email: user.email } : null;
 }
@@ -251,6 +277,11 @@ export async function repairOcrTextWithAIMeta(
           attemptLogs: data.attemptLogs,
         };
       }
+    } else if (res.status === 429) {
+      const errData = await res.json().catch(() => ({}));
+      if (errData?.code === 'SERVER_QUOTA_EXCEEDED') {
+        notifyAiQuotaExceeded(errData.error, errData.quotaInfo);
+      }
     }
   } catch (err) {
     console.warn('AI OCR text repair fallback error:', err);
@@ -361,6 +392,7 @@ export async function extractTextWithAI(
   };
 
   // 1. Gemini Vision OCR 우선 시도 (2장일 경우 전후 관계 자동 파악 및 잘린 문장 완벽 결합)
+  let isServerQuotaExceeded = false;
   const visionStart = performance.now();
   try {
     const res = await fetch('/api/ai/ocr', {
@@ -420,6 +452,10 @@ export async function extractTextWithAI(
       serverGeminiMs = errData?.serverDurationMs;
       modelUsed = errData?.modelAttempted;
       visionAttemptLogs = Array.isArray(errData?.attemptLogs) ? errData.attemptLogs : [];
+      if (res.status === 429 && errData?.code === 'SERVER_QUOTA_EXCEEDED') {
+        isServerQuotaExceeded = true;
+        notifyAiQuotaExceeded(errData.error, errData.quotaInfo);
+      }
       pipelineSteps.push({
         step: '2. Gemini Vision 호출 실패',
         durationMs: visionNetworkMs,
@@ -476,7 +512,7 @@ export async function extractTextWithAI(
   let repairModelUsed: string | undefined;
   let repairAttemptLogs: string[] = [];
 
-  if (heuristicCleaned && heuristicCleaned.length > 10) {
+  if (!isServerQuotaExceeded && heuristicCleaned && heuristicCleaned.length > 10) {
     const repairStart = performance.now();
     const aiRepairedMeta = await repairOcrTextWithAIMeta(heuristicCleaned, apiKey);
     repairMs = Math.round(performance.now() - repairStart);
@@ -629,6 +665,11 @@ export async function findSentenceWithAI(
           aiExplanation: data.aiExplanation,
           lemma: data.lemma ? String(data.lemma).trim().toLowerCase() : undefined,
         };
+      }
+    } else if (res.status === 429) {
+      const errData = await res.json().catch(() => ({}));
+      if (errData?.code === 'SERVER_QUOTA_EXCEEDED') {
+        notifyAiQuotaExceeded(errData.error, errData.quotaInfo);
       }
     }
   } catch (err) {

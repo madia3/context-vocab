@@ -44,7 +44,10 @@ import {
   setStoredGeminiKey,
   setCurrentAiUserContext,
   buildAiRequestHeaders,
+  setAiQuotaExceededHandler,
+  notifyAiQuotaExceeded,
   fileToBase64,
+  type AiQuotaExceededInfo,
   type OcrEngineType,
   type OcrTimingStats,
 } from '@/lib/gemini';
@@ -912,6 +915,22 @@ export default function Home() {
 
   // Floating Toast State
   const [toast, setToast] = useState<{ show: boolean; title: string; subtitle?: string } | null>(null);
+  const [aiQuotaExceededNotice, setAiQuotaExceededNotice] = useState<AiQuotaExceededInfo | null>(null);
+
+  // 서버 공용 AI 일일 한도 초과 시 자동으로 개인 키 등록 화면(설정 -> AI 연동) 표시
+  useEffect(() => {
+    setAiQuotaExceededHandler((info) => {
+      setAiQuotaExceededNotice(info);
+      setIsWordSelectModalOpen(false);
+      setSettingsTab('ai');
+      setIsSettingsOpen(true);
+      triggerToast(
+        '오늘의 무료 서버 AI 한도 도달 🔑',
+        '개인 무료 Google API 키를 등록하면 일 1,500회 + 비상 100회 바로 이어서 사용할 수 있어요.'
+      );
+    });
+    return () => setAiQuotaExceededHandler(null);
+  }, []);
 
   // 화면 전환 / 앱 백그라운드 복귀 시 퀴즈 및 탭 상태 유지용 Ref
   const initialLoadedRef = useRef(false);
@@ -955,6 +974,7 @@ export default function Home() {
       if (data.ok) {
         setStoredGeminiKey(key);
         setGeminiApiKey(key);
+        setAiQuotaExceededNotice(null);
         recordAiUsage(1);
         setAiUsageStats(getAiUsageStats());
         setKeyTestStatus({ ok: true, message: data.message || 'Google Gemini AI 연동 성공! 🤖 모든 AI 비전 및 문맥 분석 기능이 활성화되었습니다.' });
@@ -1625,6 +1645,11 @@ export default function Home() {
           }
           triggerToast('문장 완성 완료! ✨', '페이지 경계로 잘려 있던 문맥을 자연스럽게 보정했습니다.');
         }
+      } else if (res.status === 429) {
+        const errData = await res.json().catch(() => ({}));
+        if (errData?.code === 'SERVER_QUOTA_EXCEEDED') {
+          notifyAiQuotaExceeded(errData.error, errData.quotaInfo);
+        }
       }
     } catch (err) {
       console.warn('Sentence completion error:', err);
@@ -1912,6 +1937,11 @@ export default function Home() {
               cleaned = data.cleanedText;
               removedAdCount = data.removedCount || 0;
               if (!title && data.title) title = data.title;
+            }
+          } else if (res.status === 429) {
+            const errData = await res.json().catch(() => ({}));
+            if (errData?.code === 'SERVER_QUOTA_EXCEEDED') {
+              notifyAiQuotaExceeded(errData.error, errData.quotaInfo);
             }
           }
         } catch (apiErr) {
@@ -2370,6 +2400,14 @@ export default function Home() {
           openSettingsWithTab('ai');
           triggerToast('Gemini API 키 설정 필요 🔑', '개인 설정의 AI 연동 탭에서 API 키를 먼저 등록해 주세요.');
           return;
+        }
+
+        if (res.status === 429) {
+          const errData = await res.json().catch(() => ({}));
+          if (errData?.code === 'SERVER_QUOTA_EXCEEDED') {
+            notifyAiQuotaExceeded(errData.error, errData.quotaInfo);
+            return;
+          }
         }
 
         if (res.ok) {
@@ -7282,6 +7320,33 @@ export default function Home() {
                         </span>
                       )}
                     </div>
+                    {aiQuotaExceededNotice && (
+                      <div className="p-3 bg-amber-50 rounded-xl border border-amber-300 text-[11.5px] text-amber-950 space-y-1 shadow-2xs">
+                        <div className="flex items-start justify-between gap-2">
+                          <p className="font-extrabold flex items-center gap-1.5 text-amber-900">
+                            <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
+                            <span>
+                              오늘의 무료 서버 AI 한도
+                              {aiQuotaExceededNotice.limit
+                                ? `(${aiQuotaExceededNotice.used ?? aiQuotaExceededNotice.limit}/${aiQuotaExceededNotice.limit}회)`
+                                : ''}
+                              를 모두 사용했습니다
+                            </span>
+                          </p>
+                          <button
+                            type="button"
+                            onClick={() => setAiQuotaExceededNotice(null)}
+                            className="text-amber-600 hover:text-amber-900 text-xs font-bold px-1 cursor-pointer"
+                            aria-label="안내 닫기"
+                          >
+                            ✕
+                          </button>
+                        </div>
+                        <p className="text-[11px] text-amber-900/90 leading-relaxed pl-5.5">
+                          아래 안내를 따라 본인 무료 Google API 키를 등록(30초 완료)하시면 <strong>일 1,500회 + 비상 서버 100회</strong>로 바로 이어서 사용하실 수 있습니다.
+                        </p>
+                      </div>
+                    )}
                     {isServerGeminiReady && !geminiApiKey && (
                       <div className="p-2.5 bg-emerald-50/90 rounded-xl border border-emerald-200 text-[11px] text-emerald-900 font-medium leading-relaxed">
                         ✨ <strong>서버 전역 Gemini AI가 활성화되어 있습니다.</strong><br />

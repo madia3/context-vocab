@@ -98,6 +98,17 @@ Output strictly valid JSON:
       req,
     });
 
+    if (aiRes.quotaExceeded) {
+      return NextResponse.json(
+        {
+          error: aiRes.lastError || '오늘의 무료 서버 AI 한도를 모두 사용했습니다.',
+          code: 'SERVER_QUOTA_EXCEEDED',
+          quotaInfo: aiRes.quotaInfo,
+        },
+        { status: 429 }
+      );
+    }
+
     let completedText = '';
     let sentenceTranslation = '';
     let didStitchNextPage = false;

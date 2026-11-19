@@ -98,6 +98,17 @@ Return strictly valid JSON:
         responseMimeType: 'application/json',
       });
 
+      if (visionRes.quotaExceeded) {
+        return NextResponse.json(
+          {
+            error: visionRes.lastError || '오늘의 무료 서버 AI 한도를 모두 사용했습니다.',
+            code: 'SERVER_QUOTA_EXCEEDED',
+            quotaInfo: visionRes.quotaInfo,
+          },
+          { status: 429 }
+        );
+      }
+
       if (visionRes.ok && visionRes.text) {
         rawJsonText = visionRes.text;
       }
@@ -113,6 +124,16 @@ Return strictly valid JSON:
         responseMimeType: 'application/json',
         req,
       });
+      if (textRes.quotaExceeded) {
+        return NextResponse.json(
+          {
+            error: textRes.lastError || '오늘의 무료 서버 AI 한도를 모두 사용했습니다.',
+            code: 'SERVER_QUOTA_EXCEEDED',
+            quotaInfo: textRes.quotaInfo,
+          },
+          { status: 429 }
+        );
+      }
       if (textRes.ok && textRes.text) {
         rawJsonText = textRes.text;
       }

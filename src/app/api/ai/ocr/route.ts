@@ -176,6 +176,17 @@ Output strictly valid JSON:
           });
         }
       } else {
+        if (visionRes.quotaExceeded) {
+          return NextResponse.json(
+            {
+              error: visionRes.lastError || '오늘의 무료 서버 AI 한도를 모두 사용했습니다.',
+              code: 'SERVER_QUOTA_EXCEEDED',
+              quotaInfo: visionRes.quotaInfo,
+              attemptLogs: visionAttemptLogs,
+            },
+            { status: 429 }
+          );
+        }
         visionLastError = visionRes.lastError || '';
       }
     }
@@ -208,6 +219,17 @@ ${String(fallbackRawText).slice(0, 6000)}
         responseMimeType: 'application/json',
         req,
       });
+
+      if (textRes.quotaExceeded) {
+        return NextResponse.json(
+          {
+            error: textRes.lastError || '오늘의 무료 서버 AI 한도를 모두 사용했습니다.',
+            code: 'SERVER_QUOTA_EXCEEDED',
+            quotaInfo: textRes.quotaInfo,
+          },
+          { status: 429 }
+        );
+      }
 
       if (textRes.ok && textRes.text) {
         try {

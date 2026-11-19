@@ -691,6 +691,8 @@ export async function callGeminiWithFallback(options: {
   rawData?: any;
   modelUsed?: string;
   lastError?: string;
+  quotaExceeded?: boolean;
+  quotaInfo?: { tier: string; used: number; limit: number };
   durationMs?: number;
   attemptLogs?: string[];
 }> {
@@ -726,6 +728,8 @@ export async function callGeminiWithFallback(options: {
         ok: false,
         text: '',
         lastError: quota.message || '오늘의 무료 서버 AI 한도를 모두 사용했습니다.',
+        quotaExceeded: true,
+        quotaInfo: { tier: quota.tier, used: quota.used, limit: quota.limit },
         durationMs: 0,
         attemptLogs,
       };
