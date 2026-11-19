@@ -25,6 +25,11 @@ import {
   type RecommendedCategory,
 } from '@/lib/recommendedWordbooks';
 import {
+  setTtsVoiceGender,
+  getTtsVoiceGender,
+  type TtsGender,
+} from '@/lib/tts';
+import {
   lookupDictionary,
   speakWordTTS,
   speakSentenceTTS,
@@ -654,6 +659,7 @@ export default function Home() {
   const [isDeletingKey, setIsDeletingKey] = useState(false);
   const [keyTestStatus, setKeyTestStatus] = useState<{ ok: boolean; message: string } | null>(null);
   const [ttsVoice, setTtsVoice] = useState('en-US');
+  const [ttsGender, setTtsGender] = useState<TtsGender>('female');
   const [ttsRate, setTtsRate] = useState<number>(1.25);
   const [hasPersonalGeminiKey, setHasPersonalGeminiKey] = useState(false);
   const [personalKeyMasked, setPersonalKeyMasked] = useState('');
@@ -1391,6 +1397,7 @@ export default function Home() {
     if (typeof window !== 'undefined') {
       const savedVoice = localStorage.getItem('context_vocab_tts_voice');
       if (savedVoice) setTtsVoice(savedVoice);
+      setTtsGender(getTtsVoiceGender());
 
       const savedRate = localStorage.getItem('context_vocab_tts_rate');
       if (savedRate) {
@@ -8982,6 +8989,49 @@ export default function Home() {
                         <option value="en-US">영어 (미국식 - US English)</option>
                         <option value="en-GB">영어 (영국식 - GB English)</option>
                       </select>
+                    </div>
+
+                    {/* TTS Voice Gender Toggle (남/여 목소리 선택 - 속도 조절 바로 위) */}
+                    <div className="pt-2.5 border-t border-slate-200/80">
+                      <label className="block text-xs font-bold text-slate-800 mb-1.5">
+                        낭독 목소리 (남/여)
+                      </label>
+                      <div className="grid grid-cols-2 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTtsGender('female');
+                            setTtsVoiceGender('female');
+                          }}
+                          className={`py-2 px-3 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-[0.98] ${
+                            ttsGender === 'female'
+                              ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
+                              : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                          }`}
+                        >
+                          <span>👩 여성</span>
+                          <span className={`text-[10px] font-semibold ${ttsGender === 'female' ? 'text-indigo-100' : 'text-slate-400'}`}>
+                            {ttsVoice.startsWith('en-GB') ? 'Sonia' : 'Ava'}
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTtsGender('male');
+                            setTtsVoiceGender('male');
+                          }}
+                          className={`py-2 px-3 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1.5 cursor-pointer active:scale-[0.98] ${
+                            ttsGender === 'male'
+                              ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
+                              : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                          }`}
+                        >
+                          <span>👨 남성</span>
+                          <span className={`text-[10px] font-semibold ${ttsGender === 'male' ? 'text-indigo-100' : 'text-slate-400'}`}>
+                            {ttsVoice.startsWith('en-GB') ? 'Ryan' : 'Andrew'}
+                          </span>
+                        </button>
+                      </div>
                     </div>
 
                     {/* TTS Speed Slider */}

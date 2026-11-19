@@ -19,19 +19,25 @@ function escapeXmlForSsml(input: string): string {
     .replace(/'/g, '&apos;');
 }
 
-function getEdgeNeuralVoice(lang: string): string {
-  if (lang.startsWith('en-GB')) return 'en-GB-SoniaNeural';
-  return 'en-US-AvaMultilingualNeural';
+function getEdgeNeuralVoice(lang: string, gender: 'female' | 'male'): string {
+  if (lang.startsWith('en-GB')) {
+    return gender === 'male' ? 'en-GB-RyanNeural' : 'en-GB-SoniaNeural';
+  }
+  return gender === 'male' ? 'en-US-AndrewMultilingualNeural' : 'en-US-AvaMultilingualNeural';
 }
 
-async function synthesizeEdgeNeuralTTS(text: string, lang: string): Promise<Buffer | null> {
+async function synthesizeEdgeNeuralTTS(
+  text: string,
+  lang: string,
+  gender: 'female' | 'male'
+): Promise<Buffer | null> {
   const tts = new MsEdgeTTS({
     connectionTimeoutMs: 3500,
     synthesisTimeoutMs: 6000,
   });
 
   try {
-    const voiceName = getEdgeNeuralVoice(lang);
+    const voiceName = getEdgeNeuralVoice(lang, gender);
     await tts.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
 
     const safeText = escapeXmlForSsml(text);
@@ -81,13 +87,14 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const rawText = searchParams.get('text') || '';
     const lang = searchParams.get('lang') || 'en-US';
+    const gender: 'female' | 'male' = searchParams.get('gender') === 'male' ? 'male' : 'female';
     const text = rawText.trim();
 
     if (!text || text.length > 600) {
       return new NextResponse('Text parameter is required (max 600 chars)', { status: 400 });
     }
 
-    const cacheKey = `${lang}:${text.toLowerCase()}`;
+    const cacheKey = `${lang}:${gender}:${text.toLowerCase()}`;
     const cached = ttsCache.get(cacheKey);
     if (cached && Date.now() - cached.timestamp < CACHE_TTL_MS) {
       return new NextResponse(new Uint8Array(cached.buffer), {
@@ -149,7 +156,7 @@ export async function GET(req: NextRequest) {
     }
 
     // 2. 문장 및 복합 단어 1순위: Microsoft Edge Neural TTS (자연스러운 원어민 오디오북 억양)
-    const edgeBuffer = await synthesizeEdgeNeuralTTS(text, lang);
+    const edgeBuffer = await synthesizeEdgeNeuralTTS(text, lang, gender);
     if (edgeBuffer && edgeBuffer.length > 0) {
       if (ttsCache.size >= MAX_CACHE_ITEMS) {
         const firstKey = ttsCache.keys().next().value;

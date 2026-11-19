@@ -1,10 +1,31 @@
 // 고음질 자연스러운 원어민 TTS (Studio Human Audio + Neural TTS + 프리미엄 브라우저 음성)
 
+export type TtsGender = 'female' | 'male';
+
 let currentAudio: HTMLAudioElement | null = null;
 let cancelCurrentPlayback: (() => void) | null = null;
 let activeSpeechId = 0;
 let cachedVoices: SpeechSynthesisVoice[] = [];
 let currentTtsRate: number = 1.25;
+let currentTtsGender: TtsGender = 'female';
+
+export function setTtsVoiceGender(gender: TtsGender) {
+  currentTtsGender = gender === 'male' ? 'male' : 'female';
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('context_vocab_tts_gender', currentTtsGender);
+  }
+}
+
+export function getTtsVoiceGender(): TtsGender {
+  if (typeof window !== 'undefined') {
+    const saved = localStorage.getItem('context_vocab_tts_gender');
+    if (saved === 'male' || saved === 'female') {
+      currentTtsGender = saved;
+      return currentTtsGender;
+    }
+  }
+  return currentTtsGender;
+}
 
 export function setTtsPlaybackRate(rate: number) {
   const clamped = Math.max(0.5, Math.min(2.0, Number(rate) || 1.25));
@@ -47,7 +68,7 @@ if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
 }
 
 // 브라우저 내장 음성 중 가장 자연스러운 프리미엄/뉴럴 음성 자동 탐색
-export function getBestVoice(langPrefix: string = 'en-US'): SpeechSynthesisVoice | null {
+export function getBestVoice(langPrefix: string = 'en-US', gender?: TtsGender): SpeechSynthesisVoice | null {
   if (typeof window === 'undefined' || !('speechSynthesis' in window)) return null;
 
   const voices = cachedVoices.length > 0 ? cachedVoices : window.speechSynthesis.getVoices();
@@ -55,30 +76,23 @@ export function getBestVoice(langPrefix: string = 'en-US'): SpeechSynthesisVoice
 
   const targetPrefix = langPrefix.slice(0, 2).toLowerCase();
   const isTargetLang = (v: SpeechSynthesisVoice) => v.lang.toLowerCase().startsWith(targetPrefix);
+  const targetGender = gender || getTtsVoiceGender();
 
-  // 1순위: Siri, Natural, Premium, Enhanced 고음질 뉴럴 음성
-  const topKeywords = ['Natural', 'Premium', 'Enhanced', 'Neural', 'Siri', 'Online (Natural)'];
-  for (const kw of topKeywords) {
-    const found = voices.find((v) => isTargetLang(v) && v.name.includes(kw));
-    if (found) return found;
-  }
-
-  // 2순위: 검증된 최고급 원어민 음성 목록
-  const preferredNames = [
-    'Google US English',
-    'Google UK English Female',
-    'Google UK English Male',
-    'Samantha',
-    'Ava',
-    'Allison',
-    'Karen',
-    'Daniel',
-    'Serena',
-    'Oliver',
-  ];
+  // 1순위: 성별 매칭 우선 검증된 원어민 음성
+  const preferredNames =
+    targetGender === 'male'
+      ? ['Andrew', 'Ryan', 'Daniel', 'Google UK English Male', 'Oliver', 'Alex', 'Aaron', 'Fred']
+      : ['Ava', 'Sonia', 'Samantha', 'Google UK English Female', 'Allison', 'Karen', 'Serena', 'Google US English'];
 
   for (const name of preferredNames) {
     const found = voices.find((v) => isTargetLang(v) && v.name.includes(name));
+    if (found) return found;
+  }
+
+  // 2순위: Siri, Natural, Premium, Enhanced 고음질 뉴럴 음성
+  const topKeywords = ['Natural', 'Premium', 'Enhanced', 'Neural', 'Siri', 'Online (Natural)'];
+  for (const kw of topKeywords) {
+    const found = voices.find((v) => isTargetLang(v) && v.name.includes(kw));
     if (found) return found;
   }
 
@@ -97,8 +111,8 @@ const audioBlobCache = new Map<string, PreloadedAudioEntry>();
 const inFlightPreloads = new Map<string, Promise<string | null>>();
 const MAX_CACHE_ENTRIES = 50;
 
-function getCacheKey(text: string, lang: string): string {
-  return `${lang}:${text.trim().toLowerCase()}`;
+function getCacheKey(text: string, lang: string, gender: TtsGender): string {
+  return `${lang}:${gender}:${text.trim().toLowerCase()}`;
 }
 
 /**
@@ -111,7 +125,8 @@ export async function preloadNaturalAudioTTS(text: string, lang: string = 'en-US
   const cleanText = text.trim();
   if (!cleanText) return null;
 
-  const key = getCacheKey(cleanText, lang);
+  const gender = getTtsVoiceGender();
+  const key = getCacheKey(cleanText, lang, gender);
 
   // 1. 이미 메모리에 캐시되어 있는 경우
   const existing = audioBlobCache.get(key);
@@ -126,7 +141,7 @@ export async function preloadNaturalAudioTTS(text: string, lang: string = 'en-US
   }
 
   // 3. 백그라운드 프리로드 시작
-  const audioUrl = `/api/tts?text=${encodeURIComponent(cleanText)}&lang=${encodeURIComponent(lang)}`;
+  const audioUrl = `/api/tts?text=${encodeURIComponent(cleanText)}&lang=${encodeURIComponent(lang)}&gender=${gender}`;
 
   const preloadPromise = (async () => {
     try {
@@ -213,7 +228,8 @@ export function playNaturalAudioTTS(
         return;
       }
 
-      const key = getCacheKey(cleanText, lang);
+      const gender = getTtsVoiceGender();
+      const key = getCacheKey(cleanText, lang, gender);
 
       // 1. 이미 프리로드 완료된 Blob URL이 있는 경우 -> 메모리에서 0초 지연 즉각 재생!
       let targetSourceUrl: string | null = null;
@@ -241,7 +257,7 @@ export function playNaturalAudioTTS(
       }
 
       if (!targetSourceUrl) {
-        targetSourceUrl = `/api/tts?text=${encodeURIComponent(cleanText)}&lang=${encodeURIComponent(lang)}`;
+        targetSourceUrl = `/api/tts?text=${encodeURIComponent(cleanText)}&lang=${encodeURIComponent(lang)}&gender=${gender}`;
       }
 
       const playbackSpeed = typeof rate === 'number' ? rate : getTtsPlaybackRate();
