@@ -6058,15 +6058,34 @@ export default function Home() {
           <section className="space-y-4">
             {/* Top Vocabulary Book Selector & Controls */}
             <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-xs space-y-3.5">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
-                <div>
-                  <h2 className="text-base font-bold text-slate-900 flex items-center gap-2">
-                    <span>내 문맥 영한 단어장</span>
-                    <span className="text-xs bg-indigo-100 text-indigo-700 px-2.5 py-0.5 rounded-full font-bold">
-                      총 {vocabulary.length}단어 ({availableBookTitles.length}개 단어장)
-                    </span>
-                  </h2>
-                </div>
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <h2 className="text-base font-bold text-slate-900 flex items-center gap-2 min-w-0">
+                  <span className="truncate">내 문맥 영한 단어장</span>
+                  <span className="text-xs bg-indigo-100 text-indigo-700 px-2.5 py-0.5 rounded-full font-bold shrink-0">
+                    총 {vocabulary.length}단어 ({availableBookTitles.length}개 단어장)
+                  </span>
+                </h2>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={ttsBackgroundPlay}
+                  onClick={() => handleToggleBackgroundPlay(!ttsBackgroundPlay)}
+                  className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-slate-500 hover:text-slate-800 transition cursor-pointer shrink-0"
+                  title="다른 탭이나 백그라운드에서도 문장 연속 듣기 유지"
+                >
+                  <span>백그라운드 듣기</span>
+                  <span
+                    className={`relative inline-flex h-4 w-7 items-center rounded-full transition-colors duration-200 ${
+                      ttsBackgroundPlay ? 'bg-emerald-500' : 'bg-slate-300'
+                    }`}
+                  >
+                    <span
+                      className={`inline-block h-3 w-3 transform rounded-full bg-white shadow-xs transition duration-200 ${
+                        ttsBackgroundPlay ? 'translate-x-3.5' : 'translate-x-0.5'
+                      }`}
+                    />
+                  </span>
+                </button>
               </div>
 
               {/* 1. 단어장 다중 선택기 (복수 선택 지원 & 빠른 선택 칩 제거) */}
@@ -6265,27 +6284,6 @@ export default function Home() {
                   </span>
                 </button>
               </div>
-
-              {/* 백그라운드 계속 듣기 빠른 토글 (연속 낭독 중 표시) */}
-              {isListeningSentences && (
-                <div className="flex items-center justify-between gap-2 px-3 py-2 bg-amber-50/90 border border-amber-200/80 rounded-xl text-[11.5px]">
-                  <span className="font-bold text-amber-950 flex items-center gap-1.5 min-w-0">
-                    <span>🎧</span>
-                    <span className="truncate">다른 탭·백그라운드에서도 계속 듣기</span>
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => handleToggleBackgroundPlay(!ttsBackgroundPlay)}
-                    className={`px-2.5 py-1 rounded-full text-[11px] font-black transition cursor-pointer shrink-0 active:scale-95 ${
-                      ttsBackgroundPlay
-                        ? 'bg-emerald-600 text-white shadow-2xs'
-                        : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
-                    }`}
-                  >
-                    {ttsBackgroundPlay ? 'ON' : 'OFF'}
-                  </button>
-                </div>
-              )}
             </div>
 
             {/* 3. 선택된 단어장의 상세 정보 카드 */}
