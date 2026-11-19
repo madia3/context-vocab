@@ -6,7 +6,7 @@ export const runtime = 'nodejs';
 export const dynamic = 'force-dynamic';
 
 // 고음질 오디오 메모리 캐시 (동일 단어/문장 반복 재생 시 즉각 응답)
-const ttsCache = new Map<string, { buffer: Buffer; timestamp: number }>();
+const ttsCache = new Map<string, { buffer: Buffer; voice: string; timestamp: number }>();
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24시간
 const MAX_CACHE_ITEMS = 1000;
 
@@ -19,26 +19,25 @@ function escapeXmlForSsml(input: string): string {
     .replace(/'/g, '&apos;');
 }
 
-function getEdgeNeuralVoice(lang: string, gender: 'female' | 'male'): string {
+function getEdgeNeuralVoices(lang: string, gender: 'female' | 'male'): string[] {
   if (lang.startsWith('en-GB')) {
-    return gender === 'male' ? 'en-GB-RyanNeural' : 'en-GB-SoniaNeural';
+    return gender === 'male'
+      ? ['en-GB-RyanNeural', 'en-GB-ThomasNeural']
+      : ['en-GB-SoniaNeural', 'en-GB-LibbyNeural'];
   }
-  return gender === 'male' ? 'en-US-AndrewMultilingualNeural' : 'en-US-AvaMultilingualNeural';
+  return gender === 'male'
+    ? ['en-US-BrianMultilingualNeural', 'en-US-ChristopherNeural', 'en-US-GuyNeural']
+    : ['en-US-AvaMultilingualNeural', 'en-US-AvaNeural', 'en-US-JennyNeural'];
 }
 
-async function synthesizeEdgeNeuralTTS(
-  text: string,
-  lang: string,
-  gender: 'female' | 'male'
-): Promise<Buffer | null> {
+async function synthesizeSingleEdgeVoice(text: string, voiceName: string): Promise<Buffer | null> {
   const tts = new MsEdgeTTS({
     connectionTimeoutMs: 3500,
     synthesisTimeoutMs: 6000,
   });
 
   try {
-    const voiceName = getEdgeNeuralVoice(lang, gender);
-    await tts.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_96KBITRATE_MONO_MP3);
+    await tts.setMetadata(voiceName, OUTPUT_FORMAT.AUDIO_24KHZ_48KBITRATE_MONO_MP3);
 
     const safeText = escapeXmlForSsml(text);
     const { audioStream } = tts.toStream(safeText);
@@ -47,7 +46,7 @@ async function synthesizeEdgeNeuralTTS(
       const chunks: Buffer[] = [];
       const timer = setTimeout(() => {
         audioStream.destroy();
-        reject(new Error('Edge TTS stream timeout'));
+        reject(new Error(`Edge TTS stream timeout (${voiceName})`));
       }, 6500);
 
       audioStream.on('data', (chunk: Buffer | Uint8Array) => {
@@ -65,13 +64,28 @@ async function synthesizeEdgeNeuralTTS(
 
     return buffer.length > 0 ? buffer : null;
   } catch (err) {
-    console.warn('Edge Neural TTS failed, will fallback:', err);
+    console.warn(`Edge Neural TTS failed for ${voiceName}:`, err);
     return null;
   } finally {
     try {
       tts.close();
     } catch {}
   }
+}
+
+async function synthesizeEdgeNeuralTTS(
+  text: string,
+  lang: string,
+  gender: 'female' | 'male'
+): Promise<{ buffer: Buffer; voice: string } | null> {
+  const voices = getEdgeNeuralVoices(lang, gender);
+  for (const voiceName of voices) {
+    const buffer = await synthesizeSingleEdgeVoice(text, voiceName);
+    if (buffer && buffer.length > 0) {
+      return { buffer, voice: voiceName };
+    }
+  }
+  return null;
 }
 
 export async function GET(req: NextRequest) {
@@ -102,13 +116,15 @@ export async function GET(req: NextRequest) {
           'Content-Type': 'audio/mpeg',
           'Cache-Control': 'public, s-maxage=86400, max-age=86400, stale-while-revalidate=604800',
           'X-TTS-Source': 'cache',
+          'X-TTS-Voice': cached.voice,
         },
       });
     }
 
-    // 1. 단일 단어인 경우: 실제 인간 원어민 스튜디오 녹음 오디오(Dictionary API) 우선 탐색
+    // 1. 단일 단어 + 여성 음성인 경우: 실제 인간 원어민 스튜디오 녹음 오디오(Dictionary API) 우선 탐색
+    //    (Dictionary API 녹음은 대부분 여성 음성이므로, 남성 선택 시에는 일관된 남성 뉴럴 음성으로 합성)
     const isSingleWord = !text.includes(' ') && text.length < 35 && /^[a-zA-Z'-]+$/.test(text);
-    if (isSingleWord) {
+    if (isSingleWord && gender === 'female') {
       try {
         const dictRes = await fetch(
           `https://api.dictionaryapi.dev/api/v2/entries/en/${encodeURIComponent(text.toLowerCase())}`,
@@ -137,13 +153,14 @@ export async function GET(req: NextRequest) {
                   const firstKey = ttsCache.keys().next().value;
                   if (firstKey) ttsCache.delete(firstKey);
                 }
-                ttsCache.set(cacheKey, { buffer, timestamp: Date.now() });
+                ttsCache.set(cacheKey, { buffer, voice: 'dictionary-human', timestamp: Date.now() });
 
                 return new NextResponse(new Uint8Array(buffer), {
                   headers: {
                     'Content-Type': 'audio/mpeg',
                     'Cache-Control': 'public, s-maxage=86400, max-age=86400, stale-while-revalidate=604800',
                     'X-TTS-Source': 'dictionary-human-recording',
+                    'X-TTS-Voice': 'dictionary-human',
                   },
                 });
               }
@@ -151,29 +168,30 @@ export async function GET(req: NextRequest) {
           }
         }
       } catch {
-        // Fallback to Google Neural Voice
+        // Fallback to Edge Neural Voice
       }
     }
 
-    // 2. 문장 및 복합 단어 1순위: Microsoft Edge Neural TTS (자연스러운 원어민 오디오북 억양)
-    const edgeBuffer = await synthesizeEdgeNeuralTTS(text, lang, gender);
-    if (edgeBuffer && edgeBuffer.length > 0) {
+    // 2. 문장 및 단어 1순위: Microsoft Edge Neural TTS (자연스러운 원어민 오디오북 억양, 다중 백업 보이스 지원)
+    const edgeResult = await synthesizeEdgeNeuralTTS(text, lang, gender);
+    if (edgeResult && edgeResult.buffer.length > 0) {
       if (ttsCache.size >= MAX_CACHE_ITEMS) {
         const firstKey = ttsCache.keys().next().value;
         if (firstKey) ttsCache.delete(firstKey);
       }
-      ttsCache.set(cacheKey, { buffer: edgeBuffer, timestamp: Date.now() });
+      ttsCache.set(cacheKey, { buffer: edgeResult.buffer, voice: edgeResult.voice, timestamp: Date.now() });
 
-      return new NextResponse(new Uint8Array(edgeBuffer), {
+      return new NextResponse(new Uint8Array(edgeResult.buffer), {
         headers: {
           'Content-Type': 'audio/mpeg',
           'Cache-Control': 'public, s-maxage=86400, max-age=86400, stale-while-revalidate=604800',
           'X-TTS-Source': 'edge-neural',
+          'X-TTS-Voice': edgeResult.voice,
         },
       });
     }
 
-    // 3. 비상 폴백: Google Translate TTS (Edge Neural 일시 장애 시 자동 전환)
+    // 3. 비상 폴백: Google Translate TTS (Edge Neural 전체 장애 시에만 일시 사용, 캐시 금지!)
     const targetLang = lang.startsWith('en-GB') ? 'en-GB' : 'en-US';
     const googleTtsUrl = `https://translate.google.com/translate_tts?ie=UTF-8&tl=${targetLang}&client=gtx&q=${encodeURIComponent(
       text
@@ -195,17 +213,12 @@ export async function GET(req: NextRequest) {
     const arrayBuffer = await res.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    if (ttsCache.size >= MAX_CACHE_ITEMS) {
-      const firstKey = ttsCache.keys().next().value;
-      if (firstKey) ttsCache.delete(firstKey);
-    }
-    ttsCache.set(cacheKey, { buffer, timestamp: Date.now() });
-
     return new NextResponse(new Uint8Array(buffer), {
       headers: {
         'Content-Type': 'audio/mpeg',
-        'Cache-Control': 'public, s-maxage=86400, max-age=86400, stale-while-revalidate=604800',
+        'Cache-Control': 'no-store',
         'X-TTS-Source': 'google-fallback',
+        'X-TTS-Voice': 'google-translate',
       },
     });
   } catch (err: any) {

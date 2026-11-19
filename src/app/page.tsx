@@ -9092,7 +9092,7 @@ export default function Home() {
                         >
                           <span>👨 남성</span>
                           <span className={`text-[10px] font-semibold ${ttsGender === 'male' ? 'text-indigo-100' : 'text-slate-400'}`}>
-                            {ttsVoice.startsWith('en-GB') ? 'Ryan' : 'Andrew'}
+                            {ttsVoice.startsWith('en-GB') ? 'Ryan' : 'Brian'}
                           </span>
                         </button>
                       </div>

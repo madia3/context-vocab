@@ -81,7 +81,7 @@ export function getBestVoice(langPrefix: string = 'en-US', gender?: TtsGender): 
   // 1순위: 성별 매칭 우선 검증된 원어민 음성
   const preferredNames =
     targetGender === 'male'
-      ? ['Andrew', 'Ryan', 'Daniel', 'Google UK English Male', 'Oliver', 'Alex', 'Aaron', 'Fred']
+      ? ['Brian', 'Christopher', 'Guy', 'Ryan', 'Daniel', 'Google UK English Male', 'Oliver', 'Alex', 'Aaron', 'Fred']
       : ['Ava', 'Sonia', 'Samantha', 'Google UK English Female', 'Allison', 'Karen', 'Serena', 'Google US English'];
 
   for (const name of preferredNames) {
@@ -141,7 +141,7 @@ export async function preloadNaturalAudioTTS(text: string, lang: string = 'en-US
   }
 
   // 3. 백그라운드 프리로드 시작
-  const audioUrl = `/api/tts?text=${encodeURIComponent(cleanText)}&lang=${encodeURIComponent(lang)}&gender=${gender}`;
+  const audioUrl = `/api/tts?text=${encodeURIComponent(cleanText)}&lang=${encodeURIComponent(lang)}&gender=${gender}&v=2`;
 
   const preloadPromise = (async () => {
     try {
@@ -257,7 +257,7 @@ export function playNaturalAudioTTS(
       }
 
       if (!targetSourceUrl) {
-        targetSourceUrl = `/api/tts?text=${encodeURIComponent(cleanText)}&lang=${encodeURIComponent(lang)}&gender=${gender}`;
+        targetSourceUrl = `/api/tts?text=${encodeURIComponent(cleanText)}&lang=${encodeURIComponent(lang)}&gender=${gender}&v=2`;
       }
 
       const playbackSpeed = typeof rate === 'number' ? rate : getTtsPlaybackRate();
