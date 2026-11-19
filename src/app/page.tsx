@@ -6396,11 +6396,6 @@ export default function Home() {
                           return null;
                         })()}
                       </div>
-                      {!quizAnswerState.answered && (
-                        <span className="text-xs font-bold text-indigo-600 tracking-wider uppercase mb-1 block">
-                          다음 영어 단어의 알맞은 한국어 뜻을 고르세요
-                        </span>
-                      )}
                       <h3 className={`font-black text-slate-900 tracking-tight ${quizAnswerState.answered ? 'text-2xl sm:text-3xl mb-1' : 'text-3xl mb-2'}`}>
                         {currentQuizItem.word}
                       </h3>
@@ -6427,9 +6422,9 @@ export default function Home() {
                             <button
                               key={idx}
                               onClick={() => handleSelectOption(opt)}
-                              className="quiz-option-btn w-full text-left p-3.5 rounded-xl border border-slate-200 bg-white hover:border-indigo-500 hover:bg-indigo-50/40 text-xs font-bold text-slate-900 transition flex items-center gap-3 shadow-sm active:scale-[0.99]"
+                              className="quiz-option-btn w-full text-left p-3.5 rounded-xl border border-slate-200 bg-white hover:border-indigo-500 hover:bg-indigo-50/40 text-[15px] sm:text-base leading-snug font-bold text-slate-900 transition flex items-center gap-3 shadow-sm active:scale-[0.99]"
                             >
-                              <span className="w-6 h-6 rounded-full bg-slate-100 text-slate-700 font-black flex items-center justify-center text-xs border border-slate-200 shrink-0">
+                              <span className="w-7 h-7 rounded-full bg-slate-100 text-slate-700 font-black flex items-center justify-center text-sm border border-slate-200 shrink-0">
                                 {labels[idx]}
                               </span>
                               <span className="flex-1">{opt}</span>
