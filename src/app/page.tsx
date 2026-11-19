@@ -5760,7 +5760,6 @@ export default function Home() {
                   className="w-full px-4 py-3 bg-slate-50 hover:bg-slate-100/90 text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-2xs cursor-pointer transition flex items-center justify-between gap-2"
                 >
                   <div className="flex items-center gap-2.5 min-w-0 pr-2">
-                    <BookOpen className="w-4 h-4 text-indigo-600 shrink-0" />
                     <span className="font-bold text-sm truncate text-left">
                       {isAllBooksSelected
                         ? `전체 단어장 보기 (총 ${vocabulary.length}단어)`
@@ -5934,10 +5933,7 @@ export default function Home() {
                       </span>
                     </>
                   ) : (
-                    <>
-                      <Volume2 className="w-4 h-4 text-emerald-200 shrink-0" />
-                      <span className="truncate">🎧 문장 연속 듣기 (무한 반복)</span>
-                    </>
+                    <span className="truncate">문장 연속 듣기 (무한 반복)</span>
                   )}
                 </button>
 
@@ -5947,9 +5943,8 @@ export default function Home() {
                   onClick={() => startQuiz()}
                   className="py-3 px-3 sm:px-4 bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white font-black text-xs sm:text-sm rounded-xl shadow-xs transition flex items-center justify-center gap-1.5 sm:gap-2 cursor-pointer active:scale-[0.99] border border-indigo-700 shadow-indigo-200"
                 >
-                  <Award className="w-4 h-4 text-amber-300 shrink-0" />
                   <span className="truncate">
-                    🎯 퀴즈 풀기 ({filteredVocabulary.length}단어)
+                    퀴즈 풀기 ({filteredVocabulary.length}단어)
                   </span>
                 </button>
               </div>
@@ -6448,7 +6443,6 @@ export default function Home() {
                 className="w-full px-4 py-3 bg-white hover:bg-slate-50 text-slate-900 border border-slate-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-indigo-500 shadow-xs cursor-pointer transition flex items-center justify-between gap-2"
               >
                 <div className="flex items-center gap-2.5 min-w-0 pr-2">
-                  <BookOpen className="w-4 h-4 text-indigo-600 shrink-0" />
                   <span className="font-bold text-sm truncate text-left">
                     {isAllBooksSelected
                       ? `전체 단어장 보기 (총 ${vocabulary.length}단어)`
