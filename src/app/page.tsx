@@ -6358,7 +6358,7 @@ export default function Home() {
               </div>
 
               {/* Quiz Body */}
-              <div className={quizAnswerState.answered ? 'p-4 sm:p-5' : 'p-6'}>
+              <div className="p-5 sm:p-6">
                 {!isLoaded ? (
                   <div className="text-center py-16 space-y-3">
                     <div className="w-8 h-8 border-3 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto" />
@@ -6366,8 +6366,8 @@ export default function Home() {
                   </div>
                 ) : !isQuizFinished && currentQuizItem ? (
                   <>
-                    <div className={`text-center border-b border-slate-100 ${quizAnswerState.answered ? 'py-1.5' : 'py-3'}`}>
-                      <div className={`${quizAnswerState.answered ? 'mb-1' : 'mb-2'} flex items-center justify-center gap-1.5 flex-wrap`}>
+                    <div className="text-center border-b border-slate-100 py-3">
+                      <div className="mb-2 flex items-center justify-center gap-1.5 flex-wrap">
                         <span className="text-[11px] bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full font-bold inline-flex items-center">
                           <span>{currentQuizItem.bookTitle || '기본 단어장'}</span>
                         </span>
@@ -6396,7 +6396,7 @@ export default function Home() {
                           return null;
                         })()}
                       </div>
-                      <h3 className={`font-black text-slate-900 tracking-tight ${quizAnswerState.answered ? 'text-2xl sm:text-3xl mb-1' : 'text-3xl mb-2'}`}>
+                      <h3 className="font-black text-slate-900 tracking-tight text-3xl mb-2">
                         {currentQuizItem.word}
                       </h3>
                       <div className="flex items-center justify-center gap-2">
