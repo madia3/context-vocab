@@ -200,11 +200,150 @@ export interface ServerUsageReport {
 }
 
 function getTodayServerDate(): string {
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
+  // Always use KST (UTC+9) so daily server usage and user quotas reset together at 00:00 KST
+  const kst = new Date(Date.now() + 9 * 60 * 60 * 1000);
+  const year = kst.getUTCFullYear();
+  const month = String(kst.getUTCMonth() + 1).padStart(2, '0');
+  const day = String(kst.getUTCDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
+}
+
+// =========================================================================
+// Supabase Shared Daily Usage Store (`public.ai_usage_daily`)
+// Ensures all Vercel serverless containers share the exact same counters!
+// =========================================================================
+function getSupabaseRestConfig(): { url: string; anonKey: string } {
+  const url = (process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://mkclocmrpxjrowldfryd.supabase.co')
+    .trim()
+    .replace(/\/+$/, '');
+  const anonKey = (
+    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'sb_publishable_J9jsy23QWH9yXeVE5pMxFg_GbC7MlFE'
+  ).trim();
+  return { url, anonKey };
+}
+
+async function getSupabaseUsageCount(usageDate: string, subjectKey: string): Promise<number | null> {
+  try {
+    const { url, anonKey } = getSupabaseRestConfig();
+    if (!url || !anonKey) return null;
+    const res = await fetch(
+      `${url}/rest/v1/ai_usage_daily?usage_date=eq.${encodeURIComponent(usageDate)}&subject_key=eq.${encodeURIComponent(subjectKey)}&select=count`,
+      {
+        headers: {
+          apikey: anonKey,
+          Authorization: `Bearer ${anonKey}`,
+        },
+        cache: 'no-store',
+        signal: AbortSignal.timeout(1500),
+      }
+    );
+    if (!res.ok) return null;
+    const rows = await res.json();
+    if (Array.isArray(rows) && rows.length > 0 && typeof rows[0]?.count === 'number') {
+      return rows[0].count;
+    }
+    return 0;
+  } catch {
+    return null;
+  }
+}
+
+async function getSupabaseUsageRowsForDate(usageDate: string): Promise<Record<string, number> | null> {
+  try {
+    const { url, anonKey } = getSupabaseRestConfig();
+    if (!url || !anonKey) return null;
+    const res = await fetch(
+      `${url}/rest/v1/ai_usage_daily?usage_date=eq.${encodeURIComponent(usageDate)}&select=subject_key,count`,
+      {
+        headers: {
+          apikey: anonKey,
+          Authorization: `Bearer ${anonKey}`,
+        },
+        cache: 'no-store',
+        signal: AbortSignal.timeout(2000),
+      }
+    );
+    if (!res.ok) return null;
+    const rows = await res.json();
+    if (!Array.isArray(rows)) return null;
+    const map: Record<string, number> = {};
+    for (const row of rows) {
+      if (row && typeof row.subject_key === 'string' && typeof row.count === 'number') {
+        map[row.subject_key] = row.count;
+      }
+    }
+    return map;
+  } catch {
+    return null;
+  }
+}
+
+async function incrementSupabaseUsageCount(
+  usageDate: string,
+  subjectKey: string,
+  delta = 1
+): Promise<number | null> {
+  try {
+    const { url, anonKey } = getSupabaseRestConfig();
+    if (!url || !anonKey) return null;
+    const current = await getSupabaseUsageCount(usageDate, subjectKey);
+    if (current === null) return null;
+    const nextCount = current + delta;
+    const res = await fetch(`${url}/rest/v1/ai_usage_daily?on_conflict=usage_date,subject_key`, {
+      method: 'POST',
+      headers: {
+        apikey: anonKey,
+        Authorization: `Bearer ${anonKey}`,
+        'Content-Type': 'application/json',
+        Prefer: 'resolution=merge-duplicates,return=minimal',
+      },
+      body: JSON.stringify({
+        usage_date: usageDate,
+        subject_key: subjectKey,
+        count: nextCount,
+        updated_at: new Date().toISOString(),
+      }),
+      signal: AbortSignal.timeout(1500),
+    });
+    return res.ok ? nextCount : null;
+  } catch {
+    return null;
+  }
+}
+
+async function resetSupabaseUsageTotals(usageDate: string): Promise<void> {
+  try {
+    const { url, anonKey } = getSupabaseRestConfig();
+    if (!url || !anonKey) return;
+    const keysToReset = [
+      'total:server_env',
+      'total:custom_key',
+      'ep:matchSentence',
+      'ep:visionOcr',
+      'ep:translate',
+      'ep:dictionary',
+      'ep:other',
+    ];
+    const nowIso = new Date().toISOString();
+    await fetch(`${url}/rest/v1/ai_usage_daily?on_conflict=usage_date,subject_key`, {
+      method: 'POST',
+      headers: {
+        apikey: anonKey,
+        Authorization: `Bearer ${anonKey}`,
+        'Content-Type': 'application/json',
+        Prefer: 'resolution=merge-duplicates,return=minimal',
+      },
+      body: JSON.stringify(
+        keysToReset.map((subject_key) => ({
+          usage_date: usageDate,
+          subject_key,
+          count: 0,
+          updated_at: nowIso,
+        }))
+      ),
+      signal: AbortSignal.timeout(2000),
+    });
+  } catch {}
 }
 
 const USAGE_FILE_PATH = path.join('/tmp', 'cv_gemini_server_usage.json');
@@ -337,6 +476,35 @@ export function recordServerUsage(entry: {
   saveServerUsage();
 }
 
+export async function recordServerUsageAsync(entry: {
+  isServerKey: boolean;
+  endpoint: string;
+  model: string;
+  status: 'ok' | 'error';
+  durationMs: number;
+  error?: string;
+}) {
+  recordServerUsage(entry);
+  const today = getTodayServerDate();
+  const totalKey = entry.isServerKey ? 'total:server_env' : 'total:custom_key';
+  const ep = (entry.endpoint || '').toLowerCase();
+  const epKey =
+    ep.includes('match') || ep.includes('sentence')
+      ? 'ep:matchSentence'
+      : ep.includes('ocr') || ep.includes('vision')
+      ? 'ep:visionOcr'
+      : ep.includes('translate')
+      ? 'ep:translate'
+      : ep.includes('dict')
+      ? 'ep:dictionary'
+      : 'ep:other';
+
+  await Promise.all([
+    incrementSupabaseUsageCount(today, totalKey, 1),
+    incrementSupabaseUsageCount(today, epKey, 1),
+  ]).catch(() => {});
+}
+
 export function getServerUsageReport(): ServerUsageReport {
   const usage = loadServerUsage();
   const serverKey = process.env.GEMINI_API_KEY?.trim() || '';
@@ -345,7 +513,7 @@ export function getServerUsageReport(): ServerUsageReport {
   const dailyLimit = 1500;
   const totalCalls = usage.serverEnvCallsToday + usage.customKeyCallsToday;
   const remainingCalls = Math.max(0, dailyLimit - usage.serverEnvCallsToday);
-  const usagePercent = Math.min(100, Math.round((usage.serverEnvCallsToday / dailyLimit) * 100));
+  const usagePercent = Math.min(100, Math.round((usage.serverEnvCallsToday / dailyLimit) * 1000) / 10);
 
   return {
     isConfigured,
@@ -359,11 +527,47 @@ export function getServerUsageReport(): ServerUsageReport {
     remainingCalls,
     usagePercent,
     rpmLimit: 15,
-    lastActiveModel: usage.lastActiveModel || lastSuccessfulModelName || 'gemini-flash-latest',
+    lastActiveModel: usage.lastActiveModel || lastSuccessfulModelName || 'gemini-flash-lite-latest',
     lastCallAt: usage.lastCallAt,
     byEndpoint: usage.byEndpoint,
     recentLogs: usage.recentLogs || [],
   };
+}
+
+export async function getServerUsageReportAsync(): Promise<ServerUsageReport> {
+  const base = getServerUsageReport();
+  const today = getTodayServerDate();
+  const rows = await getSupabaseUsageRowsForDate(today);
+  if (!rows) return base;
+
+  const serverEnvCallsToday = Math.max(base.serverEnvCallsToday, rows['total:server_env'] ?? 0);
+  const customKeyCallsToday = Math.max(base.customKeyCallsToday, rows['total:custom_key'] ?? 0);
+  const dailyLimit = base.dailyLimit;
+  const remainingCalls = Math.max(0, dailyLimit - serverEnvCallsToday);
+  const usagePercent = Math.min(100, Math.round((serverEnvCallsToday / dailyLimit) * 1000) / 10);
+
+  return {
+    ...base,
+    todayDate: today,
+    serverEnvCallsToday,
+    customKeyCallsToday,
+    totalCallsToday: serverEnvCallsToday + customKeyCallsToday,
+    remainingCalls,
+    usagePercent,
+    byEndpoint: {
+      matchSentence: Math.max(base.byEndpoint.matchSentence || 0, rows['ep:matchSentence'] ?? 0),
+      visionOcr: Math.max(base.byEndpoint.visionOcr || 0, rows['ep:visionOcr'] ?? 0),
+      translate: Math.max(base.byEndpoint.translate || 0, rows['ep:translate'] ?? 0),
+      dictionary: Math.max(base.byEndpoint.dictionary || 0, rows['ep:dictionary'] ?? 0),
+      other: Math.max(base.byEndpoint.other || 0, rows['ep:other'] ?? 0),
+    },
+  };
+}
+
+export async function resetServerUsageStatsAsync(): Promise<ServerUsageReport> {
+  const today = getTodayServerDate();
+  await resetSupabaseUsageTotals(today);
+  return resetServerUsageStats();
 }
 
 export function clearRateLimitCache(): { countCleared: number } {
@@ -616,6 +820,116 @@ export function getServerKeyQuotaStatus(req: Request): {
   }
 }
 
+export async function checkAndConsumeServerKeyQuotaAsync(
+  req: Request,
+  options?: { isPersonalKeyFallback?: boolean }
+): Promise<{
+  allowed: boolean;
+  tier: 'admin' | 'personal_backup' | 'member' | 'guest';
+  limit: number;
+  used: number;
+  remaining: number;
+  message?: string;
+}> {
+  try {
+    const userEmail = (req.headers.get('x-user-email') || '').trim();
+    const userId = (req.headers.get('x-user-id') || '').trim();
+    const hasPersonalKey =
+      Boolean(options?.isPersonalKeyFallback) || req.headers.get('x-has-personal-key') === '1';
+
+    if (isUserAdmin(userEmail)) {
+      return { allowed: true, tier: 'admin', limit: 999999, used: 0, remaining: 999999 };
+    }
+
+    const forwarded = req.headers.get('x-forwarded-for');
+    const ip = forwarded ? forwarded.split(',')[0].trim() : req.headers.get('x-real-ip') || 'anonymous';
+    const subjectKey = userId ? `uid:${userId}` : `ip:${ip}`;
+
+    let tier: 'personal_backup' | 'member' | 'guest' = 'guest';
+    let limit: number = SERVER_KEY_DAILY_QUOTAS.guest;
+    if (hasPersonalKey) {
+      tier = 'personal_backup';
+      limit = SERVER_KEY_DAILY_QUOTAS.personalBackup;
+    } else if (userId) {
+      tier = 'member';
+      limit = SERVER_KEY_DAILY_QUOTAS.member;
+    }
+
+    const today = getTodayServerDate();
+    const sbCount = await getSupabaseUsageCount(today, subjectKey);
+    if (sbCount === null) {
+      return checkAndConsumeServerKeyQuota(req, options);
+    }
+
+    if (sbCount >= limit) {
+      const tierLabel =
+        tier === 'guest'
+          ? `비로그인 일일 무료 한도(${limit}회)`
+          : tier === 'member'
+          ? `로그인 회원 무료 서버 한도(${limit}회)`
+          : `개인 키 소진 후 비상 서버 한도(${limit}회)`;
+      const guideMsg =
+        tier === 'personal_backup'
+          ? `오늘의 ${tierLabel}를 모두 사용했습니다. 내일 자정(KST)에 자동 초기화됩니다.`
+          : `오늘의 ${tierLabel}를 모두 사용했습니다. 설정 > AI 연동에서 무료 개인 API 키를 등록하시면 매일 1,500회 + 비상 100회까지 이용하실 수 있습니다.`;
+      return {
+        allowed: false,
+        tier,
+        limit,
+        used: sbCount,
+        remaining: 0,
+        message: guideMsg,
+      };
+    }
+
+    const nextCount = (await incrementSupabaseUsageCount(today, subjectKey, 1)) ?? sbCount + 1;
+    // Sync local /tmp cache too
+    const store = loadUserQuotas();
+    store.counts[subjectKey] = nextCount;
+    saveUserQuotas(store);
+
+    return {
+      allowed: true,
+      tier,
+      limit,
+      used: nextCount,
+      remaining: Math.max(0, limit - nextCount),
+    };
+  } catch {
+    return checkAndConsumeServerKeyQuota(req, options);
+  }
+}
+
+export async function getServerKeyQuotaStatusAsync(req: Request): Promise<{
+  tier: 'admin' | 'personal_backup' | 'member' | 'guest';
+  limit: number;
+  used: number;
+  remaining: number;
+  isAdmin: boolean;
+  todayDate: string;
+}> {
+  const base = getServerKeyQuotaStatus(req);
+  if (base.isAdmin) return base;
+  try {
+    const userId = (req.headers.get('x-user-id') || '').trim();
+    const forwarded = req.headers.get('x-forwarded-for');
+    const ip = forwarded ? forwarded.split(',')[0].trim() : req.headers.get('x-real-ip') || 'anonymous';
+    const subjectKey = userId ? `uid:${userId}` : `ip:${ip}`;
+    const today = getTodayServerDate();
+    const sbCount = await getSupabaseUsageCount(today, subjectKey);
+    if (sbCount === null) return base;
+    const used = Math.max(base.used, sbCount);
+    return {
+      ...base,
+      used,
+      remaining: Math.max(0, base.limit - used),
+      todayDate: today,
+    };
+  } catch {
+    return base;
+  }
+}
+
 /**
  * Safely resolves the Gemini API key on the server (supports AES-256-GCM encrypted token, HttpOnly cookie, or server env).
  */
@@ -773,7 +1087,7 @@ export async function callGeminiWithFallback(options: {
 
   // 서버 공용 키를 사용할 때는 사용자 등급별 일일 한도 검사 (비로그인 20회 / 로그인 50회 / 개인키 비상 +100회 / 관리자 무제한)
   if (isServerKey && req) {
-    const quota = checkAndConsumeServerKeyQuota(req, {
+    const quota = await checkAndConsumeServerKeyQuotaAsync(req, {
       isPersonalKeyFallback: endpoint.endsWith('-fallback'),
     });
     if (!quota.allowed) {
@@ -1074,7 +1388,7 @@ export async function callGeminiWithFallback(options: {
 
   if (raceResult.ok && raceResult.text) {
     const durationMs = Date.now() - startTime;
-    recordServerUsage({
+    await recordServerUsageAsync({
       isServerKey,
       endpoint,
       model: raceResult.modelUsed || 'gemini-flash-lite-latest',
@@ -1112,7 +1426,7 @@ export async function callGeminiWithFallback(options: {
   }
 
   const durationMs = Date.now() - startTime;
-  recordServerUsage({
+  await recordServerUsageAsync({
     isServerKey,
     endpoint,
     model: candidatePool[0]?.model || 'gemini',

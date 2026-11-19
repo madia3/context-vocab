@@ -1,2 +1,2 @@
-export const APP_BUILD_VERSION = 'v2026.11.19-25 (11/19 12:32 KST)';
-export const APP_BUILD_SUMMARY = 'AI 연동 한도 카드 하단 안내 문구 제거 및 서버 AI 실시간 사용량 게이지바 추가';
+export const APP_BUILD_VERSION = 'v2026.11.19-26 (11/19 13:01 KST)';
+export const APP_BUILD_SUMMARY = 'Supabase ai_usage_daily 연동으로 관리자 토탈/개인별 서버 AI 사용량 실시간 집계';

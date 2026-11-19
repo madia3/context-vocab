@@ -709,6 +709,7 @@ export default function Home() {
         headers: {
           'x-user-email': currentUser.email,
         },
+        cache: 'no-store',
       });
       if (res.ok) {
         const data = await res.json();
@@ -930,6 +931,7 @@ export default function Home() {
     let cancelled = false;
     fetch('/api/ai/test-key', {
       headers: buildAiRequestHeaders(geminiApiKey),
+      cache: 'no-store',
     })
       .then((res) => (res.ok ? res.json() : null))
       .then((data) => {
@@ -7880,7 +7882,7 @@ export default function Home() {
                             />
                           </div>
                           <div className="flex items-center justify-between text-[10px] text-slate-500 font-medium">
-                            <span>잔여 {100 - (serverUsageReport?.usagePercent ?? 0)}% 남음</span>
+                            <span>잔여 {Number((100 - (serverUsageReport?.usagePercent ?? 0)).toFixed(1))}% 남음</span>
                             <span>매일 자정 (00:00 KST) 자동 리셋</span>
                           </div>
                         </div>

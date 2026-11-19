@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { isUserAdmin } from '@/lib/admin';
 import {
-  getServerUsageReport,
+  getServerUsageReportAsync,
   pingServerGeminiKey,
-  resetServerUsageStats,
+  resetServerUsageStatsAsync,
   clearRateLimitCache,
   clearServerUsageLogs,
   getServerSystemInfo,
@@ -31,7 +31,7 @@ export async function GET(req: NextRequest) {
       );
     }
 
-    const report = getServerUsageReport();
+    const report = await getServerUsageReportAsync();
     const systemInfo = getServerSystemInfo();
     return NextResponse.json({
       ok: true,
@@ -68,7 +68,7 @@ export async function POST(req: NextRequest) {
     }
 
     if (action === 'reset_counter') {
-      const report = resetServerUsageStats();
+      const report = await resetServerUsageStatsAsync();
       return NextResponse.json({ ok: true, report, message: '오늘의 서버 API 호출 카운터가 0으로 초기화되었습니다.' });
     }
 
