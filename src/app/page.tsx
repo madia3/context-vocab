@@ -7390,9 +7390,6 @@ export default function Home() {
         <div className="max-w-2xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-2">
           <div className="flex flex-col sm:flex-row items-center gap-1.5 sm:gap-3 text-slate-500">
             <p>© {new Date().getFullYear()} 원서. 문장. 단어 (divivid). All rights reserved.</p>
-            <span className="text-[11px] font-mono text-indigo-700 font-bold bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
-              {APP_BUILD_VERSION}
-            </span>
           </div>
           <div className="flex items-center gap-4 text-[11px] font-semibold text-slate-600">
             <a href="https://divivid.com" target="_blank" rel="noreferrer" className="hover:text-indigo-600 transition">
