@@ -5773,8 +5773,8 @@ export default function Home() {
                               )}
                             </div>
                             <div className="relative">
-                              <input
-                                type="text"
+                              <textarea
+                                rows={2}
                                 value={entry.sentenceTranslation || ''}
                                 onChange={(e) => updateWordEntry(entry.id, { sentenceTranslation: e.target.value })}
                                 placeholder={
@@ -5782,12 +5782,12 @@ export default function Home() {
                                     ? 'AI가 문장 한글 해석을 생성하고 있습니다...'
                                     : '예: 온 나라를 뒤흔든 형언할 수 없는 비극이었다. (자동 생성됨, 직접 수정 가능)'
                                 }
-                                className={`w-full px-3 py-1.5 text-xs bg-white text-slate-900 border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 transition ${
+                                className={`w-full px-3 py-2 text-xs bg-white text-slate-900 border rounded-xl focus:outline-none focus:ring-2 focus:ring-indigo-500 leading-relaxed transition ${
                                   translatingSentenceId === entry.id ? 'border-indigo-400 bg-indigo-50/20' : 'border-slate-300'
                                 }`}
                               />
                               {translatingSentenceId === entry.id && (
-                                <div className="absolute right-2.5 top-1/2 -translate-y-1/2 flex items-center gap-1 text-[10px] text-indigo-600 font-medium pointer-events-none">
+                                <div className="absolute right-2.5 top-2.5 flex items-center gap-1 text-[10px] text-indigo-600 font-medium pointer-events-none">
                                   <RotateCw className="w-3 h-3 animate-spin" />
                                 </div>
                               )}
