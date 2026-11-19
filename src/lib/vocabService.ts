@@ -581,19 +581,22 @@ export async function fetchVocabulary(targetUser?: User | null): Promise<VocabIt
   const storageKey = getUserStorageKey(user?.id);
   const versionKey = user?.id ? `context_vocab_clean_ver_${user.id}` : 'context_vocab_clean_ver_guest';
 
-  // 💡 모든 계정에 단어 초기화 및 기본 30개 자동 세팅
+  // 💡 신규 기기/브라우저 접속 시 기존 로그인 유저의 클라우드 데이터를 절대 초기화하지 않도록 보호
+  // (비로그인 게스트 로컬 캐시에만 구버전 정리 마커 기록)
   if (typeof window !== 'undefined') {
     const isCleaned = localStorage.getItem(versionKey) === GLOBAL_CLEAN_RESET_VERSION;
     if (!isCleaned) {
       localStorage.setItem(versionKey, GLOBAL_CLEAN_RESET_VERSION);
-      try {
-        const resetItems = await resetWithSamples(user?.id);
-        if (resetItems && resetItems.length > 0) {
-          localStorage.setItem(storageKey, JSON.stringify(resetItems));
-          return resetItems;
+      if (!user?.id) {
+        try {
+          const resetItems = await resetWithSamples(undefined);
+          if (resetItems && resetItems.length > 0) {
+            localStorage.setItem(storageKey, JSON.stringify(resetItems));
+            return resetItems;
+          }
+        } catch (err) {
+          console.warn('Guest auto reset to clean 30 samples error:', err);
         }
-      } catch (err) {
-        console.warn('Auto reset to clean 30 samples error:', err);
       }
     }
   }
@@ -688,6 +691,15 @@ export async function fetchVocabulary(targetUser?: User | null): Promise<VocabIt
           );
           const merged = [...unsynced, ...formatted];
           localStorage.setItem(storageKey, JSON.stringify(merged));
+
+          // 이 기기에만 남아 있는 미동기화 사용자 단어(예: 타 기기 접속 전/오프라인 저장분)를 클라우드로 자동 백업
+          const unsyncedUserWords = unsynced.filter((l) => !String(l.id).startsWith('seed_'));
+          if (unsyncedUserWords.length > 0 && user?.id) {
+            upsertVocabRowsWithFallback(unsyncedUserWords, user.id).catch((err) => {
+              console.warn('Auto-upload unsynced local words failed:', err);
+            });
+          }
+
           return merged;
         }
         return formatted;
@@ -998,6 +1010,31 @@ function mapVocabItemToDbRow(item: VocabItem, userId: string) {
   };
 }
 
+/**
+ * Supabase vocab_words 배치 업서트 (구버전 스키마에서 sentence_translation / candidate_sentences 컬럼 미존재 시 자동 폴백)
+ */
+async function upsertVocabRowsWithFallback(items: VocabItem[], userId: string): Promise<void> {
+  if (!checkIsSupabaseConfigured() || !supabase || !userId || items.length === 0) return;
+
+  let dbRows: any[] = items.map((item) => mapVocabItemToDbRow(item, userId));
+  let { error } = await supabase.from('vocab_words').upsert(dbRows);
+
+  if (error && (error.message?.includes('sentence_translation') || error.message?.includes('candidate_sentences'))) {
+    if (error.message.includes('sentence_translation')) {
+      dbRows = dbRows.map(({ sentence_translation, ...rest }) => rest);
+    }
+    if (error.message.includes('candidate_sentences')) {
+      dbRows = dbRows.map(({ candidate_sentences, ...rest }) => rest);
+    }
+    const retry = await supabase.from('vocab_words').upsert(dbRows);
+    error = retry.error;
+  }
+
+  if (error) {
+    console.warn('Supabase batch upsert error:', error);
+  }
+}
+
 function mergeVocabItemFields(existingItem: VocabItem, incomingItem: VocabItem, targetBook: string): VocabItem {
   const newContext = incomingItem.contextSentence?.trim() || '';
   const existingSentences = [...(existingItem.candidateSentences || [])];
@@ -1126,11 +1163,7 @@ export async function saveOrMergeVocabularyItemsBatch(
 
   if (checkIsSupabaseConfigured() && supabase && userId && touchedItems.length > 0) {
     try {
-      const dbRows = touchedItems.map((item) => mapVocabItemToDbRow(item, userId));
-      const { error } = await supabase.from('vocab_words').upsert(dbRows);
-      if (error) {
-        console.warn('Supabase batch upsert error:', error);
-      }
+      await upsertVocabRowsWithFallback(touchedItems, userId);
     } catch (err) {
       console.warn('Supabase batch upsert exception:', err);
     }
