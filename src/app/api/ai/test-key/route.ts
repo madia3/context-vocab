@@ -5,6 +5,7 @@ import {
   deleteUserPersonalGeminiKeyFromSupabase,
   GEMINI_COOKIE_NAME,
   getAuthenticatedUserFromRequest,
+  getPersonalKeyQuotaStatusAsync,
   getServerKeyQuotaStatusAsync,
   getUserPersonalGeminiKeyFromSupabase,
   saveUserPersonalGeminiKeyToSupabase,
@@ -28,11 +29,21 @@ export async function GET(req: NextRequest) {
 
   let hasPersonalKey = false;
   let maskedKey = '';
+  let personalKeyQuota: {
+    used: number;
+    limit: number;
+    remaining: number;
+    remainingPercent: number;
+    todayDate: string;
+  } | null = null;
 
   if (authUser) {
     const personal = await getUserPersonalGeminiKeyFromSupabase(authUser.accessToken, authUser.id);
     hasPersonalKey = personal.hasKey;
     maskedKey = personal.maskedKey;
+    if (personal.hasKey && personal.decryptedKey) {
+      personalKeyQuota = await getPersonalKeyQuotaStatusAsync(personal.decryptedKey);
+    }
   }
 
   const serverQuota = await getServerKeyQuotaStatusAsync(req, {
@@ -46,6 +57,7 @@ export async function GET(req: NextRequest) {
     isAuthenticated: Boolean(authUser),
     hasPersonalKey,
     maskedKey,
+    personalKeyQuota,
     serverQuota,
   });
 }
@@ -126,10 +138,13 @@ export async function POST(req: NextRequest) {
         );
       }
 
+      const personalKeyQuota = await getPersonalKeyQuotaStatusAsync(cleanKey);
+
       const response = NextResponse.json({
         ok: true,
         hasPersonalKey: true,
         maskedKey: saveRes.maskedKey,
+        personalKeyQuota,
         message: `Google Gemini AI 연동 및 계정 암호화 저장 완료! (${res.modelUsed})`,
       });
 

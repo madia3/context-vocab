@@ -663,6 +663,13 @@ export default function Home() {
   const [ttsRate, setTtsRate] = useState<number>(1.25);
   const [hasPersonalGeminiKey, setHasPersonalGeminiKey] = useState(false);
   const [personalKeyMasked, setPersonalKeyMasked] = useState('');
+  const [personalKeyQuota, setPersonalKeyQuota] = useState<{
+    used: number;
+    limit: number;
+    remaining: number;
+    remainingPercent: number;
+    todayDate: string;
+  } | null>(null);
   const [geminiKeyInput, setGeminiKeyInput] = useState('');
   const [isServerGeminiReady, setIsServerGeminiReady] = useState(false);
   const [aiUsageStats, setAiUsageStats] = useState<AiUsageStats>(() => getAiUsageStats());
@@ -1024,6 +1031,7 @@ export default function Home() {
       const hasKey = Boolean(data?.hasPersonalKey);
       setHasPersonalGeminiKey(hasKey);
       setPersonalKeyMasked(typeof data?.maskedKey === 'string' ? data.maskedKey : '');
+      setPersonalKeyQuota(hasKey && data?.personalKeyQuota ? data.personalKeyQuota : null);
       setCurrentAiPersonalKeyStatus(hasKey);
       if (data?.serverQuota) {
         setServerAiQuota(data.serverQuota);
@@ -1036,6 +1044,7 @@ export default function Home() {
     if (!currentUser) {
       setHasPersonalGeminiKey(false);
       setPersonalKeyMasked('');
+      setPersonalKeyQuota(null);
       setCurrentAiPersonalKeyStatus(false);
       return;
     }
@@ -1087,20 +1096,20 @@ export default function Home() {
   }
 
   // Google Gemini AI Key 서버(계정별 AES-256-GCM 암호화) 저장 및 유효성 테스트
-  async function handleSaveAndTestAiKey(keyToSave?: string) {
+  async function handleSaveAndTestAiKey(keyToSave?: string): Promise<boolean> {
     if (!currentUser) {
       setKeyTestStatus({
         ok: false,
         message: '개인 API 키 등록은 로그인 후 이용할 수 있습니다. 로그인하시면 모든 기기에서 자동 동기화됩니다.',
       });
       setIsAuthModalOpen(true);
-      return;
+      return false;
     }
 
     const key = (keyToSave || geminiKeyInput).trim();
     if (!key) {
       setKeyTestStatus({ ok: false, message: '등록할 Google Gemini API 키를 입력해 주세요.' });
-      return;
+      return false;
     }
 
     setIsTestingKey(true);
@@ -1126,6 +1135,9 @@ export default function Home() {
         clearLegacyLocalGeminiKeys();
         setHasPersonalGeminiKey(true);
         setPersonalKeyMasked(data.maskedKey || '');
+        if (data.personalKeyQuota) {
+          setPersonalKeyQuota(data.personalKeyQuota);
+        }
         setCurrentAiPersonalKeyStatus(true);
         setGeminiKeyInput('');
         setAiQuotaExceededNotice(null);
@@ -1139,11 +1151,14 @@ export default function Home() {
         });
         triggerToast('계정 AI 키 암호화 저장 완료! 🔐', '이제 PC·모바일 어디서 로그인해도 개인 키가 자동 적용됩니다.');
         syncAccountGeminiKeyStatus();
+        return true;
       } else {
         setKeyTestStatus({ ok: false, message: data.error || 'API 키 검증 실패. 올바른 키인지 확인해 주세요.' });
+        return false;
       }
     } catch {
       setKeyTestStatus({ ok: false, message: '서버 연결에 실패했습니다.' });
+      return false;
     } finally {
       setIsTestingKey(false);
     }
@@ -1174,6 +1189,7 @@ export default function Home() {
         clearLegacyLocalGeminiKeys();
         setHasPersonalGeminiKey(false);
         setPersonalKeyMasked('');
+        setPersonalKeyQuota(null);
         setCurrentAiPersonalKeyStatus(false);
         setGeminiKeyInput('');
         setKeyTestStatus(null);
@@ -1208,7 +1224,7 @@ export default function Home() {
   }
 
   // Handle saving profile changes
-  async function handleSaveProfile() {
+  async function handleSaveProfile(): Promise<boolean> {
     setIsSavingProfile(true);
     try {
       const avatarToSave =
@@ -1235,12 +1251,33 @@ export default function Home() {
         }
 
         triggerToast('프로필 저장 완료! 🎉', '표시이름과 프로필 사진이 성공적으로 저장되었습니다.');
+        return true;
       } else {
         alert(res.error || '프로필 저장 중 오류가 발생했습니다.');
+        return false;
       }
     } finally {
       setIsSavingProfile(false);
     }
+  }
+
+  // 통합 설정 모달 우측 하단 [저장] 버튼 핸들러
+  async function handleSaveSettingsAndClose() {
+    const hasProfileChanges =
+      pendingAvatarDataUrl !== null ||
+      profileInputName.trim() !== (customDisplayName || '').trim();
+
+    if (settingsTab === 'profile' || hasProfileChanges) {
+      const ok = await handleSaveProfile();
+      if (!ok) return;
+    }
+
+    if (settingsTab === 'ai' && geminiKeyInput.trim()) {
+      const ok = await handleSaveAndTestAiKey();
+      if (!ok) return;
+    }
+
+    setIsSettingsOpen(false);
   }
 
   // Reset avatar to original Google profile photo
@@ -7877,33 +7914,6 @@ export default function Home() {
                   </div>
 
                   {/* Profile Save Button */}
-                  <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
-                    <button
-                      type="button"
-                      onClick={() => setIsSettingsOpen(false)}
-                      className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-600 hover:bg-slate-100 transition cursor-pointer"
-                    >
-                      취소
-                    </button>
-                    <button
-                      type="button"
-                      onClick={handleSaveProfile}
-                      disabled={isSavingProfile}
-                      className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold px-4 py-2 rounded-xl text-xs shadow-md transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
-                    >
-                      {isSavingProfile ? (
-                        <>
-                          <RotateCw className="w-3.5 h-3.5 animate-spin" />
-                          <span>저장 중...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Check className="w-3.5 h-3.5" />
-                          <span>변경사항 저장</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
                 </div>
               )}
 
@@ -8021,20 +8031,36 @@ export default function Home() {
                           ? 100
                           : Math.min(100, Math.max(0, Math.round((serverRemaining / Math.max(1, serverLimit)) * 100)));
 
-                        const personalRemaining = hasPersonalGeminiKey ? aiUsageStats.remainingCount : 0;
-                        const personalLimit = aiUsageStats.dailyLimit || 1500;
+                        const personalLimit = personalKeyQuota?.limit ?? (aiUsageStats.dailyLimit || 1500);
+                        const personalUsed = hasPersonalGeminiKey
+                          ? (personalKeyQuota ? personalKeyQuota.used : aiUsageStats.usedCount)
+                          : 0;
+                        const personalRemaining = hasPersonalGeminiKey
+                          ? (personalKeyQuota ? personalKeyQuota.remaining : aiUsageStats.remainingCount)
+                          : 0;
                         const personalRemainingPercent = hasPersonalGeminiKey
-                          ? Math.min(100, Math.max(0, aiUsageStats.remainingPercent))
+                          ? Math.min(
+                              100,
+                              Math.max(
+                                0,
+                                personalKeyQuota ? personalKeyQuota.remainingPercent : aiUsageStats.remainingPercent
+                              )
+                            )
                           : 0;
 
                         return (
                           <div className="pt-2 border-t border-indigo-200/70 space-y-2.5">
-                            {/* 1. 개인 키 게이지바 (초록색) */}
+                            {/* 1. 개인 키 게이지바 (초록색 · 실제 API 키 해시 기준 모든 기기 실시간 공유) */}
                             <div className="space-y-1">
                               <div className="flex items-center justify-between text-[11px]">
                                 <span className="font-bold text-emerald-900 flex items-center gap-1.5">
                                   <span className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
                                   <span>개인 키 잔여</span>
+                                  {hasPersonalGeminiKey && personalKeyQuota && (
+                                    <span className="text-[9.5px] font-semibold text-emerald-700/80 bg-emerald-100/80 px-1.5 py-0.5 rounded-full">
+                                      오늘 {personalUsed.toLocaleString()}회 호출 · 기기 동기화
+                                    </span>
+                                  )}
                                 </span>
                                 {hasPersonalGeminiKey ? (
                                   <span className="font-bold text-emerald-700">
@@ -8176,9 +8202,12 @@ export default function Home() {
                           )}
                         </div>
 
-                        <div className="flex items-center gap-2 w-full min-w-0">
+                        <div className="flex items-center gap-1.5 w-full min-w-0">
                           <input
                             type="password"
+                            autoComplete="new-password"
+                            data-1p-ignore="true"
+                            data-lpignore="true"
                             value={geminiKeyInput}
                             onChange={(e) => {
                               setGeminiKeyInput(e.target.value);
@@ -8191,6 +8220,29 @@ export default function Home() {
                             }
                             className="flex-1 min-w-0 w-full px-3 py-2 text-xs font-mono bg-slate-50 text-slate-900 border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-brand-500 font-semibold shadow-2xs"
                           />
+                          <button
+                            type="button"
+                            onClick={async () => {
+                              try {
+                                const text = await navigator.clipboard.readText();
+                                const cleaned = (text || '').trim();
+                                if (cleaned) {
+                                  setGeminiKeyInput(cleaned);
+                                  setKeyTestStatus(null);
+                                  triggerToast('API 키 붙여넣기 완료 📋', '오른쪽 버튼을 눌러 연동 및 저장해 주세요.');
+                                } else {
+                                  triggerToast('클립보드가 비어 있습니다', '복사한 API 키가 없습니다.');
+                                }
+                              } catch {
+                                triggerToast('클립보드 접근 권한 필요', '입력칸을 길게 눌러 직접 붙여넣기 해 주세요.');
+                              }
+                            }}
+                            className="bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-300 font-bold text-xs px-2.5 py-2 rounded-xl transition shrink-0 whitespace-nowrap flex items-center gap-1 cursor-pointer active:scale-95"
+                            title="클립보드에서 API 키 붙여넣기"
+                          >
+                            <ClipboardPaste className="w-3.5 h-3.5 shrink-0" />
+                            <span>붙여넣기</span>
+                          </button>
                           <button
                             type="button"
                             onClick={() => handleSaveAndTestAiKey()}
@@ -9202,14 +9254,25 @@ export default function Home() {
               )}
             </div>
 
-            {/* Footer */}
-            <div className="p-4 border-t border-slate-100 flex justify-end bg-slate-50/50">
+            {/* Footer (통합 저장 버튼) */}
+            <div className="p-4 border-t border-slate-100 flex justify-end gap-2 bg-slate-50/50">
               <button
                 type="button"
-                onClick={() => setIsSettingsOpen(false)}
-                className="bg-slate-800 hover:bg-slate-900 text-white font-bold px-5 py-2 rounded-xl text-xs transition cursor-pointer"
+                onClick={handleSaveSettingsAndClose}
+                disabled={isSavingProfile || isTestingKey}
+                className="bg-slate-900 hover:bg-slate-800 text-white font-bold px-5 py-2 rounded-xl text-xs shadow-sm transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50 active:scale-95"
               >
-                닫기
+                {isSavingProfile || isTestingKey ? (
+                  <>
+                    <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                    <span>저장 중...</span>
+                  </>
+                ) : (
+                  <>
+                    <Check className="w-3.5 h-3.5" />
+                    <span>저장</span>
+                  </>
+                )}
               </button>
             </div>
           </div>

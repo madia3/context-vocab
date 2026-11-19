@@ -88,6 +88,38 @@ export function maskGeminiKey(plainKey: string): string {
   return `${clean.slice(0, 6)}••••••••••••••••••••${clean.slice(-4)}`;
 }
 
+/**
+ * Generates a privacy-preserving, deterministic Supabase subject key for an actual Gemini API key.
+ * All devices using the same API key share the exact same daily counter in `public.ai_usage_daily`.
+ */
+export function getApiKeySubjectKey(plainKey: string): string {
+  const clean = decryptGeminiKey(plainKey).trim();
+  if (!clean) return 'key:unknown';
+  const hash = crypto.createHash('sha256').update(clean).digest('hex').slice(0, 16);
+  return `key:${hash}`;
+}
+
+export async function getPersonalKeyQuotaStatusAsync(plainKey: string): Promise<{
+  used: number;
+  limit: number;
+  remaining: number;
+  remainingPercent: number;
+  todayDate: string;
+}> {
+  const todayDate = getTodayServerDate();
+  const limit = SERVER_KEY_DAILY_QUOTAS.personalOwn;
+  const clean = decryptGeminiKey(plainKey).trim();
+  if (!clean) {
+    return { used: 0, limit, remaining: limit, remainingPercent: 100, todayDate };
+  }
+  const keySubject = getApiKeySubjectKey(clean);
+  const sbCount = await getSupabaseUsageCount(todayDate, keySubject);
+  const used = Math.max(0, sbCount ?? 0);
+  const remaining = Math.max(0, limit - used);
+  const remainingPercent = Math.min(100, Math.max(0, Math.round((remaining / Math.max(1, limit)) * 100)));
+  return { used, limit, remaining, remainingPercent, todayDate };
+}
+
 function extractCookieValue(cookieHeader: string | null, name: string): string {
   if (!cookieHeader) return '';
   const parts = cookieHeader.split(';');
@@ -428,25 +460,27 @@ export function recordServerUsage(entry: {
   status: 'ok' | 'error';
   durationMs: number;
   error?: string;
+  callCount?: number;
 }) {
+  const delta = Math.max(1, Math.round(entry.callCount ?? 1));
   const usage = loadServerUsage();
   if (entry.isServerKey) {
-    usage.serverEnvCallsToday += 1;
+    usage.serverEnvCallsToday += delta;
   } else {
-    usage.customKeyCallsToday += 1;
+    usage.customKeyCallsToday += delta;
   }
 
   const ep = (entry.endpoint || '').toLowerCase();
   if (ep.includes('match') || ep.includes('sentence')) {
-    usage.byEndpoint.matchSentence = (usage.byEndpoint.matchSentence || 0) + 1;
+    usage.byEndpoint.matchSentence = (usage.byEndpoint.matchSentence || 0) + delta;
   } else if (ep.includes('ocr') || ep.includes('vision')) {
-    usage.byEndpoint.visionOcr = (usage.byEndpoint.visionOcr || 0) + 1;
+    usage.byEndpoint.visionOcr = (usage.byEndpoint.visionOcr || 0) + delta;
   } else if (ep.includes('translate')) {
-    usage.byEndpoint.translate = (usage.byEndpoint.translate || 0) + 1;
+    usage.byEndpoint.translate = (usage.byEndpoint.translate || 0) + delta;
   } else if (ep.includes('dict')) {
-    usage.byEndpoint.dictionary = (usage.byEndpoint.dictionary || 0) + 1;
+    usage.byEndpoint.dictionary = (usage.byEndpoint.dictionary || 0) + delta;
   } else {
-    usage.byEndpoint.other = (usage.byEndpoint.other || 0) + 1;
+    usage.byEndpoint.other = (usage.byEndpoint.other || 0) + delta;
   }
 
   if (entry.status === 'ok') {
@@ -458,7 +492,7 @@ export function recordServerUsage(entry: {
     id: `${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
     timestamp: Date.now(),
     endpoint: entry.endpoint || 'general',
-    model: entry.model,
+    model: delta > 1 ? `${entry.model} (${delta}회 호출)` : entry.model,
     status: entry.status,
     durationMs: Math.round(entry.durationMs),
     keyType: entry.isServerKey ? 'vercel_env' : 'custom_key',
@@ -483,8 +517,11 @@ export async function recordServerUsageAsync(entry: {
   status: 'ok' | 'error';
   durationMs: number;
   error?: string;
+  apiKey?: string;
+  callCount?: number;
 }) {
-  recordServerUsage(entry);
+  const delta = Math.max(1, Math.round(entry.callCount ?? 1));
+  recordServerUsage({ ...entry, callCount: delta });
   const today = getTodayServerDate();
   const totalKey = entry.isServerKey ? 'total:server_env' : 'total:custom_key';
   const ep = (entry.endpoint || '').toLowerCase();
@@ -499,10 +536,17 @@ export async function recordServerUsageAsync(entry: {
       ? 'ep:dictionary'
       : 'ep:other';
 
-  await Promise.all([
-    incrementSupabaseUsageCount(today, totalKey, 1),
-    incrementSupabaseUsageCount(today, epKey, 1),
-  ]).catch(() => {});
+  const tasks: Promise<any>[] = [
+    incrementSupabaseUsageCount(today, totalKey, delta),
+    incrementSupabaseUsageCount(today, epKey, delta),
+  ];
+
+  // 실제 사용된 API 키 해시 기준으로도 카운팅 (모든 기기 실시간 공유 + 키 교체 시 독립 집계)
+  if (entry.apiKey && entry.apiKey.trim()) {
+    tasks.push(incrementSupabaseUsageCount(today, getApiKeySubjectKey(entry.apiKey), delta));
+  }
+
+  await Promise.all(tasks).catch(() => {});
 }
 
 export function getServerUsageReport(): ServerUsageReport {
@@ -540,7 +584,9 @@ export async function getServerUsageReportAsync(): Promise<ServerUsageReport> {
   const rows = await getSupabaseUsageRowsForDate(today);
   if (!rows) return base;
 
-  const serverEnvCallsToday = Math.max(base.serverEnvCallsToday, rows['total:server_env'] ?? 0);
+  const serverKey = process.env.GEMINI_API_KEY?.trim() || '';
+  const serverKeyCount = serverKey ? rows[getApiKeySubjectKey(serverKey)] ?? 0 : 0;
+  const serverEnvCallsToday = Math.max(base.serverEnvCallsToday, rows['total:server_env'] ?? 0, serverKeyCount);
   const customKeyCallsToday = Math.max(base.customKeyCallsToday, rows['total:custom_key'] ?? 0);
   const dailyLimit = base.dailyLimit;
   const remainingCalls = Math.max(0, dailyLimit - serverEnvCallsToday);
@@ -1460,6 +1506,7 @@ export async function callGeminiWithFallback(options: {
 
   const STAGGER_INTERVAL_MS = 3000; // 3.0초 내 응답 없으면 다음 살아있는 모델을 병렬로 즉시 추가 투입
   const MAX_PARALLEL_MODELS = 4;
+  let actualApiCallsMade = 0;
 
   const raceResult = await new Promise<{
     ok: boolean;
@@ -1558,6 +1605,7 @@ export async function callGeminiWithFallback(options: {
       }
 
       launchedModels.add(candidate.model);
+      actualApiCallsMade += 1;
       inFlightCount += 1;
 
       const controller = new AbortController();
@@ -1706,6 +1754,8 @@ export async function callGeminiWithFallback(options: {
       model: raceResult.modelUsed || 'gemini-flash-lite-latest',
       status: 'ok',
       durationMs,
+      apiKey: cleanApiKey,
+      callCount: Math.max(1, actualApiCallsMade),
     });
     return {
       ok: true,
@@ -1729,6 +1779,19 @@ export async function callGeminiWithFallback(options: {
       lastError.includes('quota') ||
       lastError.includes('RESOURCE_EXHAUSTED'))
   ) {
+    // Record failed attempts made against the client key before falling back to server key
+    if (actualApiCallsMade > 0) {
+      await recordServerUsageAsync({
+        isServerKey: false,
+        endpoint,
+        model: candidatePool[0]?.model || 'gemini',
+        status: 'error',
+        durationMs: Date.now() - startTime,
+        error: lastError,
+        apiKey: cleanApiKey,
+        callCount: actualApiCallsMade,
+      });
+    }
     console.warn('Client-provided Gemini API key failed, falling back to server GEMINI_API_KEY...');
     return callGeminiWithFallback({
       ...options,
@@ -1745,6 +1808,8 @@ export async function callGeminiWithFallback(options: {
     status: 'error',
     durationMs,
     error: lastError,
+    apiKey: cleanApiKey,
+    callCount: Math.max(1, actualApiCallsMade),
   });
 
   return {
