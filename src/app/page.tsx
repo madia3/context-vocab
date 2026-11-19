@@ -408,6 +408,7 @@ export default function Home() {
   const [isSourceProcessing, setIsSourceProcessing] = useState(false);
   const [sourceProcessTaskName, setSourceProcessTaskName] = useState<string>('');
   const [isSavingAwaitingSource, setIsSavingAwaitingSource] = useState(false);
+  const [isSavingBulk, setIsSavingBulk] = useState(false);
   const sourceTaskPromiseRef = useRef<Promise<string | null> | null>(null);
   const wordDebounceTimersRef = useRef<{ [entryId: string]: any }>({});
 
@@ -2775,6 +2776,8 @@ export default function Home() {
 
   // Save All Words to Vocabulary
   async function handleSaveAllWords() {
+    if (isSavingBulk) return;
+
     if (!currentUser) {
       alert('단어를 내 단어장에 등록하고 저장하려면 먼저 로그인이 필요합니다.');
       setIsAuthModalOpen(true);
@@ -2795,32 +2798,37 @@ export default function Home() {
         ? selectedTargetBooks
         : [inputBookTitle.trim() || '기본 단어장'];
 
-    // 💡 문장 한글 해석이 비어있는 경우 저장 직전 자동 번역 확보
-    const entriesWithTranslations = await Promise.all(
-      validEntries.map(async (entry) => {
-        const finalWord = entry.dictResult?.word || entry.word.trim();
-        const matchedContext =
-          entry.context.trim() || `This sentence illustrates the word ${finalWord}.`;
-        const translation = await resolveSentenceTranslation(matchedContext, entry.sentenceTranslation);
-        return {
-          entry,
-          finalWord,
-          matchedContext,
-          sentenceTranslation: translation,
-        };
-      })
-    );
+    setIsSavingBulk(true);
+    try {
+      // 💡 문장 한글 해석이 비어있는 경우만 병렬로 자동 번역 확보 (이미 해석이 있으면 즉시 통과)
+      const entriesWithTranslations = await Promise.all(
+        validEntries.map(async (entry) => {
+          const finalWord = entry.dictResult?.word || entry.word.trim();
+          const matchedContext =
+            entry.context.trim() || `This sentence illustrates the word ${finalWord}.`;
+          const translation = entry.sentenceTranslation?.trim()
+            ? entry.sentenceTranslation.trim()
+            : await resolveSentenceTranslation(matchedContext, entry.sentenceTranslation);
+          return {
+            entry,
+            finalWord,
+            matchedContext,
+            sentenceTranslation: translation,
+          };
+        })
+      );
 
-    await Promise.all(
-      targetBooks.flatMap((bookToSave) =>
+      const nowTs = Date.now();
+      const todayStr = new Date().toISOString().slice(0, 10);
+      const itemsToSave: VocabItem[] = targetBooks.flatMap((bookToSave) =>
         entriesWithTranslations.map(({ entry, finalWord, matchedContext, sentenceTranslation }, idx) => {
           const finalCandidates =
             entry.candidateSentences.length > 0
               ? Array.from(new Set([matchedContext, ...entry.candidateSentences]))
               : [matchedContext];
 
-          const newItem: VocabItem = {
-            id: `${currentUser?.id ? currentUser.id + '_' : ''}vocab_${Date.now()}_${idx}_${Math.random().toString(36).substring(2, 6)}`,
+          return {
+            id: `${currentUser?.id ? currentUser.id + '_' : ''}vocab_${nowTs}_${idx}_${Math.random().toString(36).substring(2, 6)}`,
             word: finalWord,
             phonetic: entry.dictResult?.phonetic || '',
             partOfSpeech: entry.selectedPos || '단어',
@@ -2835,49 +2843,72 @@ export default function Home() {
             correctCount: 0,
             wrongCount: 0,
             consecutiveCorrect: 0,
-            date: new Date().toISOString().slice(0, 10),
+            date: todayStr,
             user_id: currentUser?.id,
           };
-
-          return saveOrMergeVocabularyItem(newItem, currentUser?.id);
         })
-      )
-    );
+      );
 
-    await loadData(currentUser);
+      // 단일 배치 트랜잭션으로 일괄 저장 (N번 개별 왕복 대신 1회 업서트로 속도 대폭 향상 + 로컬 레이스 컨디션 방지)
+      const batchRes = await saveOrMergeVocabularyItemsBatch(itemsToSave, currentUser?.id);
 
-    targetBooks.forEach((b) => touchBookUsage(b));
-    const lastSavedBook = (targetBooks[targetBooks.length - 1] || targetBooks[0] || '').trim();
-    if (lastSavedBook) {
-      setInputBookTitle(lastSavedBook);
-      setSelectedTargetBooks([lastSavedBook]);
-      if (typeof window !== 'undefined') {
-        localStorage.setItem('context_vocab_last_saved_book_title', lastSavedBook);
-        localStorage.setItem('context_vocab_last_book_title', lastSavedBook);
+      // 로컬 상태 즉시 반영 후 백그라운드 동기화 (화면 대기 시간 제거)
+      if (batchRes.items.length > 0) {
+        const touchedIds = new Set(batchRes.items.map((it) => it.id));
+        setVocabulary((prev) => [
+          ...batchRes.items,
+          ...prev.filter((existing) => !touchedIds.has(existing.id)),
+        ]);
       }
+      loadData(currentUser).catch((e) => console.warn('Background loadData after bulk save:', e));
+
+      targetBooks.forEach((b) => touchBookUsage(b));
+      const lastSavedBook = (targetBooks[targetBooks.length - 1] || targetBooks[0] || '').trim();
+      if (lastSavedBook) {
+        setInputBookTitle(lastSavedBook);
+        setSelectedTargetBooks([lastSavedBook]);
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('context_vocab_last_saved_book_title', lastSavedBook);
+          localStorage.setItem('context_vocab_last_book_title', lastSavedBook);
+        }
+      }
+
+      // Reset Form to 1 empty entry, but keep pageOcrText and loaded sources!
+      setWordEntries([createWordEntryItem()]);
+      setIsCustomBook(false);
+      setCustomBookInput('');
+
+      // iOS Safari에서 여러 카드가 1개로 줄어들며 스크롤 위치가 문서 높이를 초과해
+      // 흰 화면으로 멈추는 현상을 방지하기 위해 즉시 상단으로 스크롤 및 리페인트 유도
+      if (typeof window !== 'undefined') {
+        window.scrollTo({ top: 0, behavior: 'auto' });
+        requestAnimationFrame(() => {
+          window.scrollTo(0, 0);
+        });
+      }
+
+      fireConfetti({ particleCount: 90, spread: 75, origin: { x: 0.35, y: 0.55 } });
+      setTimeout(() => {
+        fireConfetti({ particleCount: 90, spread: 75, origin: { x: 0.65, y: 0.55 } });
+      }, 200);
+
+      const bookSummary =
+        targetBooks.length > 1
+          ? `${targetBooks[0]} 외 ${targetBooks.length - 1}개 (${targetBooks.length}개 단어장 동시 저장)`
+          : targetBooks[0];
+
+      triggerToast(
+        validEntries.length > 1
+          ? `${validEntries.length}개 단어 저장/문맥 추가 완료! 🎉`
+          : `'${validEntries[0].word}' 저장/문맥 추가 완료! 🎉`,
+        `[${bookSummary}] 단어장에 반영되었습니다. 이미 등록된 단어는 새로운 원문 문장이 차곡차곡 누적됩니다.`
+      );
+    } catch (err: any) {
+      console.error('Bulk save error:', err);
+      triggerToast('단어 저장 중 오류 발생', err?.message || '잠시 후 다시 시도해 주세요.');
+    } finally {
+      setIsSavingBulk(false);
     }
-
-    // Reset Form to 1 empty entry, but keep pageOcrText and loaded sources!
-    setWordEntries([createWordEntryItem()]);
-    setIsCustomBook(false);
-    setCustomBookInput('');
-
-    fireConfetti({ particleCount: 90, spread: 75, origin: { x: 0.35, y: 0.55 } });
-    setTimeout(() => {
-      fireConfetti({ particleCount: 90, spread: 75, origin: { x: 0.65, y: 0.55 } });
-    }, 200);
-
-    const bookSummary =
-      targetBooks.length > 1
-        ? `${targetBooks[0]} 외 ${targetBooks.length - 1}개 (${targetBooks.length}개 단어장 동시 저장)`
-        : targetBooks[0];
-
-    triggerToast(
-      validEntries.length > 1
-        ? `${validEntries.length}개 단어 저장/문맥 추가 완료! 🎉`
-        : `'${validEntries[0].word}' 저장/문맥 추가 완료! 🎉`,
-      `[${bookSummary}] 단어장에 반영되었습니다. 이미 등록된 단어는 새로운 원문 문장이 차곡차곡 누적됩니다.`
-    );
   }
 
   // Save Single Word Entry to Vocabulary (신규 등록 및 기존 단어 문맥 누적 병합 지원)
@@ -4944,14 +4975,19 @@ export default function Home() {
                       <button
                         type="button"
                         onClick={handleSaveAllWords}
-                        disabled={readyCount === 0 || isAnyAnalyzing || isSavingAwaitingSource}
+                        disabled={readyCount === 0 || isAnyAnalyzing || isSavingAwaitingSource || isSavingBulk}
                         className={`w-full sm:w-auto font-bold px-6 py-2.5 text-xs rounded-xl shadow-md transition flex items-center justify-center gap-1.5 ${
-                          readyCount > 0 && !isAnyAnalyzing
+                          readyCount > 0 && !isAnyAnalyzing && !isSavingBulk
                             ? 'bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer active:scale-[0.99]'
                             : 'bg-slate-300 text-slate-500 cursor-not-allowed'
                         }`}
                       >
-                        {isAnyAnalyzing || isSavingAwaitingSource ? (
+                        {isSavingBulk ? (
+                          <>
+                            <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                            <span>{readyCount > 1 ? `${readyCount}개 단어 저장 중...` : '저장 중...'}</span>
+                          </>
+                        ) : isAnyAnalyzing || isSavingAwaitingSource ? (
                           <>
                             <RotateCw className="w-3.5 h-3.5 animate-spin" />
                             <span>AI 분석 중...</span>
@@ -5803,14 +5839,19 @@ export default function Home() {
                       <button
                         type="button"
                         onClick={handleSaveAllWords}
-                        disabled={readyCount === 0 || isAnyAnalyzing || isSavingAwaitingSource}
+                        disabled={readyCount === 0 || isAnyAnalyzing || isSavingAwaitingSource || isSavingBulk}
                         className={`w-full sm:w-auto font-bold px-6 py-2.5 text-xs rounded-xl shadow-md transition flex items-center justify-center gap-1.5 ${
-                          readyCount > 0 && !isAnyAnalyzing
+                          readyCount > 0 && !isAnyAnalyzing && !isSavingBulk
                             ? 'bg-indigo-600 hover:bg-indigo-700 text-white cursor-pointer'
                             : 'bg-slate-300 text-slate-500 cursor-not-allowed'
                         }`}
                       >
-                        {isAnyAnalyzing || isSavingAwaitingSource ? (
+                        {isSavingBulk ? (
+                          <>
+                            <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                            <span>{readyCount > 1 ? `${readyCount}개 단어 저장 중...` : '저장 중...'}</span>
+                          </>
+                        ) : isAnyAnalyzing || isSavingAwaitingSource ? (
                           <>
                             <RotateCw className="w-3.5 h-3.5 animate-spin" />
                             <span>AI 분석 중...</span>
