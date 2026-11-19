@@ -1,2 +1,2 @@
-export const APP_BUILD_VERSION = 'v2026.11.19-21 (11/19 11:51 KST)';
-export const APP_BUILD_SUMMARY = '일일 AI 사용 한도 안내 표기(20회/일, 50회/일, 1,500회/일 + 서버 AI 100회/일) 정리';
+export const APP_BUILD_VERSION = 'v2026.11.19-22 (11/19 11:59 KST)';
+export const APP_BUILD_SUMMARY = '5지선다 정답 확인 시 상단 컴팩트화 및 모바일 하단 고정 다음 문제 버튼 적용';

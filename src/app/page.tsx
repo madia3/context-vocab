@@ -6230,7 +6230,7 @@ export default function Home() {
               </div>
 
               {/* Quiz Body */}
-              <div className="p-6">
+              <div className={quizAnswerState.answered ? 'p-4 sm:p-5' : 'p-6'}>
                 {!isLoaded ? (
                   <div className="text-center py-16 space-y-3">
                     <div className="w-8 h-8 border-3 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto" />
@@ -6238,8 +6238,8 @@ export default function Home() {
                   </div>
                 ) : !isQuizFinished && currentQuizItem ? (
                   <>
-                    <div className="text-center py-3 border-b border-slate-100">
-                      <div className="mb-2 flex items-center justify-center gap-1.5 flex-wrap">
+                    <div className={`text-center border-b border-slate-100 ${quizAnswerState.answered ? 'py-1.5' : 'py-3'}`}>
+                      <div className={`${quizAnswerState.answered ? 'mb-1' : 'mb-2'} flex items-center justify-center gap-1.5 flex-wrap`}>
                         <span className="text-[11px] bg-indigo-50 text-indigo-700 px-2.5 py-0.5 rounded-full font-bold inline-flex items-center">
                           <span>{currentQuizItem.bookTitle || '기본 단어장'}</span>
                         </span>
@@ -6268,10 +6268,12 @@ export default function Home() {
                           return null;
                         })()}
                       </div>
-                      <span className="text-xs font-bold text-indigo-600 tracking-wider uppercase mb-1 block">
-                        다음 영어 단어의 알맞은 한국어 뜻을 고르세요
-                      </span>
-                      <h3 className="text-3xl font-black text-slate-900 tracking-tight mb-2">
+                      {!quizAnswerState.answered && (
+                        <span className="text-xs font-bold text-indigo-600 tracking-wider uppercase mb-1 block">
+                          다음 영어 단어의 알맞은 한국어 뜻을 고르세요
+                        </span>
+                      )}
+                      <h3 className={`font-black text-slate-900 tracking-tight ${quizAnswerState.answered ? 'text-2xl sm:text-3xl mb-1' : 'text-3xl mb-2'}`}>
                         {currentQuizItem.word}
                       </h3>
                       <div className="flex items-center justify-center gap-2">
@@ -6308,31 +6310,31 @@ export default function Home() {
                         })}
                       </div>
                     ) : (
-                      /* 정답 선택 후: 선지들은 사라지고 원문 문맥 + 원어민 발음 + 다음 문제만 시원하게 표시 */
-                      <div className="mt-5 space-y-4 animate-fade-in w-full">
-                        {/* Status Result Banner */}
+                      /* 정답 선택 후: 선지들은 사라지고 컴팩트한 결과 배너 + 원문 문맥 + 하단 고정 다음 문제 버튼 표시 */
+                      <div className="mt-3 space-y-2.5 animate-fade-in w-full pb-20 sm:pb-0">
+                        {/* Status Result Banner (Slim) */}
                         <div
-                          className={`p-4 rounded-2xl flex items-center justify-between text-white shadow-md ${
+                          className={`px-3.5 py-2.5 rounded-xl flex items-center justify-between gap-2 text-white shadow-sm ${
                             quizAnswerState.isCorrect ? 'bg-emerald-500' : 'bg-rose-500'
                           }`}
                         >
-                          <div className="flex items-center gap-3">
+                          <div className="flex items-center gap-2.5 min-w-0">
                             {quizAnswerState.isCorrect ? (
-                              <CheckCircle2 className="w-6 h-6 shrink-0" />
+                              <CheckCircle2 className="w-5 h-5 shrink-0" />
                             ) : (
-                              <AlertCircle className="w-6 h-6 shrink-0" />
+                              <AlertCircle className="w-5 h-5 shrink-0" />
                             )}
-                            <div>
-                              <div className="text-base font-black leading-tight">
+                            <div className="min-w-0">
+                              <div className="text-sm font-black leading-tight">
                                 {quizAnswerState.isCorrect ? '정답입니다! 🎉' : '오답입니다! 💡'}
                               </div>
-                              <div className="text-xs text-white/90 mt-0.5">
-                                알맞은 뜻: <span className="font-bold underline decoration-white/40">{currentQuizItem.selectedMeaning}</span>
+                              <div className="text-xs text-white/95 mt-0.5 leading-snug">
+                                <span className="font-bold underline decoration-white/40">{currentQuizItem.selectedMeaning}</span>
                               </div>
                             </div>
                           </div>
                           {quizAnswerState.isCorrect && (
-                            <span className="text-xs bg-white/20 px-2.5 py-1 rounded-xl font-mono font-bold">+1 Point</span>
+                            <span className="text-[11px] bg-white/20 px-2 py-0.5 rounded-lg font-mono font-bold shrink-0 whitespace-nowrap">+1P</span>
                           )}
                         </div>
 
@@ -6443,11 +6445,11 @@ export default function Home() {
                           );
                         })()}
 
-                        {/* Big Next Button */}
-                        <div className="pt-2 flex justify-end">
+                        {/* Big Next Button (Desktop inline; mobile uses viewport-fixed bar below) */}
+                        <div className="hidden sm:flex pt-1 justify-end">
                           <button
                             onClick={handleNextQuestion}
-                            className="w-full sm:w-auto bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm px-8 py-3.5 rounded-xl shadow-lg transition flex items-center justify-center gap-2 active:scale-95"
+                            className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm px-8 py-3 rounded-xl shadow-lg transition flex items-center justify-center gap-2 active:scale-95 cursor-pointer"
                           >
                             <span>다음 문제 풀기</span>
                             <span>➔</span>
@@ -9167,6 +9169,20 @@ export default function Home() {
               );
             })()}
           </div>
+        </div>
+      )}
+
+      {/* Mobile Fixed Bottom Next Question Bar (rendered outside swipe transform container so fixed positioning sticks to viewport) */}
+      {activeTab === 'quiz' && !isQuizFinished && currentQuizItem && quizAnswerState.answered && !isSettingsOpen && !isAuthModalOpen && (
+        <div className="sm:hidden fixed bottom-0 inset-x-0 z-40 bg-white/95 backdrop-blur-md border-t border-slate-200/80 px-4 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] shadow-[0_-4px_20px_rgba(15,23,42,0.08)]">
+          <button
+            type="button"
+            onClick={handleNextQuestion}
+            className="w-full bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-sm px-6 py-3.5 rounded-xl shadow-md transition flex items-center justify-center gap-2 active:scale-[0.98] cursor-pointer"
+          >
+            <span>다음 문제 풀기</span>
+            <span>➔</span>
+          </button>
         </div>
       )}
 
