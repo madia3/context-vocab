@@ -1,2 +1,2 @@
-export const APP_BUILD_VERSION = 'v2026.11.19-46 (11/19 23:03 KST)';
-export const APP_BUILD_SUMMARY = '문장 연속 듣기 다른 탭·백그라운드 계속 재생 지원 (공유 Audio 재사용·MediaSession·무음 Keep-Alive + ON/OFF 토글 옵션)';
+export const APP_BUILD_VERSION = 'v2026.11.19-47 (11/19 23:06 KST)';
+export const APP_BUILD_SUMMARY = '발음 음성(TTS) 악센트 선택을 드롭다운에서 3분할 버튼(🇺🇸 미국식 / 🇬🇧 영국식 / 🎲 랜덤)으로 통일';

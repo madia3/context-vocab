@@ -9200,18 +9200,59 @@ export default function Home() {
                           🎲 전체 랜덤 (미·영·남·여)
                         </button>
                       </div>
-                      <select
-                        value={ttsVoice}
-                        onChange={(e) => {
-                          setTtsVoice(e.target.value);
-                          localStorage.setItem('context_vocab_tts_voice', e.target.value);
-                        }}
-                        className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs font-semibold text-slate-900 shadow-2xs"
-                      >
-                        <option value="en-US">영어 (미국식 - US English)</option>
-                        <option value="en-GB">영어 (영국식 - GB English)</option>
-                        <option value="random">🎲 랜덤 (미국식 / 영국식 번갈아 듣기)</option>
-                      </select>
+                      <div className="grid grid-cols-3 gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTtsVoice('en-US');
+                            localStorage.setItem('context_vocab_tts_voice', 'en-US');
+                          }}
+                          className={`py-2 px-2 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1 cursor-pointer active:scale-[0.98] ${
+                            ttsVoice === 'en-US'
+                              ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
+                              : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                          }`}
+                        >
+                          <span>🇺🇸 미국식</span>
+                          <span className={`text-[10px] font-semibold ${ttsVoice === 'en-US' ? 'text-indigo-100' : 'text-slate-400'}`}>
+                            US
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTtsVoice('en-GB');
+                            localStorage.setItem('context_vocab_tts_voice', 'en-GB');
+                          }}
+                          className={`py-2 px-2 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1 cursor-pointer active:scale-[0.98] ${
+                            ttsVoice === 'en-GB'
+                              ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
+                              : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                          }`}
+                        >
+                          <span>🇬🇧 영국식</span>
+                          <span className={`text-[10px] font-semibold ${ttsVoice === 'en-GB' ? 'text-indigo-100' : 'text-slate-400'}`}>
+                            UK
+                          </span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setTtsVoice('random');
+                            localStorage.setItem('context_vocab_tts_voice', 'random');
+                          }}
+                          className={`py-2 px-2 rounded-xl text-xs font-bold border transition flex items-center justify-center gap-1 cursor-pointer active:scale-[0.98] ${
+                            ttsVoice === 'random'
+                              ? 'bg-indigo-600 text-white border-indigo-700 shadow-xs'
+                              : 'bg-white text-slate-700 border-slate-300 hover:bg-slate-100'
+                          }`}
+                        >
+                          <span>🎲 랜덤</span>
+                          <span className={`text-[10px] font-semibold ${ttsVoice === 'random' ? 'text-indigo-100' : 'text-slate-400'}`}>
+                            미·영
+                          </span>
+                        </button>
+                      </div>
                     </div>
 
                     {/* TTS Voice Gender Toggle (남/여/랜덤 목소리 선택 - 속도 조절 바로 위) */}
