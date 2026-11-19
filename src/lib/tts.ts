@@ -67,8 +67,11 @@ export function unlockAudioForBackground() {
       const p = audio.play();
       if (p) {
         p.then(() => {
-          audio.pause();
-          audio.currentTime = 0;
+          // 이미 실제 TTS 오디오로 교체된 경우에는 절대 pause하지 않음
+          if (audio.src === SILENT_WAV_DATA_URI) {
+            audio.pause();
+            audio.currentTime = 0;
+          }
           audio.volume = 1.0;
         }).catch(() => {
           audio.volume = 1.0;

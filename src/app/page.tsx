@@ -3983,18 +3983,23 @@ export default function Home() {
           },
         });
 
-        // 다음 재생할 문장 백그라운드 사전 캐싱 (0ms 지연 재생 보장)
-        const nextIdx = (idx + 1) % total;
-        const nextItem = sentencePlayList[nextIdx];
-        if (nextItem) {
-          const nextCardIdx = listCardSentenceIdx[nextItem.id] || 0;
-          const nextText = (
-            (nextItem.candidateSentences && nextItem.candidateSentences.length > 0
-              ? nextItem.candidateSentences[nextCardIdx % nextItem.candidateSentences.length]
-              : nextItem.contextSentence) || nextItem.word
+        // 다음 2개 + 이전 1개 문장 백그라운드 사전 캐싱 (앞으로/뒤로 및 연속 재생 0ms 지연 보장)
+        const preloadIndices = [
+          (idx + 1) % total,
+          ...(total > 2 ? [(idx + 2) % total] : []),
+          ...(total > 1 ? [(idx - 1 + total) % total] : []),
+        ];
+        preloadIndices.forEach((pIdx) => {
+          const pItem = sentencePlayList[pIdx];
+          if (!pItem) return;
+          const pCardIdx = listCardSentenceIdx[pItem.id] || 0;
+          const pText = (
+            (pItem.candidateSentences && pItem.candidateSentences.length > 0
+              ? pItem.candidateSentences[pCardIdx % pItem.candidateSentences.length]
+              : pItem.contextSentence) || pItem.word
           ).trim();
-          preloadSentenceTTS(nextText, ttsVoice);
-        }
+          preloadSentenceTTS(pText, ttsVoice);
+        });
 
         // 현재 낭독 중인 단어 카드로 부드럽게 스크롤 (백그라운드 탭일 때는 생략)
         if (typeof document !== 'undefined' && !document.hidden) {
@@ -4107,6 +4112,28 @@ export default function Home() {
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [isListeningSentences]);
+
+  // 단어장 탭 진입·단어장 변경 시 상위 3개 문장을 미리 백그라운드 캐싱 (문장 연속 듣기 클릭 즉시 0초 재생)
+  useEffect(() => {
+    if (activeTab !== 'list' || sentencePlayList.length === 0) return;
+    const timer = setTimeout(() => {
+      const warmCount = Math.min(3, sentencePlayList.length);
+      for (let i = 0; i < warmCount; i++) {
+        const item = sentencePlayList[i];
+        if (!item) continue;
+        const cardSentenceIdx = listCardSentenceIdx[item.id] || 0;
+        const textToWarm = (
+          (item.candidateSentences && item.candidateSentences.length > 0
+            ? item.candidateSentences[cardSentenceIdx % item.candidateSentences.length]
+            : item.contextSentence) || item.word
+        ).trim();
+        if (textToWarm) {
+          preloadSentenceTTS(textToWarm, ttsVoice);
+        }
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [activeTab, sentencePlayList, listCardSentenceIdx, ttsVoice, ttsGender]);
 
   // 앱 내부 탭 변경 시 문장 연속 낭독 중지 (퀴즈 탭 등 다른 오디오와 충돌 방지)
   useEffect(() => {
