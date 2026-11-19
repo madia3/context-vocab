@@ -20,7 +20,7 @@ export default function TermsOfServicePage() {
             >
               ← 메인으로 돌아가기
             </Link>
-            <span className="text-xs text-slate-400 font-medium">최종 개정일: 2026년 11월 17일</span>
+            <span className="text-xs text-slate-400 font-medium">최종 개정일: 2026년 11월 19일</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight">
             서비스 이용약관 (Terms of Service)
@@ -66,10 +66,23 @@ export default function TermsOfServicePage() {
 
         {/* Section 4 */}
         <section className="space-y-3">
-          <h2 className="text-base sm:text-lg font-bold text-slate-900">제4조 (지식재산권 및 데이터의 소유)</h2>
-          <p className="text-xs sm:text-sm text-slate-600 leading-relaxed">
-            이용자가 서비스에 등록한 단어, 문맥 메모 등의 학습 데이터에 대한 권리와 책임은 이용자 본인에게 있습니다. 서비스는 이용자의 데이터 보안을 유지하며 승인되지 않은 타인에게 공개하지 않습니다.
-          </p>
+          <h2 className="text-base sm:text-lg font-bold text-slate-900">제4조 (지식재산권, 저작권 및 데이터의 책임)</h2>
+          <div className="text-xs sm:text-sm text-slate-600 leading-relaxed space-y-2">
+            <p>
+              이용자가 서비스에 등록·입력·촬영(OCR)·발췌하여 저장하는 단어, 원문 문장, 출처 메모 등의 학습 데이터에 대한 모든 권리와 법적 책임은 이용자 본인에게 있습니다.
+            </p>
+            <ul className="list-disc pl-5 space-y-1 text-slate-700">
+              <li>
+                <strong>저작권 준수 및 사적 학습 목적 이용:</strong> 도서(원서), 기사, 웹문서 등 제3자의 저작물에서 문장을 발췌·저장할 때 관련 저작권법을 준수하고 개인의 사적 학습·복습 범위 내에서 이용해야 할 책임은 전적으로 이용자 본인에게 있습니다.
+              </li>
+              <li>
+                <strong>비공개 보관 및 무단 배포 금지:</strong> 이용자가 저장한 단어와 문장은 본인 계정 전용 비공개 공간(RLS 격리 적용)에만 보관되며, 타인에게 공개되지 않습니다. 이용자는 저작권이 있는 원문 데이터를 제3자에게 무단 공유·배포하거나 상업적 목적으로 이용해서는 안 됩니다.
+              </li>
+              <li>
+                <strong>운영자 면책:</strong> 서비스 운영자는 이용자가 개인 학습 공간에 임의로 등록·저장한 단어, 문장, 이미지 등의 콘텐츠에 대해 사전 검열 의무를 지지 않으며, 이로 인해 발생하는 저작권 침해 등 제3자와의 일체의 분쟁 및 법적 책임은 해당 이용자에게 귀속됩니다.
+              </li>
+            </ul>
+          </div>
         </section>
 
         {/* Section 5 */}
