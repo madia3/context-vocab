@@ -6728,11 +6728,11 @@ export default function Home() {
                               <AlertCircle className="w-5 h-5 shrink-0" />
                             )}
                             <div className="min-w-0">
-                              <div className="text-sm font-black leading-tight">
+                              <div className="text-[11px] font-bold text-white/90 leading-tight">
                                 {quizAnswerState.isCorrect ? '정답입니다! 🎉' : '오답입니다! 💡'}
                               </div>
-                              <div className="text-xs text-white/95 mt-0.5 leading-snug">
-                                <span className="font-bold underline decoration-white/40">{currentQuizItem.selectedMeaning}</span>
+                              <div className="text-[15px] sm:text-base font-black text-white mt-0.5 leading-snug">
+                                <span>{currentQuizItem.selectedMeaning}</span>
                               </div>
                             </div>
                           </div>
@@ -9642,14 +9642,14 @@ export default function Home() {
             {/* Modal Header */}
             <div className="px-5 py-4 border-b border-slate-100 flex items-center justify-between bg-gradient-to-r from-amber-50/80 via-white to-indigo-50/70 shrink-0">
               <div className="flex items-center gap-3 min-w-0">
-                <div className="w-10 h-10 rounded-2xl bg-gradient-to-br from-amber-500 to-indigo-600 text-white flex items-center justify-center shadow-md shrink-0">
+                <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-amber-500 to-indigo-600 text-white flex items-center justify-center shadow-md shrink-0">
                   <BookMarked className="w-5 h-5" />
                 </div>
                 <div className="min-w-0">
-                  <h2 className="text-base sm:text-lg font-black text-slate-900 tracking-tight truncate">
+                  <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight truncate">
                     추천 단어장 라이브러리
                   </h2>
-                  <p className="text-[11px] sm:text-xs text-slate-500 font-medium truncate mt-0.5">
+                  <p className="text-xs sm:text-sm text-slate-500 font-medium truncate mt-0.5">
                     퍼블릭 도메인 원서 명문장 + 한글 해석 풀세트 · 원클릭으로 내 단어장에 추가
                   </p>
                 </div>
@@ -9665,7 +9665,7 @@ export default function Home() {
             </div>
 
             {/* Category Filter Pills */}
-            <div className="px-4 sm:px-5 py-2.5 bg-white border-b border-slate-100 flex items-center gap-1.5 overflow-x-auto no-scrollbar shrink-0">
+            <div className="px-4 sm:px-5 py-3 bg-white border-b border-slate-100 flex items-center gap-2 overflow-x-auto no-scrollbar shrink-0">
               {RECOMMENDED_CATEGORIES.map((cat) => {
                 const isSelected = recommendedCategoryFilter === cat;
                 const count =
@@ -9677,15 +9677,15 @@ export default function Home() {
                     key={cat}
                     type="button"
                     onClick={() => setRecommendedCategoryFilter(cat)}
-                    className={`px-3 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 ${
+                    className={`px-3.5 py-2 rounded-full text-[13px] sm:text-sm font-bold whitespace-nowrap transition cursor-pointer flex items-center gap-1.5 ${
                       isSelected
                         ? 'bg-slate-900 text-white shadow-xs'
-                        : 'bg-slate-100 text-slate-600 hover:bg-slate-200/80'
+                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200/80'
                     }`}
                   >
                     <span>{cat}</span>
                     <span
-                      className={`text-[10px] font-black px-1.5 py-0.2 rounded-full ${
+                      className={`text-[11px] font-black px-1.5 py-0.5 rounded-full ${
                         isSelected ? 'bg-white/20 text-white' : 'bg-white text-slate-500'
                       }`}
                     >
@@ -9719,83 +9719,83 @@ export default function Home() {
                       <div className="flex items-start justify-between gap-3">
                         <div className="flex items-start gap-3 min-w-0">
                           <div
-                            className={`w-11 h-11 rounded-2xl bg-gradient-to-br ${book.accentGradient} text-white flex items-center justify-center text-xl shadow-sm shrink-0`}
+                            className={`w-12 h-12 rounded-2xl bg-gradient-to-br ${book.accentGradient} text-white flex items-center justify-center text-2xl shadow-sm shrink-0`}
                           >
                             {book.emoji}
                           </div>
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-1.5">
                               <span
-                                className={`text-[10px] font-black px-2 py-0.5 rounded-full ${book.badgeColor}`}
+                                className={`text-xs font-black px-2.5 py-0.5 rounded-full ${book.badgeColor}`}
                               >
                                 {book.level}
                               </span>
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">
+                              <span className="text-xs font-bold px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-600">
                                 {book.words.length}단어
                               </span>
-                              <span className="text-[10px] font-semibold text-slate-400">
+                              <span className="text-xs font-semibold text-slate-400">
                                 {book.author} ({book.year})
                               </span>
                             </div>
-                            <h3 className="text-sm sm:text-base font-black text-slate-900 mt-1 leading-snug">
+                            <h3 className="text-base sm:text-lg font-black text-slate-900 mt-1.5 leading-snug">
                               {book.bookTitle}
                             </h3>
-                            <p className="text-[11px] text-slate-400 font-medium italic truncate">
+                            <p className="text-xs sm:text-[13px] text-slate-400 font-medium italic truncate mt-0.5">
                               {book.originalTitle}
                             </p>
                           </div>
                         </div>
                       </div>
 
-                      <p className="text-xs text-slate-600 font-medium mt-2.5 leading-relaxed">
+                      <p className="text-[13.5px] sm:text-sm text-slate-600 font-medium mt-3 leading-relaxed">
                         {book.description}
                       </p>
 
                       {/* Representative Quote */}
-                      <div className="mt-3 p-3 rounded-xl bg-slate-50 border border-slate-100 space-y-1">
-                        <p className="text-xs font-serif text-slate-800 leading-relaxed">
+                      <div className="mt-3.5 p-3.5 rounded-xl bg-slate-50 border border-slate-100 space-y-1.5">
+                        <p className="text-sm sm:text-[15px] font-serif text-slate-800 leading-relaxed">
                           &ldquo;{book.highlightQuote}&rdquo;
                         </p>
-                        <p className="text-[11px] text-slate-500 font-medium leading-relaxed">
+                        <p className="text-[13px] sm:text-sm text-slate-600 font-medium leading-relaxed">
                           {book.highlightTranslation}
                         </p>
                       </div>
 
                       {/* Actions Row */}
-                      <div className="mt-3.5 flex flex-wrap items-center justify-between gap-2">
+                      <div className="mt-4 flex flex-wrap items-center justify-between gap-2.5">
                         <button
                           type="button"
                           onClick={() =>
                             setExpandedRecommendedId(isExpanded ? null : book.id)
                           }
-                          className="text-xs font-bold text-slate-600 hover:text-indigo-700 px-2.5 py-1.5 rounded-lg hover:bg-slate-100 transition flex items-center gap-1 cursor-pointer"
+                          className="text-[13px] sm:text-sm font-bold text-slate-600 hover:text-indigo-700 px-2.5 py-2 rounded-xl hover:bg-slate-100 transition flex items-center gap-1.5 cursor-pointer"
                         >
                           <ChevronDown
-                            className={`w-3.5 h-3.5 transition-transform ${
+                            className={`w-4 h-4 transition-transform ${
                               isExpanded ? 'rotate-180' : ''
                             }`}
                           />
                           <span>{isExpanded ? '미리보기 접기' : `수록 단어 ${book.words.length}개 미리보기`}</span>
                         </button>
 
-                        <div className="flex items-center gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
                           {isAlreadyAdded ? (
                             <>
-                              <span className="inline-flex items-center gap-1 text-[11px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2.5 py-1.5 rounded-xl">
-                                <CheckCircle2 className="w-3.5 h-3.5" />
+                              <span className="inline-flex items-center gap-1 text-xs sm:text-[13px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-3 py-2 rounded-xl">
+                                <CheckCircle2 className="w-4 h-4" />
                                 <span>담김 ({existingCount}단어)</span>
                               </span>
                               <button
                                 type="button"
                                 onClick={() => handleStudyRecommendedBook(book.bookTitle, 'list')}
-                                className="text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-3 py-1.5 rounded-xl transition cursor-pointer"
+                                className="text-[13px] sm:text-sm font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 px-3.5 py-2 rounded-xl transition cursor-pointer"
                               >
                                 단어장 보기
                               </button>
                               <button
                                 type="button"
                                 onClick={() => handleStudyRecommendedBook(book.bookTitle, 'quiz')}
-                                className="text-xs font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-3 py-1.5 rounded-xl shadow-xs transition cursor-pointer"
+                                className="text-[13px] sm:text-sm font-bold text-white bg-indigo-600 hover:bg-indigo-700 px-3.5 py-2 rounded-xl shadow-xs transition cursor-pointer"
                               >
                                 퀴즈 풀기
                               </button>
@@ -9805,16 +9805,16 @@ export default function Home() {
                               type="button"
                               disabled={Boolean(importingBookId)}
                               onClick={() => handleAddRecommendedWordbook(book)}
-                              className="inline-flex items-center gap-1.5 text-xs font-black text-white bg-slate-900 hover:bg-indigo-600 disabled:opacity-50 px-3.5 py-2 rounded-xl shadow-xs transition cursor-pointer active:scale-[0.98]"
+                              className="inline-flex items-center gap-1.5 text-[13px] sm:text-sm font-black text-white bg-slate-900 hover:bg-indigo-600 disabled:opacity-50 px-4 py-2.5 rounded-xl shadow-xs transition cursor-pointer active:scale-[0.98]"
                             >
                               {isImporting ? (
                                 <>
-                                  <RotateCw className="w-3.5 h-3.5 animate-spin" />
+                                  <RotateCw className="w-4 h-4 animate-spin" />
                                   <span>담는 중...</span>
                                 </>
                               ) : (
                                 <>
-                                  <Plus className="w-3.5 h-3.5" />
+                                  <Plus className="w-4 h-4" />
                                   <span>
                                     {existingCount > 0
                                       ? `나머지 단어 추가 (${existingCount}/${book.words.length})`
@@ -9830,31 +9830,31 @@ export default function Home() {
 
                     {/* Expandable Word List Preview */}
                     {isExpanded && (
-                      <div className="border-t border-slate-100 bg-slate-50/80 px-4 py-3 sm:px-5 space-y-2.5">
+                      <div className="border-t border-slate-100 bg-slate-50/80 px-4 py-3.5 sm:px-5 space-y-3">
                         {book.words.map((item, idx) => (
                           <div
                             key={item.id}
-                            className="bg-white rounded-xl p-3 border border-slate-200/70 space-y-1"
+                            className="bg-white rounded-xl p-3.5 border border-slate-200/70 space-y-1.5"
                           >
                             <div className="flex flex-wrap items-baseline gap-2">
-                              <span className="text-[10px] font-black text-slate-400">
+                              <span className="text-xs font-black text-slate-400">
                                 {String(idx + 1).padStart(2, '0')}
                               </span>
-                              <span className="text-sm font-black text-slate-900">{item.word}</span>
-                              <span className="text-[11px] font-mono text-slate-400">
+                              <span className="text-base font-black text-slate-900">{item.word}</span>
+                              <span className="text-xs font-mono text-slate-400">
                                 {item.phonetic}
                               </span>
-                              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-700">
+                              <span className="text-[11px] font-bold px-2 py-0.5 rounded bg-indigo-50 text-indigo-700">
                                 {item.partOfSpeech}
                               </span>
-                              <span className="text-xs font-bold text-slate-700">
+                              <span className="text-[13.5px] sm:text-sm font-bold text-slate-700">
                                 {item.selectedMeaning}
                               </span>
                             </div>
-                            <p className="text-xs text-slate-700 leading-relaxed pl-5">
+                            <p className="text-sm text-slate-800 leading-relaxed pl-6">
                               {item.contextSentence}
                             </p>
-                            <p className="text-[11px] text-slate-500 leading-relaxed pl-5">
+                            <p className="text-[13px] sm:text-sm text-slate-500 leading-relaxed pl-6">
                               {item.sentenceTranslation}
                             </p>
                           </div>
