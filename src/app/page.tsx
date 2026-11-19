@@ -6448,24 +6448,31 @@ export default function Home() {
                     </button>
                   </div>
 
-                  {/* 백그라운드에서도 연속 듣기 ON/OFF (기본값 OFF) */}
-                  <div className="flex items-center justify-between gap-2 px-3 py-2 bg-slate-50 border border-slate-200/90 rounded-xl text-[11.5px]">
-                    <span className="font-bold text-slate-700 flex items-center gap-1.5 min-w-0">
-                      <span>🎧</span>
-                      <span className="truncate">백그라운드에서도 연속 듣기</span>
-                    </span>
+                  {/* 백그라운드에서도 연속 듣기 ON/OFF (설정과 동일한 스위치 양식) */}
+                  <div className="flex items-center justify-between gap-3 px-3.5 py-2.5 bg-slate-50 border border-slate-200/90 rounded-xl">
+                    <div className="min-w-0">
+                      <div className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                        <span>🎧</span>
+                        <span className="truncate">다른 탭·백그라운드에서도 계속 듣기</span>
+                      </div>
+                      <p className="text-[10.5px] text-slate-500 mt-0.5 leading-snug">
+                        문장 연속 듣기 중 다른 웹 탭으로 이동해도 끊기지 않고 계속 낭독합니다.
+                      </p>
+                    </div>
                     <button
                       type="button"
                       role="switch"
                       aria-checked={ttsBackgroundPlay}
                       onClick={() => handleToggleBackgroundPlay(!ttsBackgroundPlay)}
-                      className={`px-2.5 py-1 rounded-full text-[11px] font-black transition cursor-pointer shrink-0 active:scale-95 ${
-                        ttsBackgroundPlay
-                          ? 'bg-emerald-600 text-white shadow-2xs'
-                          : 'bg-slate-200 text-slate-600 hover:bg-slate-300'
+                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 focus:outline-none ${
+                        ttsBackgroundPlay ? 'bg-indigo-600' : 'bg-slate-300'
                       }`}
                     >
-                      {ttsBackgroundPlay ? 'ON' : 'OFF'}
+                      <span
+                        className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition duration-200 ${
+                          ttsBackgroundPlay ? 'translate-x-5' : 'translate-x-0'
+                        }`}
+                      />
                     </button>
                   </div>
                 </div>
